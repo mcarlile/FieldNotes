@@ -54,7 +54,7 @@ export class DatabaseStorage implements IStorage {
         break;
     }
     
-    return await query.execute();
+    return await query;
   }
 
   async getFieldNoteById(id: string): Promise<FieldNote | undefined> {
