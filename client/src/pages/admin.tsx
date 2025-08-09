@@ -404,19 +404,20 @@ export default function AdminPage() {
 
                 {/* Photo Upload */}
                 <div className="space-y-4">
-                  <label className="text-sm font-medium text-gray-700">
-                    Photos
-                  </label>
-                  
-                  <CarbonPhotoUploader
-                    maxNumberOfFiles={10}
-                    maxFileSize={52428800} // 50MB
-                    onGetUploadParameters={handlePhotoUpload}
-                    onComplete={handlePhotoUploadComplete}
-                    buttonClassName=""
-                  >
-                    <span>Upload Photos</span>
-                  </CarbonPhotoUploader>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700 block mb-2">
+                      Photos
+                    </label>
+                    <CarbonPhotoUploader
+                      maxNumberOfFiles={10}
+                      maxFileSize={52428800} // 50MB
+                      onGetUploadParameters={handlePhotoUpload}
+                      onComplete={handlePhotoUploadComplete}
+                      buttonClassName=""
+                    >
+                      <span>Upload Photos</span>
+                    </CarbonPhotoUploader>
+                  </div>
 
                   {/* Uploaded photos list */}
                   {uploadedPhotos.length > 0 && (
