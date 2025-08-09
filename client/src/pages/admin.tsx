@@ -88,15 +88,40 @@ export default function AdminPage() {
 
   const saveFieldNoteMutation = useMutation({
     mutationFn: async (data: FieldNoteFormData & { gpxData?: any, date: Date, distance?: number, elevationGain?: number }) => {
+      // First save the field note
+      let savedFieldNote;
       if (isEditing) {
-        return apiRequest(`/api/field-notes/${id}`, "PUT", data);
+        savedFieldNote = await apiRequest(`/api/field-notes/${id}`, "PUT", data);
       } else {
-        return apiRequest("/api/field-notes", "POST", data);
+        savedFieldNote = await apiRequest("/api/field-notes", "POST", data);
       }
+      
+      // Then create photo records if any were uploaded
+      if (uploadedPhotos.length > 0) {
+        const photoPromises = uploadedPhotos.map(async (photo) => {
+          try {
+            return await apiRequest("/api/photos", "POST", {
+              fieldNoteId: (savedFieldNote as any).id,
+              filename: photo.filename,
+              url: photo.url,
+            });
+          } catch (error) {
+            console.error("Error creating photo record:", error);
+            return null;
+          }
+        });
+        
+        // Wait for all photo records to be created
+        await Promise.all(photoPromises);
+      }
+      
+      return savedFieldNote;
     },
     onSuccess: (result) => {
       const successMessage = isEditing ? "Field note updated" : "Field note created";
-      const toastDescription = isEditing ? "Field note updated successfully!" : "Field note created successfully!";
+      const toastDescription = isEditing ? 
+        `Field note updated successfully!${uploadedPhotos.length > 0 ? ` ${uploadedPhotos.length} photos added.` : ''}` : 
+        `Field note created successfully!${uploadedPhotos.length > 0 ? ` ${uploadedPhotos.length} photos added.` : ''}`;
       
       toast({ 
         title: "Success", 
@@ -113,6 +138,10 @@ export default function AdminPage() {
       
       // Navigate to the field note detail page
       const fieldNoteId = isEditing ? id : (result as any).id;
+      
+      // Also invalidate the photos query for this specific field note
+      queryClient.invalidateQueries({ queryKey: ["/api/field-notes", fieldNoteId, "photos"] });
+      
       setLocation(`/field-notes/${fieldNoteId}`);
     },
     onError: (error) => {
@@ -189,30 +218,7 @@ export default function AdminPage() {
     };
 
     // Save field note (create or update)
-    saveFieldNoteMutation.mutate(fieldNoteData, {
-      onSuccess: async (savedFieldNote) => {
-        // Create photo records for uploaded photos (only for new uploads)
-        if (uploadedPhotos.length > 0) {
-          const photoPromises = uploadedPhotos.map(async (photo) => {
-            try {
-              const response = await apiRequest("/api/photos", "POST", {
-                fieldNoteId: (savedFieldNote as any).id,
-                filename: photo.filename,
-                url: photo.url,
-                // TODO: Add EXIF data extraction if needed
-              });
-              return response;
-            } catch (error) {
-              console.error("Error creating photo record:", error);
-              return null;
-            }
-          });
-          
-          // Wait for all photo records to be created
-          await Promise.all(photoPromises);
-        }
-      },
-    });
+    saveFieldNoteMutation.mutate(fieldNoteData);
   };
 
   // Photo upload handlers
