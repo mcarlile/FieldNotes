@@ -8,6 +8,7 @@ import {
 } from "@carbon/react";
 import { Upload } from "@carbon/icons-react";
 import type { UploadResult } from "@uppy/core";
+import { extractExifFromFile, type PhotoExifData } from "@/lib/exif-extractor";
 
 interface CarbonPhotoUploaderProps {
   maxNumberOfFiles?: number;
@@ -16,7 +17,7 @@ interface CarbonPhotoUploaderProps {
     method: "PUT";
     url: string;
   }>;
-  onComplete?: (result: UploadResult<Record<string, unknown>, Record<string, unknown>>) => void;
+  onComplete?: (result: UploadResult<Record<string, unknown>, Record<string, unknown>>, exifData?: PhotoExifData[]) => void;
   buttonClassName?: string;
   children: React.ReactNode;
 }
@@ -27,6 +28,7 @@ interface FileUploadState {
   progress: number;
   uploadUrl?: string;
   errorMessage?: string;
+  exifData?: PhotoExifData;
 }
 
 export function CarbonPhotoUploader({
@@ -41,7 +43,7 @@ export function CarbonPhotoUploader({
   const [files, setFiles] = useState<FileUploadState[]>([]);
   const [isUploading, setIsUploading] = useState(false);
 
-  const handleFileAdd = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileAdd = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(event.target.files || []);
     
     // Check file limits
@@ -70,6 +72,17 @@ export function CarbonPhotoUploader({
     }));
 
     setFiles(prev => [...prev, ...newFileStates]);
+    
+    // Extract EXIF data from each new file
+    for (let i = 0; i < validFiles.length; i++) {
+      const file = validFiles[i];
+      const exifData = await extractExifFromFile(file);
+      setFiles(prev => prev.map((f, idx) => 
+        idx === prev.length - validFiles.length + i 
+          ? { ...f, exifData }
+          : f
+      ));
+    }
   };
 
   const handleFilesFromDropContainer = (newFiles: File[]) => {
@@ -185,7 +198,8 @@ export function CarbonPhotoUploader({
         successful: uploadResults.flatMap(r => r.successful),
         failed: [],
       };
-      onComplete(combinedResult as any);
+      const exifDataArray = files.map(f => f.exifData).filter(Boolean);
+      onComplete(combinedResult as any, exifDataArray);
     }
   };
 

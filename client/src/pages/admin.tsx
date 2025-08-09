@@ -27,6 +27,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { CarbonPhotoUploader } from "@/components/carbon-photo-uploader";
 import type { FieldNote } from "@shared/schema";
 import { parseGpxData } from "@shared/gpx-utils";
+import { type PhotoExifData } from "@/lib/exif-extractor";
 
 const fieldNoteFormSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -67,6 +68,7 @@ export default function AdminPage() {
     filename: string;
     caption: string;
     id?: string; // Optional ID for existing photos
+    exifData?: PhotoExifData;
   }>>([]);
   const [selectedTripType, setSelectedTripType] = useState<string>("hiking");
   const { toast } = useToast();
@@ -175,8 +177,8 @@ export default function AdminPage() {
     }
   };
 
-  const handlePhotoUploadComplete = (result: any) => {
-    console.log('Upload complete:', result);
+  const handlePhotoUploadComplete = (result: any, exifDataArray?: PhotoExifData[]) => {
+    console.log('Upload complete:', result, 'EXIF data:', exifDataArray);
     
     if (result.successful && result.successful.length > 0) {
       // Normalize the upload URLs to object storage paths for proper serving
@@ -205,16 +207,19 @@ export default function AdminPage() {
         }
       };
       
-      const newPhotos = result.successful.map((upload: any) => ({
+      const newPhotos = result.successful.map((upload: any, index: number) => ({
         url: objectStorageService.normalizeObjectEntityPath(upload.uploadURL),
         filename: upload.name,
         caption: '',
+        exifData: exifDataArray?.[index],
       }));
       setUploadedPhotos(prev => [...prev, ...newPhotos]);
       
+      const photosWithGps = newPhotos.filter(photo => photo.exifData?.latitude && photo.exifData?.longitude);
+      
       toast({
         title: "Upload Complete",
-        description: `${result.successful.length} photo(s) uploaded successfully!`,
+        description: `${result.successful.length} photo(s) uploaded successfully! ${photosWithGps.length > 0 ? `${photosWithGps.length} photo(s) have GPS coordinates.` : ''}`,
       });
     } else if (result.failed && result.failed.length > 0) {
       toast({
@@ -246,7 +251,22 @@ export default function AdminPage() {
         distance: gpxStats?.distance || null,
         elevationGain: gpxStats?.elevationGain || null,
         date: gpxStats?.date || new Date(),
-        photos: uploadedPhotos,
+        photos: uploadedPhotos.map(photo => ({
+          filename: photo.filename,
+          url: photo.url,
+          caption: photo.caption,
+          latitude: photo.exifData?.latitude,
+          longitude: photo.exifData?.longitude,
+          elevation: photo.exifData?.elevation,
+          timestamp: photo.exifData?.timestamp,
+          camera: photo.exifData?.camera,
+          lens: photo.exifData?.lens,
+          aperture: photo.exifData?.aperture,
+          shutterSpeed: photo.exifData?.shutterSpeed,
+          iso: photo.exifData?.iso,
+          focalLength: photo.exifData?.focalLength,
+          fileSize: photo.exifData?.fileSize,
+        })),
       });
     },
     onSuccess: () => {
@@ -275,7 +295,22 @@ export default function AdminPage() {
         distance: gpxStats?.distance || existingFieldNote?.distance,
         elevationGain: gpxStats?.elevationGain || existingFieldNote?.elevationGain,
         date: gpxStats?.date || existingFieldNote?.date,
-        photos: uploadedPhotos,
+        photos: uploadedPhotos.map(photo => ({
+          filename: photo.filename,
+          url: photo.url,
+          caption: photo.caption,
+          latitude: photo.exifData?.latitude,
+          longitude: photo.exifData?.longitude,
+          elevation: photo.exifData?.elevation,
+          timestamp: photo.exifData?.timestamp,
+          camera: photo.exifData?.camera,
+          lens: photo.exifData?.lens,
+          aperture: photo.exifData?.aperture,
+          shutterSpeed: photo.exifData?.shutterSpeed,
+          iso: photo.exifData?.iso,
+          focalLength: photo.exifData?.focalLength,
+          fileSize: photo.exifData?.fileSize,
+        })),
       });
     },
     onSuccess: () => {
