@@ -24,7 +24,7 @@ import {
 import { ArrowLeft as CarbonArrowLeft, TrashCan, Upload as CarbonUpload, Add, Image as CarbonImage, Close } from "@carbon/icons-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { ObjectUploader } from "@/components/ObjectUploader";
+import { CarbonPhotoUploader } from "@/components/carbon-photo-uploader";
 import type { FieldNote } from "@shared/schema";
 import { parseGpxData } from "@shared/gpx-utils";
 
@@ -408,18 +408,15 @@ export default function AdminPage() {
                     Photos
                   </label>
                   
-                  <ObjectUploader
+                  <CarbonPhotoUploader
                     maxNumberOfFiles={10}
                     maxFileSize={52428800} // 50MB
                     onGetUploadParameters={handlePhotoUpload}
                     onComplete={handlePhotoUploadComplete}
                     buttonClassName="w-full"
                   >
-                    <div className="flex items-center gap-2">
-                      <CarbonUpload size={20} />
-                      <span>Upload Photos</span>
-                    </div>
-                  </ObjectUploader>
+                    <span>Upload Photos</span>
+                  </CarbonPhotoUploader>
 
                   {/* Uploaded photos list */}
                   {uploadedPhotos.length > 0 && (
