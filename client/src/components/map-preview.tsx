@@ -81,19 +81,31 @@ export default function MapPreview({ gpxData, photos, onPhotoClick, className = 
   })();
   const hasValidTrack = coordinates && coordinates.length > 0;
 
-  // Calculate bounds for preview image
+  // Calculate bounds for preview image using all coordinates
   const getBounds = () => {
     if (!hasValidTrack) return null;
     
     const lats = coordinates.map((coord: number[]) => coord[1]);
     const lngs = coordinates.map((coord: number[]) => coord[0]);
     
-    return {
+    const bounds = {
       minLat: Math.min(...lats),
       maxLat: Math.max(...lats),
       minLng: Math.min(...lngs),
       maxLng: Math.max(...lngs)
     };
+    
+    // Ensure bounds are valid
+    if (bounds.minLat === bounds.maxLat) {
+      bounds.minLat -= 0.001;
+      bounds.maxLat += 0.001;
+    }
+    if (bounds.minLng === bounds.maxLng) {
+      bounds.minLng -= 0.001;
+      bounds.maxLng += 0.001;
+    }
+    
+    return bounds;
   };
 
   const bounds = getBounds();
@@ -115,11 +127,28 @@ export default function MapPreview({ gpxData, photos, onPhotoClick, className = 
     const centerLat = (bounds.minLat + bounds.maxLat) / 2;
     const centerLng = (bounds.minLng + bounds.maxLng) / 2;
     
-    // Simple zoom calculation based on bounds
+    // Calculate zoom to fit the entire route with padding
     const latDiff = bounds.maxLat - bounds.minLat;
     const lngDiff = bounds.maxLng - bounds.minLng;
-    const maxDiff = Math.max(latDiff, lngDiff);
-    const zoom = Math.max(8, Math.min(15, 15 - Math.log2(maxDiff * 100)));
+    
+    // Add padding around the route (20% on each side)
+    const latPadding = latDiff * 0.2;
+    const lngPadding = lngDiff * 0.2;
+    
+    const paddedLatDiff = latDiff + (latPadding * 2);
+    const paddedLngDiff = lngDiff + (lngPadding * 2);
+    
+    // Calculate zoom based on the larger dimension to ensure entire route fits
+    const maxDiff = Math.max(paddedLatDiff, paddedLngDiff);
+    
+    // More conservative zoom calculation to ensure full route visibility
+    let zoom;
+    if (maxDiff > 0.1) zoom = 10;
+    else if (maxDiff > 0.05) zoom = 11;
+    else if (maxDiff > 0.02) zoom = 12;
+    else if (maxDiff > 0.01) zoom = 13;
+    else if (maxDiff > 0.005) zoom = 14;
+    else zoom = 15;
 
     // Create path string for the route - simplify to avoid URL length limits
     const simplifiedCoords = coordinates.filter((_, index) => index % Math.max(1, Math.floor(coordinates.length / 100)) === 0);
@@ -141,7 +170,13 @@ export default function MapPreview({ gpxData, photos, onPhotoClick, className = 
 
     const url = `https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/static/${encodedPath}${markers}/${centerLng},${centerLat},${zoom}/400x300@2x?access_token=${accessToken}`;
     console.log('Generated static map URL (simplified coords):', url.substring(0, 100) + '...');
-    console.log('Original coords:', coordinates.length, 'Simplified coords:', simplifiedCoords.length);
+    console.log('Route stats:', {
+      originalCoords: coordinates.length,
+      simplifiedCoords: simplifiedCoords.length,
+      bounds,
+      zoom,
+      center: [centerLng, centerLat]
+    });
     return url;
   };
 
