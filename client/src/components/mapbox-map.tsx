@@ -31,10 +31,22 @@ export default function MapboxMap({ gpxData, photos, onPhotoClick }: MapboxMapPr
       if (!map.current) return;
 
       // Add GPX track if available
-      if (gpxData && gpxData.features) {
+      if (gpxData && gpxData.coordinates && gpxData.coordinates.length > 0) {
+        const geojsonData = {
+          type: 'FeatureCollection',
+          features: [{
+            type: 'Feature',
+            properties: {},
+            geometry: {
+              type: 'LineString',
+              coordinates: gpxData.coordinates
+            }
+          }]
+        };
+
         map.current.addSource('gpx-track', {
           type: 'geojson',
-          data: gpxData,
+          data: geojsonData,
         });
 
         map.current.addLayer({
@@ -53,12 +65,8 @@ export default function MapboxMap({ gpxData, photos, onPhotoClick }: MapboxMapPr
 
         // Fit map to GPX bounds
         const bounds = new mapboxgl.LngLatBounds();
-        gpxData.features.forEach((feature: any) => {
-          if (feature.geometry.type === 'LineString') {
-            feature.geometry.coordinates.forEach((coord: [number, number]) => {
-              bounds.extend(coord);
-            });
-          }
+        gpxData.coordinates.forEach((coord: [number, number]) => {
+          bounds.extend(coord);
         });
         
         if (!bounds.isEmpty()) {

@@ -1,7 +1,8 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertFieldNoteSchema } from "@shared/schema";
+import { insertFieldNoteSchema, insertPhotoSchema } from "@shared/schema";
+import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Get all field notes with optional filters
@@ -84,6 +85,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error creating field note:", error);
       res.status(500).json({ message: "Failed to create field note" });
+    }
+  });
+
+  // Object Storage endpoints for photo uploads
+  const objectStorageService = new ObjectStorageService();
+
+  // Endpoint to get upload URL for photos
+  app.post("/api/photos/upload", async (req, res) => {
+    try {
+      const uploadURL = await objectStorageService.getObjectEntityUploadURL();
+      res.json({ uploadURL });
+    } catch (error) {
+      console.error("Error getting upload URL:", error);
+      res.status(500).json({ error: "Failed to get upload URL" });
+    }
+  });
+
+  // Endpoint to create photo record after upload
+  app.post("/api/photos", async (req, res) => {
+    try {
+      const validatedData = insertPhotoSchema.parse(req.body);
+      
+      // Normalize the URL if it's a full storage URL
+      if (validatedData.url) {
+        validatedData.url = objectStorageService.normalizeObjectEntityPath(validatedData.url);
+      }
+      
+      const photo = await storage.createPhoto(validatedData);
+      res.status(201).json(photo);
+    } catch (error) {
+      console.error("Error creating photo:", error);
+      res.status(500).json({ error: "Failed to create photo" });
+    }
+  });
+
+  // Endpoint to serve uploaded photos
+  app.get("/objects/:objectPath(*)", async (req, res) => {
+    try {
+      const objectFile = await objectStorageService.getObjectEntityFile(req.path);
+      await objectStorageService.downloadObject(objectFile, res);
+    } catch (error) {
+      console.error("Error serving photo:", error);
+      if (error instanceof ObjectNotFoundError) {
+        return res.status(404).json({ error: "Photo not found" });
+      }
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Endpoint to serve public assets
+  app.get("/public-objects/:filePath(*)", async (req, res) => {
+    const filePath = req.params.filePath;
+    try {
+      const file = await objectStorageService.searchPublicObject(filePath);
+      if (!file) {
+        return res.status(404).json({ error: "File not found" });
+      }
+      await objectStorageService.downloadObject(file, res);
+    } catch (error) {
+      console.error("Error searching for public object:", error);
+      return res.status(500).json({ error: "Internal server error" });
     }
   });
 

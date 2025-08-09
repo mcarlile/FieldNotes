@@ -9,9 +9,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Upload, Plus } from "lucide-react";
+import { Upload, Plus, Image, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { ObjectUploader } from "@/components/ObjectUploader";
 
 const fieldNoteFormSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -27,6 +28,10 @@ type FieldNoteFormData = z.infer<typeof fieldNoteFormSchema>;
 export default function AdminPage() {
   const [gpxFile, setGpxFile] = useState<File | null>(null);
   const [gpxContent, setGpxContent] = useState<string>("");
+  const [uploadedPhotos, setUploadedPhotos] = useState<Array<{
+    url: string;
+    filename: string;
+  }>>([]);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -51,6 +56,7 @@ export default function AdminPage() {
       form.reset();
       setGpxFile(null);
       setGpxContent("");
+      setUploadedPhotos([]);
       queryClient.invalidateQueries({ queryKey: ["/api/field-notes"] });
     },
     onError: (error) => {
@@ -169,11 +175,60 @@ export default function AdminPage() {
       }
     }
 
-    createFieldNoteMutation.mutate({ 
+    const fieldNoteData = { 
       ...data, 
       date: new Date(data.date), 
       gpxData 
+    };
+
+    // Create field note first, then create photos
+    createFieldNoteMutation.mutate(fieldNoteData, {
+      onSuccess: (newFieldNote) => {
+        // Create photo records for uploaded photos
+        if (uploadedPhotos.length > 0) {
+          uploadedPhotos.forEach(async (photo) => {
+            try {
+              await apiRequest("/api/photos", "POST", {
+                fieldNoteId: newFieldNote.id,
+                filename: photo.filename,
+                url: photo.url,
+                // TODO: Add EXIF data extraction if needed
+              });
+            } catch (error) {
+              console.error("Error creating photo record:", error);
+            }
+          });
+        }
+      },
     });
+  };
+
+  // Photo upload handlers
+  const handlePhotoUploadParameters = async () => {
+    const response = await apiRequest("/api/photos/upload", "POST");
+    const data = await response.json();
+    return {
+      method: "PUT" as const,
+      url: data.uploadURL,
+    };
+  };
+
+  const handlePhotoUploadComplete = (result: any) => {
+    if (result.successful && result.successful.length > 0) {
+      const newPhotos = result.successful.map((file: any) => ({
+        url: file.uploadURL,
+        filename: file.name,
+      }));
+      setUploadedPhotos(prev => [...prev, ...newPhotos]);
+      toast({
+        title: "Photos Uploaded",
+        description: `${newPhotos.length} photo(s) uploaded successfully`,
+      });
+    }
+  };
+
+  const removePhoto = (index: number) => {
+    setUploadedPhotos(prev => prev.filter((_, i) => i !== index));
   };
 
   return (
@@ -338,6 +393,54 @@ export default function AdminPage() {
                             ⚠️ Large file detected. Upload may take longer.
                           </p>
                         )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Photo Upload Section */}
+                <div>
+                  <FormLabel>Photos</FormLabel>
+                  <div className="mt-2 space-y-3">
+                    <ObjectUploader
+                      maxNumberOfFiles={10}
+                      maxFileSize={50 * 1024 * 1024} // 50MB
+                      onGetUploadParameters={handlePhotoUploadParameters}
+                      onComplete={handlePhotoUploadComplete}
+                      buttonClassName="w-full"
+                    >
+                      <div className="flex items-center justify-center gap-2">
+                        <Image className="h-4 w-4" />
+                        <span>Upload Photos</span>
+                      </div>
+                    </ObjectUploader>
+                    
+                    {uploadedPhotos.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-sm text-muted-foreground">
+                          Uploaded Photos ({uploadedPhotos.length})
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {uploadedPhotos.map((photo, index) => (
+                            <div
+                              key={index}
+                              className="relative bg-carbon-gray-20 p-2 rounded border flex items-center justify-between"
+                            >
+                              <span className="text-sm truncate mr-2">
+                                {photo.filename}
+                              </span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removePhoto(index)}
+                                className="h-6 w-6 p-0 hover:bg-red-100"
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>

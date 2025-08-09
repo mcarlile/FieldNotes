@@ -86,6 +86,19 @@ export class DatabaseStorage implements IStorage {
       .returning();
     return photo;
   }
+
+  async getPhotoById(id: string): Promise<Photo | undefined> {
+    const [photo] = await db.select().from(photos).where(eq(photos.id, id));
+    return photo || undefined;
+  }
+
+  async createPhoto(insertPhoto: InsertPhoto): Promise<Photo> {
+    const [photo] = await db
+      .insert(photos)
+      .values(insertPhoto)
+      .returning();
+    return photo;
+  }
 }
 
 // Temporary in-memory storage with sample data for demonstration
