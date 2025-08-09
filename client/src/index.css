@@ -1,6 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap');
 @import 'https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css';
 
+@import '@carbon/styles/css/styles.css';
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

@@ -1,4 +1,4 @@
-import { Link } from "wouter";
+import { ClickableTile, Tag } from "@carbon/react";
 import type { FieldNote } from "@shared/schema";
 import MapboxRoutePreview from "./mapbox-route-preview";
 
@@ -16,30 +16,37 @@ export default function FieldNoteCard({ fieldNote }: FieldNoteCardProps) {
   };
 
   return (
-    <Link href={`/field-notes/${fieldNote.id}`}>
-      <div className="carbon-tile bg-white p-6 cursor-pointer border border-carbon-gray-20 hover:border-carbon-blue hover:shadow-md transition-all duration-150">
-        {/* Mapbox Route Preview */}
+    <ClickableTile 
+      className="!p-0 !border-0 hover:shadow-lg transition-shadow"
+      onClick={() => window.location.href = `/field-notes/${fieldNote.id}`}
+    >
+      {/* Mapbox Route Preview */}
+      <div className="w-full">
         <MapboxRoutePreview 
           fieldNote={fieldNote} 
-          className="w-full h-32 mb-4 rounded-sm overflow-hidden"
+          className="w-full h-32 rounded-t-sm overflow-hidden"
         />
-        
-        <h3 className="text-lg font-medium mb-2 text-carbon-gray-100 font-ibm">{fieldNote.title}</h3>
-        <p className="text-sm text-carbon-gray-70 mb-3 font-ibm line-clamp-2">{fieldNote.description}</p>
-        
-        <div className="flex justify-between text-xs text-carbon-gray-70 font-ibm">
-          <span className="capitalize">{fieldNote.tripType}</span>
-          <span>{formatDate(fieldNote.date.toString())}</span>
+      </div>
+      
+      <div className="p-4">
+        <div className="flex justify-between items-start mb-2">
+          <h3 className="text-lg font-medium text-gray-900">{fieldNote.title}</h3>
+          <Tag type="blue" size="sm">
+            {fieldNote.tripType}
+          </Tag>
         </div>
         
-        <div className="mt-2 text-xs text-carbon-gray-70 font-ibm">
-          <span>
+        <p className="text-sm text-gray-600 mb-3 line-clamp-2">{fieldNote.description}</p>
+        
+        <div className="flex justify-between items-center text-xs text-gray-500">
+          <span>{formatDate(fieldNote.date.toString())}</span>
+          <div>
             {fieldNote.distance && `${fieldNote.distance} miles`}
             {fieldNote.distance && fieldNote.elevationGain && " • "}
-            {fieldNote.elevationGain && `${fieldNote.elevationGain} ft elevation`}
-          </span>
+            {fieldNote.elevationGain && `${fieldNote.elevationGain} ft`}
+          </div>
         </div>
       </div>
-    </Link>
+    </ClickableTile>
   );
 }
