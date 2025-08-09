@@ -88,6 +88,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Update field note
+  app.put("/api/field-notes/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      // Convert string date to Date object
+      const bodyWithDate = {
+        ...req.body,
+        date: req.body.date ? new Date(req.body.date) : undefined
+      };
+      
+      const result = insertFieldNoteSchema.safeParse(bodyWithDate);
+      if (!result.success) {
+        return res.status(400).json({ 
+          message: "Invalid field note data",
+          errors: result.error.errors 
+        });
+      }
+      
+      const fieldNote = await storage.updateFieldNote(id, result.data);
+      if (!fieldNote) {
+        return res.status(404).json({ message: "Field note not found" });
+      }
+      
+      res.json(fieldNote);
+    } catch (error) {
+      console.error("Error updating field note:", error);
+      res.status(500).json({ message: "Failed to update field note" });
+    }
+  });
+
   // Object Storage endpoints for photo uploads
   const objectStorageService = new ObjectStorageService();
 

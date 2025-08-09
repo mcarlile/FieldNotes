@@ -1,8 +1,9 @@
-import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { useParams, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,6 +14,7 @@ import { Upload, Plus, Image, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { ObjectUploader } from "@/components/ObjectUploader";
+import type { FieldNote } from "@shared/schema";
 
 const fieldNoteFormSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -26,6 +28,10 @@ const fieldNoteFormSchema = z.object({
 type FieldNoteFormData = z.infer<typeof fieldNoteFormSchema>;
 
 export default function AdminPage() {
+  const { id } = useParams();
+  const [, setLocation] = useLocation();
+  const isEditing = !!id;
+  
   const [gpxFile, setGpxFile] = useState<File | null>(null);
   const [gpxContent, setGpxContent] = useState<string>("");
   const [uploadedPhotos, setUploadedPhotos] = useState<Array<{
@@ -34,6 +40,17 @@ export default function AdminPage() {
   }>>([]);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Fetch existing field note data for editing
+  const { data: existingFieldNote } = useQuery<FieldNote>({
+    queryKey: ["/api/field-notes", id],
+    queryFn: async () => {
+      const response = await fetch(`/api/field-notes/${id}`);
+      if (!response.ok) throw new Error("Failed to fetch field note");
+      return response.json();
+    },
+    enabled: isEditing,
+  });
 
   const form = useForm<FieldNoteFormData>({
     resolver: zodResolver(fieldNoteFormSchema),
@@ -47,17 +64,52 @@ export default function AdminPage() {
     },
   });
 
-  const createFieldNoteMutation = useMutation({
+  // Populate form with existing data when editing
+  useEffect(() => {
+    if (existingFieldNote && isEditing) {
+      form.reset({
+        title: existingFieldNote.title,
+        description: existingFieldNote.description,
+        tripType: existingFieldNote.tripType,
+        date: new Date(existingFieldNote.date).toISOString().split('T')[0],
+        distance: existingFieldNote.distance || undefined,
+        elevationGain: existingFieldNote.elevationGain || undefined,
+      });
+
+      // Set GPX data if available
+      if (existingFieldNote.gpxData) {
+        setGpxContent(""); // We don't need to recreate the file content for editing
+      }
+    }
+  }, [existingFieldNote, isEditing, form]);
+
+  const saveFieldNoteMutation = useMutation({
     mutationFn: async (data: FieldNoteFormData & { gpxData?: any, date: Date }) => {
-      return apiRequest("/api/field-notes", "POST", data);
+      if (isEditing) {
+        return apiRequest(`/api/field-notes/${id}`, "PUT", data);
+      } else {
+        return apiRequest("/api/field-notes", "POST", data);
+      }
     },
-    onSuccess: () => {
-      toast({ title: "Success", description: "Field note created successfully!" });
+    onSuccess: (result) => {
+      const successMessage = isEditing ? "Field note updated" : "Field note created";
+      const toastDescription = isEditing ? "Field note updated successfully!" : "Field note created successfully!";
+      
+      toast({ 
+        title: "Success", 
+        description: toastDescription,
+        className: "bg-green-50 border-green-200 text-green-900" 
+      });
+      
       form.reset();
       setGpxFile(null);
       setGpxContent("");
       setUploadedPhotos([]);
       queryClient.invalidateQueries({ queryKey: ["/api/field-notes"] });
+      
+      // Navigate to the field note detail page
+      const fieldNoteId = isEditing ? id : result.id;
+      setLocation(`/field-notes/${fieldNoteId}`);
     },
     onError: (error) => {
       let errorMessage = "Failed to create field note";
@@ -181,15 +233,15 @@ export default function AdminPage() {
       gpxData 
     };
 
-    // Create field note first, then create photos
-    createFieldNoteMutation.mutate(fieldNoteData, {
-      onSuccess: (newFieldNote) => {
-        // Create photo records for uploaded photos
+    // Save field note (create or update)
+    saveFieldNoteMutation.mutate(fieldNoteData, {
+      onSuccess: (savedFieldNote) => {
+        // Create photo records for uploaded photos (only for new uploads)
         if (uploadedPhotos.length > 0) {
           uploadedPhotos.forEach(async (photo) => {
             try {
               await apiRequest("/api/photos", "POST", {
-                fieldNoteId: newFieldNote.id,
+                fieldNoteId: savedFieldNote.id,
                 filename: photo.filename,
                 url: photo.url,
                 // TODO: Add EXIF data extraction if needed
@@ -238,10 +290,13 @@ export default function AdminPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Plus className="h-5 w-5" />
-              Add New Field Note
+              {isEditing ? "Edit Field Note" : "Add New Field Note"}
             </CardTitle>
             <CardDescription>
-              Create a new field note with GPX track data and details
+              {isEditing 
+                ? "Update your field note details and GPX track."
+                : "Create a new field note with GPX track data and details"
+              }
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -446,21 +501,32 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                <Button 
-                  type="submit" 
-                  className="w-full"
-                  data-testid="button-submit"
-                  disabled={createFieldNoteMutation.isPending}
-                >
-                  {createFieldNoteMutation.isPending ? (
-                    "Creating..."
-                  ) : (
-                    <>
-                      <Upload className="h-4 w-4 mr-2" />
-                      Create Field Note
-                    </>
-                  )}
-                </Button>
+                <div className="flex gap-4">
+                  <Button 
+                    type="button"
+                    variant="outline" 
+                    className="flex-1"
+                    onClick={() => setLocation(isEditing ? `/field-notes/${id}` : "/")}
+                    data-testid="button-cancel"
+                  >
+                    {isEditing ? "Discard Changes" : "Cancel"}
+                  </Button>
+                  <Button 
+                    type="submit" 
+                    className="flex-1"
+                    data-testid="button-submit"
+                    disabled={saveFieldNoteMutation.isPending}
+                  >
+                    {saveFieldNoteMutation.isPending ? (
+                      isEditing ? "Saving..." : "Creating..."
+                    ) : (
+                      <>
+                        <Upload className="h-4 w-4 mr-2" />
+                        {isEditing ? "Save Changes" : "Create Field Note"}
+                      </>
+                    )}
+                  </Button>
+                </div>
               </form>
             </Form>
           </CardContent>

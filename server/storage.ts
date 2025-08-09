@@ -11,6 +11,7 @@ export interface IStorage {
   }): Promise<FieldNote[]>;
   getFieldNoteById(id: string): Promise<FieldNote | undefined>;
   createFieldNote(fieldNote: InsertFieldNote): Promise<FieldNote>;
+  updateFieldNote(id: string, fieldNote: InsertFieldNote): Promise<FieldNote | undefined>;
   
   // Photos
   getPhotosByFieldNoteId(fieldNoteId: string): Promise<Photo[]>;
@@ -68,6 +69,15 @@ export class DatabaseStorage implements IStorage {
       .values(insertFieldNote)
       .returning();
     return fieldNote;
+  }
+
+  async updateFieldNote(id: string, updateFieldNote: InsertFieldNote): Promise<FieldNote | undefined> {
+    const [fieldNote] = await db
+      .update(fieldNotes)
+      .set(updateFieldNote)
+      .where(eq(fieldNotes.id, id))
+      .returning();
+    return fieldNote || undefined;
   }
 
   async getPhotosByFieldNoteId(fieldNoteId: string): Promise<Photo[]> {

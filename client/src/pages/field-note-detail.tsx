@@ -2,9 +2,11 @@ import { useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { Link } from "wouter";
+import { Button } from "@/components/ui/button";
 import MapboxMap from "@/components/mapbox-map";
 import PhotoLightbox from "@/components/photo-lightbox";
 import { useState } from "react";
+import { Edit } from "lucide-react";
 import type { FieldNote, Photo } from "@shared/schema";
 
 export default function FieldNoteDetail() {
@@ -95,7 +97,15 @@ export default function FieldNoteDetail() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-3xl font-semibold mb-2 text-carbon-gray-100 font-ibm">{fieldNote.title}</h1>
+          <div className="flex justify-between items-start mb-4">
+            <h1 className="text-3xl font-semibold text-carbon-gray-100 font-ibm">{fieldNote.title}</h1>
+            <Button asChild variant="outline" className="gap-2">
+              <Link href={`/admin/${fieldNote.id}`}>
+                <Edit className="h-4 w-4" />
+                Edit
+              </Link>
+            </Button>
+          </div>
           <p className="text-carbon-gray-70 mb-4 font-ibm">{fieldNote.description}</p>
           <div className="flex flex-wrap gap-6 text-sm text-carbon-gray-70 font-ibm">
             <span><strong>Trip Type:</strong> {fieldNote.tripType}</span>
