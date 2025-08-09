@@ -5,6 +5,13 @@ export interface GpxStats {
   elevationGain: number; // in feet
   date: Date | null; // extracted from GPX metadata or track points
   coordinates: [number, number][];
+  elevationProfile: ElevationPoint[];
+}
+
+export interface ElevationPoint {
+  distance: number; // cumulative distance in miles
+  elevation: number; // elevation in feet
+  coordinates: [number, number]; // [longitude, latitude]
 }
 
 /**
@@ -80,6 +87,7 @@ export function parseGpxData(gpxContent: string): GpxStats {
   let previousLon: number | null = null;
   let previousEle: number | null = null;
   const coordinates: [number, number][] = [];
+  const elevationProfile: ElevationPoint[] = [];
   
   trackPoints.forEach((point: any) => {
     const lat = parseFloat(point.getAttribute("lat") || "0");
@@ -97,15 +105,26 @@ export function parseGpxData(gpxContent: string): GpxStats {
       totalDistance += distance;
     }
     
-    // Calculate elevation gain
+    // Calculate elevation gain and build elevation profile
     const eleElements = point.getElementsByTagName("ele");
+    let currentElevation = 0;
     if (eleElements.length > 0) {
       const ele = parseFloat(eleElements[0].textContent || "0");
-      if (!isNaN(ele) && previousEle !== null && ele > previousEle) {
-        totalElevationGain += metersToFeet(ele - previousEle);
+      if (!isNaN(ele)) {
+        currentElevation = metersToFeet(ele);
+        if (previousEle !== null && ele > previousEle) {
+          totalElevationGain += metersToFeet(ele - previousEle);
+        }
+        previousEle = ele;
       }
-      previousEle = ele;
     }
+    
+    // Add point to elevation profile
+    elevationProfile.push({
+      distance: totalDistance,
+      elevation: currentElevation,
+      coordinates: [lon, lat]
+    });
     
     previousLat = lat;
     previousLon = lon;
@@ -119,6 +138,7 @@ export function parseGpxData(gpxContent: string): GpxStats {
     distance: Math.round(totalDistance * 100) / 100, // Round to 2 decimal places
     elevationGain: Math.round(totalElevationGain),
     date: extractedDate,
-    coordinates
+    coordinates,
+    elevationProfile
   };
 }

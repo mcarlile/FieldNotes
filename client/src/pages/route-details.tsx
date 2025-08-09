@@ -12,8 +12,10 @@ import {
 import { ArrowLeft } from "@carbon/icons-react";
 import MapboxMap from "@/components/mapbox-map";
 import PhotoLightbox from "@/components/photo-lightbox";
+import ElevationProfile from "@/components/elevation-profile";
+import { parseGpxData } from "@shared/gpx-utils";
 import type { FieldNote, Photo } from "@shared/schema";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 
 export default function RouteDetails() {
   const { id } = useParams();
@@ -34,6 +36,21 @@ export default function RouteDetails() {
 
   const fieldNote = fieldNoteData;
   const photos = fieldNoteData?.photos || [];
+
+  // Parse GPX data to get elevation profile
+  const parsedGpxData = useMemo(() => {
+    if (!fieldNote?.gpxData) return null;
+    try {
+      if (typeof fieldNote.gpxData === 'string') {
+        return parseGpxData(fieldNote.gpxData);
+      } else if (typeof fieldNote.gpxData === 'object' && fieldNote.gpxData.elevationProfile) {
+        return fieldNote.gpxData;
+      }
+    } catch (error) {
+      console.error('Failed to parse GPX data for elevation profile:', error);
+    }
+    return null;
+  }, [fieldNote?.gpxData]);
 
   if (isLoading) {
     return (
@@ -129,14 +146,35 @@ export default function RouteDetails() {
               </h1>
             </div>
 
-            {/* Full-screen Interactive Map */}
-            <div className="w-full h-[calc(100vh-12rem)] bg-white rounded-lg shadow-sm overflow-hidden">
-              <MapboxMap
-                gpxData={fieldNote.gpxData}
-                photos={photos}
-                onPhotoClick={setSelectedPhotoId}
-                className="w-full h-full"
-              />
+            {/* Content Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Interactive Map */}
+              <div className="lg:col-span-2">
+                <div className="w-full h-[60vh] bg-white rounded-lg shadow-sm overflow-hidden">
+                  <MapboxMap
+                    gpxData={fieldNote.gpxData}
+                    photos={photos}
+                    onPhotoClick={setSelectedPhotoId}
+                    className="w-full h-full"
+                  />
+                </div>
+              </div>
+
+              {/* Elevation Profile */}
+              <div className="lg:col-span-1">
+                <div className="bg-white rounded-lg shadow-sm p-6">
+                  {parsedGpxData && parsedGpxData.elevationProfile ? (
+                    <ElevationProfile 
+                      elevationProfile={parsedGpxData.elevationProfile}
+                      className="w-full"
+                    />
+                  ) : (
+                    <div className="flex items-center justify-center h-64 bg-gray-50 rounded">
+                      <p className="text-gray-500">No elevation data available</p>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </Column>
         </Grid>

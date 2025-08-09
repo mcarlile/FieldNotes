@@ -128,23 +128,26 @@ export default function MapboxMap({ gpxData, photos, onPhotoClick, className }: 
           const el = document.createElement('div');
           el.className = 'photo-marker';
           el.style.cssText = `
-            width: 12px;
-            height: 12px;
-            background: #0f62fe;
-            border: 2px solid white;
+            width: 16px;
+            height: 16px;
+            background: #ff6900;
+            border: 3px solid white;
             border-radius: 50%;
             cursor: pointer;
-            transition: transform 0.15s ease;
+            transition: all 0.15s ease;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
           `;
           
           el.addEventListener('mouseenter', () => {
-            el.style.transform = 'scale(1.5)';
-            el.style.background = '#ff6900';
+            el.style.transform = 'scale(1.3)';
+            el.style.background = '#ff4500';
+            el.style.boxShadow = '0 4px 8px rgba(0,0,0,0.3)';
           });
           
           el.addEventListener('mouseleave', () => {
             el.style.transform = 'scale(1)';
-            el.style.background = '#0f62fe';
+            el.style.background = '#ff6900';
+            el.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
           });
           
           el.addEventListener('click', () => {
