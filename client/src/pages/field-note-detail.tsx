@@ -223,6 +223,19 @@ export default function FieldNoteDetail() {
                             src={photo.url}
                             alt="Field note photo"
                             className="w-full h-full object-cover"
+                            onError={(e) => {
+                              console.error(`Failed to load photo: ${photo.url}`);
+                              // Show a placeholder or hide the broken image
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = 'none';
+                              const parent = target.parentElement;
+                              if (parent && !parent.querySelector('.error-message')) {
+                                const errorDiv = document.createElement('div');
+                                errorDiv.className = 'error-message flex items-center justify-center w-full h-full text-xs text-gray-500 bg-gray-100';
+                                errorDiv.textContent = 'Image not available';
+                                parent.appendChild(errorDiv);
+                              }
+                            }}
                           />
                         </button>
                       ))}

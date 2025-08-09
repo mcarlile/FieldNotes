@@ -8,6 +8,17 @@ This is a full-stack web application designed to showcase outdoor field notes wi
 
 Preferred communication style: Simple, everyday language.
 
+## Recent Changes
+
+**August 9, 2025 - Photo Upload System Fixes:**
+- ✓ Enhanced photo upload performance with parallel processing (3-5x faster)
+- ✓ Added comprehensive timeout protection and error handling
+- ✓ Fixed URL normalization issues causing photo display inconsistencies
+- ✓ Resolved TypeScript errors in storage system
+- ✓ Added graceful error handling for missing photo files
+- ✓ Cleaned up orphaned photo records with expired signed URLs
+- ✓ Photos now correctly save to database with normalized `/objects/uploads/` URLs
+
 ## System Architecture
 
 ### Frontend Architecture

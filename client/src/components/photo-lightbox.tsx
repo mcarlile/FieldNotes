@@ -58,6 +58,18 @@ export default function PhotoLightbox({ photoId, onClose }: PhotoLightboxProps) 
               src={photo.url}
               alt={photo.filename}
               className="w-full h-auto max-h-[60vh] object-contain"
+              onError={(e) => {
+                console.error(`Failed to load photo in lightbox: ${photo.url}`);
+                const target = e.target as HTMLImageElement;
+                target.style.display = 'none';
+                const parent = target.parentElement;
+                if (parent && !parent.querySelector('.error-message')) {
+                  const errorDiv = document.createElement('div');
+                  errorDiv.className = 'error-message flex items-center justify-center w-full h-60 text-gray-500 bg-gray-100';
+                  errorDiv.textContent = 'Photo file not found';
+                  parent.appendChild(errorDiv);
+                }
+              }}
             />
           </div>
 

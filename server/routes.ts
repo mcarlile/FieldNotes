@@ -204,9 +204,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const objectFile = await objectStorageService.getObjectEntityFile(req.path);
       await objectStorageService.downloadObject(objectFile, res);
     } catch (error) {
-      console.error("Error serving photo:", error);
+      console.error(`Error serving photo ${req.path}:`, error);
       if (error instanceof ObjectNotFoundError) {
-        return res.status(404).json({ error: "Photo not found" });
+        // Return a placeholder image or proper 404 response
+        return res.status(404).json({ error: "Photo not found", path: req.path });
       }
       return res.status(500).json({ error: "Internal server error" });
     }
