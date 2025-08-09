@@ -47,25 +47,30 @@ export function parseGpxData(gpxContent: string): GpxStats {
   let extractedDate: Date | null = null;
   
   // Try to get date from GPX metadata first
-  const metadataTime = xmlDoc.querySelector("metadata time");
-  if (metadataTime?.textContent) {
-    extractedDate = new Date(metadataTime.textContent);
+  const metadataElements = xmlDoc.getElementsByTagName("metadata");
+  if (metadataElements.length > 0) {
+    const timeElements = metadataElements[0].getElementsByTagName("time");
+    if (timeElements.length > 0 && timeElements[0].textContent) {
+      extractedDate = new Date(timeElements[0].textContent);
+    }
   }
   
   // If no metadata time, try to get from first track point timestamp
-  if (!extractedDate) {
-    const firstTrackPoint = trackPoints[0];
-    const timeElement = firstTrackPoint?.querySelector("time");
-    if (timeElement?.textContent) {
-      extractedDate = new Date(timeElement.textContent);
+  if (!extractedDate && trackPoints.length > 0) {
+    const timeElements = trackPoints[0].getElementsByTagName("time");
+    if (timeElements.length > 0 && timeElements[0].textContent) {
+      extractedDate = new Date(timeElements[0].textContent);
     }
   }
   
   // If still no date, try track segment metadata
   if (!extractedDate) {
-    const trkTime = xmlDoc.querySelector("trk time");
-    if (trkTime?.textContent) {
-      extractedDate = new Date(trkTime.textContent);
+    const trkElements = xmlDoc.getElementsByTagName("trk");
+    if (trkElements.length > 0) {
+      const timeElements = trkElements[0].getElementsByTagName("time");
+      if (timeElements.length > 0 && timeElements[0].textContent) {
+        extractedDate = new Date(timeElements[0].textContent);
+      }
     }
   }
   
