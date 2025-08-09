@@ -110,8 +110,8 @@ export default function FieldNoteDetail() {
           <div className="flex flex-wrap gap-6 text-sm text-carbon-gray-70 font-ibm">
             <span><strong>Trip Type:</strong> {fieldNote.tripType}</span>
             <span><strong>Date:</strong> {formatDate(fieldNote.date.toString())}</span>
-            {fieldNote.distance && <span><strong>Distance:</strong> {fieldNote.distance} km</span>}
-            {fieldNote.elevationGain && <span><strong>Elevation Gain:</strong> {fieldNote.elevationGain}m</span>}
+            {fieldNote.distance && <span><strong>Distance:</strong> {fieldNote.distance} miles</span>}
+            {fieldNote.elevationGain && <span><strong>Elevation Gain:</strong> {fieldNote.elevationGain} ft</span>}
             <span><strong>Photos:</strong> {photos.length}</span>
           </div>
         </div>
