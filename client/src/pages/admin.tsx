@@ -63,6 +63,8 @@ export default function AdminPage() {
   const [uploadedPhotos, setUploadedPhotos] = useState<Array<{
     url: string;
     filename: string;
+    caption: string;
+    id?: string; // Optional ID for existing photos
   }>>([]);
   const [selectedTripType, setSelectedTripType] = useState<string>("hiking");
   const { toast } = useToast();
@@ -84,6 +86,17 @@ export default function AdminPage() {
     queryFn: async () => {
       const response = await fetch(`/api/field-notes/${id}`);
       if (!response.ok) throw new Error("Failed to fetch field note");
+      return response.json();
+    },
+    enabled: isEditing,
+  });
+
+  // Fetch existing photos for editing
+  const { data: existingPhotos = [] } = useQuery({
+    queryKey: ["/api/field-notes", id, "photos"],
+    queryFn: async () => {
+      const response = await fetch(`/api/field-notes/${id}/photos`);
+      if (!response.ok) throw new Error("Failed to fetch photos");
       return response.json();
     },
     enabled: isEditing,
@@ -138,6 +151,7 @@ export default function AdminPage() {
       const newPhotos = result.successful.map((upload: any) => ({
         url: upload.uploadURL,
         filename: upload.name,
+        caption: '',
       }));
       setUploadedPhotos(prev => [...prev, ...newPhotos]);
       
@@ -146,6 +160,18 @@ export default function AdminPage() {
         description: `${result.successful.length} photo(s) uploaded successfully!`,
       });
     }
+  };
+
+  const updatePhotoCaption = (index: number, caption: string) => {
+    setUploadedPhotos(prev => 
+      prev.map((photo, i) => 
+        i === index ? { ...photo, caption } : photo
+      )
+    );
+  };
+
+  const removePhoto = (index: number) => {
+    setUploadedPhotos(prev => prev.filter((_, i) => i !== index));
   };
 
   // Form submission
@@ -233,6 +259,19 @@ export default function AdminPage() {
       setGpxContent(existingFieldNote.gpxData as string);
     }
   }, [existingFieldNote, form]);
+
+  // Load existing photos when editing
+  useEffect(() => {
+    if (existingPhotos && existingPhotos.length > 0) {
+      const formattedPhotos = existingPhotos.map((photo: any) => ({
+        url: `/public-objects/${photo.filename}`,
+        filename: photo.filename,
+        caption: photo.altText || '',
+        id: photo.id, // Keep track of existing photo IDs
+      }));
+      setUploadedPhotos(formattedPhotos);
+    }
+  }, [existingPhotos]);
 
   if (isLoadingFieldNote) {
     return (
@@ -373,30 +412,76 @@ export default function AdminPage() {
                     </div>
                   </ObjectUploader>
 
-                  {/* Uploaded photos preview */}
+                  {/* Uploaded photos list */}
                   {uploadedPhotos.length > 0 && (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                      {uploadedPhotos.map((photo, index) => (
-                        <div key={index} className="relative group">
-                          <div className="w-full h-24 bg-gray-200 rounded overflow-hidden">
-                            <img
-                              src={photo.url}
-                              alt={`Upload ${index + 1}`}
-                              className="w-full h-full object-cover"
-                            />
-                          </div>
-                          <CarbonButton
-                            kind="danger--tertiary"
-                            size="sm"
-                            className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={() => {
-                              setUploadedPhotos(prev => prev.filter((_, i) => i !== index));
-                            }}
-                            renderIcon={Close}
-                            iconDescription="Remove photo"
-                          />
-                        </div>
-                      ))}
+                    <div className="space-y-4">
+                      <h4 className="text-sm font-medium text-gray-700">
+                        Uploaded Photos ({uploadedPhotos.length})
+                      </h4>
+                      
+                      <div className="space-y-4">
+                        {uploadedPhotos.map((photo, index) => (
+                          <Tile key={index} className="p-4">
+                            <div className="flex gap-4">
+                              {/* Photo thumbnail */}
+                              <div className="flex-shrink-0 relative">
+                                <div className="w-20 h-20 bg-gray-200 rounded overflow-hidden">
+                                  <img
+                                    src={photo.url}
+                                    alt={`Upload ${index + 1}`}
+                                    className="w-full h-full object-cover"
+                                  />
+                                </div>
+                                {/* Status indicator */}
+                                {photo.id ? (
+                                  <Tag type="blue" size="sm" className="absolute -top-2 -right-2">
+                                    Existing
+                                  </Tag>
+                                ) : (
+                                  <Tag type="green" size="sm" className="absolute -top-2 -right-2">
+                                    New
+                                  </Tag>
+                                )}
+                              </div>
+                              
+                              {/* Photo details */}
+                              <div className="flex-grow space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex flex-col">
+                                    <span className="text-sm font-medium text-gray-900">
+                                      {photo.filename}
+                                    </span>
+                                    {photo.id && (
+                                      <span className="text-xs text-gray-500">
+                                        Previously uploaded
+                                      </span>
+                                    )}
+                                  </div>
+                                  <CarbonButton
+                                    kind="danger--tertiary"
+                                    size="sm"
+                                    onClick={() => removePhoto(index)}
+                                    renderIcon={TrashCan}
+                                    iconDescription="Remove photo"
+                                    data-testid={`button-remove-photo-${index}`}
+                                  >
+                                    Remove
+                                  </CarbonButton>
+                                </div>
+                                
+                                <TextInput
+                                  id={`caption-${index}`}
+                                  labelText="Caption"
+                                  placeholder="Add a caption for this photo..."
+                                  value={photo.caption}
+                                  onChange={(e) => updatePhotoCaption(index, e.target.value)}
+                                  data-testid={`input-caption-${index}`}
+                                />
+                              </div>
+                            </div>
+                          </Tile>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
