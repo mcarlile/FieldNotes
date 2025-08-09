@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import { initMapbox } from "@/lib/mapbox";
 import { parseGpxData } from "@shared/gpx-utils";
@@ -27,6 +27,7 @@ export default function MapboxMap({
   const elevationMarker = useRef<mapboxgl.Marker | null>(null);
   const photoMarkers = useRef<Map<string, mapboxgl.Marker>>(new Map());
   const coordinatesRef = useRef<[number, number][]>([]);
+  const [mapFocus, setMapFocus] = useState<'all' | 'track' | 'photos'>('all');
 
   // Initialize map and add GPX track
   useEffect(() => {
