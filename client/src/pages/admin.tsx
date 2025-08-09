@@ -413,7 +413,7 @@ export default function AdminPage() {
                     maxFileSize={52428800} // 50MB
                     onGetUploadParameters={handlePhotoUpload}
                     onComplete={handlePhotoUploadComplete}
-                    buttonClassName="w-full"
+                    buttonClassName=""
                   >
                     <span>Upload Photos</span>
                   </CarbonPhotoUploader>
