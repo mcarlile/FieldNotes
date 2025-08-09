@@ -5,10 +5,11 @@ import type { ElevationPoint } from '@shared/gpx-utils';
 
 interface ElevationProfileProps {
   elevationProfile: ElevationPoint[];
+  onHoverPoint?: (point: ElevationPoint | null) => void;
   className?: string;
 }
 
-export default function ElevationProfile({ elevationProfile, className }: ElevationProfileProps) {
+export default function ElevationProfile({ elevationProfile, onHoverPoint, className }: ElevationProfileProps) {
   if (!elevationProfile || elevationProfile.length === 0) {
     return (
       <div className={`${className} flex items-center justify-center bg-gray-50 rounded`}>
@@ -27,12 +28,25 @@ export default function ElevationProfile({ elevationProfile, className }: Elevat
   // Custom tooltip formatter
   const customTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
+      const pointIndex = payload[0].payload.index;
+      const point = elevationProfile[pointIndex];
+      
+      // Notify parent component about the hovered point
+      if (onHoverPoint && point) {
+        onHoverPoint(point);
+      }
+      
       return (
         <div className="bg-white p-3 border border-gray-200 rounded shadow-lg">
           <p className="text-sm font-medium">{`Distance: ${label} miles`}</p>
           <p className="text-sm text-blue-600">{`Elevation: ${payload[0].value} ft`}</p>
         </div>
       );
+    } else {
+      // Clear hover when not active
+      if (onHoverPoint) {
+        onHoverPoint(null);
+      }
     }
     return null;
   };

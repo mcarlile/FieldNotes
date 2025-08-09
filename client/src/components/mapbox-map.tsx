@@ -3,17 +3,20 @@ import mapboxgl from "mapbox-gl";
 import { initMapbox } from "@/lib/mapbox";
 import { parseGpxData } from "@shared/gpx-utils";
 import type { Photo } from "@shared/schema";
+import type { ElevationPoint } from "@shared/gpx-utils";
 
 interface MapboxMapProps {
   gpxData: any;
   photos: Photo[];
   onPhotoClick: (photoId: string) => void;
+  hoveredElevationPoint?: ElevationPoint | null;
   className?: string;
 }
 
-export default function MapboxMap({ gpxData, photos, onPhotoClick, className }: MapboxMapProps) {
+export default function MapboxMap({ gpxData, photos, onPhotoClick, hoveredElevationPoint, className }: MapboxMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
+  const hoverMarker = useRef<mapboxgl.Marker | null>(null);
 
   useEffect(() => {
     if (!mapContainer.current) return;
@@ -165,8 +168,54 @@ export default function MapboxMap({ gpxData, photos, onPhotoClick, className }: 
       if (map.current) {
         map.current.remove();
       }
+      if (hoverMarker.current) {
+        hoverMarker.current.remove();
+      }
     };
   }, [gpxData, photos, onPhotoClick]);
+
+  // Effect to handle elevation point hover
+  useEffect(() => {
+    if (!map.current) return;
+
+    if (hoveredElevationPoint) {
+      // Create or update hover marker
+      if (!hoverMarker.current) {
+        const el = document.createElement('div');
+        el.style.cssText = `
+          width: 20px;
+          height: 20px;
+          background: #ff6900;
+          border: 4px solid white;
+          border-radius: 50%;
+          box-shadow: 0 0 20px rgba(255, 105, 0, 0.8);
+          animation: pulse 1.5s infinite;
+        `;
+        
+        // Add pulse animation
+        const style = document.createElement('style');
+        style.textContent = `
+          @keyframes pulse {
+            0% { box-shadow: 0 0 20px rgba(255, 105, 0, 0.8); }
+            50% { box-shadow: 0 0 30px rgba(255, 105, 0, 1); }
+            100% { box-shadow: 0 0 20px rgba(255, 105, 0, 0.8); }
+          }
+        `;
+        document.head.appendChild(style);
+        
+        hoverMarker.current = new mapboxgl.Marker(el);
+      }
+
+      hoverMarker.current
+        .setLngLat(hoveredElevationPoint.coordinates)
+        .addTo(map.current);
+    } else {
+      // Remove hover marker
+      if (hoverMarker.current) {
+        hoverMarker.current.remove();
+      }
+    }
+  }, [hoveredElevationPoint]);
 
   return (
     <div 

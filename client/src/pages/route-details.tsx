@@ -20,6 +20,7 @@ import { useState, useMemo } from "react";
 export default function RouteDetails() {
   const { id } = useParams();
   const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
+  const [hoveredElevationPoint, setHoveredElevationPoint] = useState<any>(null);
 
   // Fetch field note data
   const { data: fieldNoteData, isLoading, error } = useQuery({
@@ -155,6 +156,7 @@ export default function RouteDetails() {
                     gpxData={fieldNote.gpxData}
                     photos={photos}
                     onPhotoClick={setSelectedPhotoId}
+                    hoveredElevationPoint={hoveredElevationPoint}
                     className="w-full h-full"
                   />
                 </div>
@@ -166,6 +168,7 @@ export default function RouteDetails() {
                   {parsedGpxData && parsedGpxData.elevationProfile ? (
                     <ElevationProfile 
                       elevationProfile={parsedGpxData.elevationProfile}
+                      onHoverPoint={setHoveredElevationPoint}
                       className="w-full"
                     />
                   ) : (
