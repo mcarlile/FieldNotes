@@ -21,6 +21,7 @@ export const photos = pgTable("photos", {
   fieldNoteId: varchar("field_note_id").references(() => fieldNotes.id).notNull(),
   filename: text("filename").notNull(),
   url: text("url").notNull(),
+  altText: text("alt_text"),
   latitude: real("latitude"),
   longitude: real("longitude"),
   elevation: real("elevation"),

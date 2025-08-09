@@ -25,30 +25,34 @@ export default function ElevationProfile({ elevationProfile, onHoverPoint, class
     index,
   }));
 
-  // Custom tooltip formatter
+  // Custom tooltip formatter - simplified to avoid state update warnings
   const customTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
-      const pointIndex = payload[0].payload.index;
-      const point = elevationProfile[pointIndex];
-      
-      // Notify parent component about the hovered point
-      if (onHoverPoint && point) {
-        onHoverPoint(point);
-      }
-      
       return (
         <div className="bg-white p-3 border border-gray-200 rounded shadow-lg">
           <p className="text-sm font-medium">{`Distance: ${label} miles`}</p>
           <p className="text-sm text-blue-600">{`Elevation: ${payload[0].value} ft`}</p>
         </div>
       );
-    } else {
-      // Clear hover when not active
-      if (onHoverPoint) {
-        onHoverPoint(null);
-      }
     }
     return null;
+  };
+
+  // Handle mouse events separately to avoid React warnings
+  const handleMouseMove = (data: any) => {
+    if (data && data.activePayload && data.activePayload.length && onHoverPoint) {
+      const pointIndex = data.activePayload[0].payload.index;
+      const point = elevationProfile[pointIndex];
+      if (point) {
+        onHoverPoint(point);
+      }
+    }
+  };
+
+  const handleMouseLeave = () => {
+    if (onHoverPoint) {
+      onHoverPoint(null);
+    }
   };
 
   return (
@@ -72,6 +76,8 @@ export default function ElevationProfile({ elevationProfile, onHoverPoint, class
               left: 20,
               bottom: 20,
             }}
+            onMouseMove={handleMouseMove}
+            onMouseLeave={handleMouseLeave}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
             <XAxis 

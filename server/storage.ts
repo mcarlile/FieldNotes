@@ -138,11 +138,11 @@ export class DatabaseStorage implements IStorage {
           fieldNoteId,
           filename: photoData.filename,
           url: photoData.url,
-          description: photoData.caption || '',
+          altText: photoData.caption || '',
           latitude: photoData.latitude || null,
           longitude: photoData.longitude || null,
           elevation: photoData.elevation || null,
-          timestamp: photoData.timestamp || null,
+          timestamp: photoData.timestamp ? new Date(photoData.timestamp) : null,
           camera: photoData.camera || null,
           lens: photoData.lens || null,
           aperture: photoData.aperture || null,
@@ -331,6 +331,7 @@ export class MemStorage implements IStorage {
       ...insertFieldNote,
       distance: insertFieldNote.distance ?? null,
       elevationGain: insertFieldNote.elevationGain ?? null,
+      gpxData: insertFieldNote.gpxData ?? null,
       createdAt: new Date()
     };
     this.fieldNotesData.push(fieldNote);
@@ -349,6 +350,7 @@ export class MemStorage implements IStorage {
     const photo: Photo = {
       id: Math.random().toString(36).substr(2, 9),
       ...insertPhoto,
+      altText: insertPhoto.altText ?? null,
       latitude: insertPhoto.latitude ?? null,
       longitude: insertPhoto.longitude ?? null,
       elevation: insertPhoto.elevation ?? null,
