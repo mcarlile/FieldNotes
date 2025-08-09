@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import type { FieldNote } from "@shared/schema";
+import { parseGpxData } from "@shared/gpx-utils";
 
 const fieldNoteFormSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -188,35 +189,20 @@ export default function AdminPage() {
 
   const onSubmit = (data: FieldNoteFormData) => {
     let gpxData = null;
+    let gpxStats = null;
     
     if (gpxContent) {
       try {
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(gpxContent, "text/xml");
+        // Parse GPX data to extract coordinates, distance, and elevation gain
+        gpxStats = parseGpxData(gpxContent);
+        gpxData = { coordinates: gpxStats.coordinates };
         
-        // Check for XML parsing errors
-        const parserError = xmlDoc.querySelector("parsererror");
-        if (parserError) {
-          throw new Error("Invalid GPX file format");
-        }
-        
-        // Extract track points from various GPX elements
-        const trackPoints = xmlDoc.querySelectorAll("trkpt, rtept, wpt");
-        const coordinates: [number, number][] = [];
-        
-        trackPoints.forEach(point => {
-          const lat = parseFloat(point.getAttribute("lat") || "0");
-          const lon = parseFloat(point.getAttribute("lon") || "0");
-          if (!isNaN(lat) && !isNaN(lon)) {
-            coordinates.push([lon, lat]);
-          }
+        // Show parsing results
+        toast({ 
+          title: "GPX Analysis Complete", 
+          description: `Distance: ${gpxStats.distance} miles, Elevation: ${gpxStats.elevationGain} ft`,
+          variant: "default" 
         });
-        
-        if (coordinates.length === 0) {
-          throw new Error("No valid track points found in GPX file");
-        }
-        
-        gpxData = { coordinates };
       } catch (error) {
         toast({ 
           title: "GPX Parse Error", 
@@ -227,9 +213,12 @@ export default function AdminPage() {
       }
     }
 
+    // Merge form data with parsed GPX stats (auto-populate if not manually entered)
     const fieldNoteData = { 
       ...data, 
       date: new Date(data.date), 
+      distance: data.distance || gpxStats?.distance,
+      elevationGain: data.elevationGain || gpxStats?.elevationGain,
       gpxData 
     };
 
@@ -355,6 +344,7 @@ export default function AdminPage() {
                           <SelectContent>
                             <SelectItem value="Hiking">Hiking</SelectItem>
                             <SelectItem value="Cycling">Cycling</SelectItem>
+                            <SelectItem value="Motorcycle">Motorcycle</SelectItem>
                             <SelectItem value="Running">Running</SelectItem>
                             <SelectItem value="Climbing">Climbing</SelectItem>
                             <SelectItem value="Skiing">Skiing</SelectItem>
@@ -396,7 +386,7 @@ export default function AdminPage() {
                           <Input 
                             type="number" 
                             step="0.1"
-                            placeholder="e.g., 12.5"
+                            placeholder="Auto-populated from GPX"
                             data-testid="input-distance"
                             onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
                             value={field.value || ""} 
@@ -416,7 +406,7 @@ export default function AdminPage() {
                         <FormControl>
                           <Input 
                             type="number" 
-                            placeholder="e.g., 3000"
+                            placeholder="Auto-populated from GPX"
                             data-testid="input-elevation"
                             onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
                             value={field.value || ""} 
@@ -438,14 +428,17 @@ export default function AdminPage() {
                       data-testid="input-gpx-file"
                       className="cursor-pointer"
                     />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Distance and elevation gain will be automatically calculated from GPX data
+                    </p>
                     {gpxFile && (
                       <div className="mt-2 space-y-1">
                         <p className="text-sm text-muted-foreground">
                           Selected: {gpxFile.name} ({(gpxFile.size / 1024).toFixed(1)}KB)
                         </p>
-                        {gpxFile.size > 10 * 1024 * 1024 && (
+                        {gpxFile.size > 100 * 1024 * 1024 && (
                           <p className="text-sm text-orange-600">
-                            ⚠️ Large file detected. Upload may take longer.
+                            ⚠️ Large file detected ({'>'}100MB). Upload may take longer.
                           </p>
                         )}
                       </div>
