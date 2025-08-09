@@ -1,17 +1,23 @@
-import { useParams } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useParams, useLocation } from "wouter";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import MapboxMap from "@/components/mapbox-map";
 import PhotoLightbox from "@/components/photo-lightbox";
 import { useState } from "react";
-import { Edit } from "lucide-react";
+import { Edit, Trash2 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
+import { queryClient } from "@/lib/queryClient";
 import type { FieldNote, Photo } from "@shared/schema";
 
 export default function FieldNoteDetail() {
   const { id } = useParams();
+  const [, setLocation] = useLocation();
   const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
+  const { toast } = useToast();
 
   const { data: fieldNote, isLoading: isLoadingFieldNote } = useQuery<FieldNote>({
     queryKey: ["/api/field-notes", id],
@@ -31,6 +37,28 @@ export default function FieldNoteDetail() {
       return response.json();
     },
     enabled: !!id,
+  });
+
+  const deleteFieldNoteMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest(`/api/field-notes/${id}`, "DELETE");
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "Field note deleted successfully!",
+        className: "bg-green-50 border-green-200 text-green-900"
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/field-notes"] });
+      setLocation("/");
+    },
+    onError: (error) => {
+      toast({
+        title: "Delete Error", 
+        description: error.message || "Failed to delete field note",
+        variant: "destructive"
+      });
+    },
   });
 
   if (isLoadingFieldNote) {
@@ -99,12 +127,40 @@ export default function FieldNoteDetail() {
         <div className="mb-6">
           <div className="flex justify-between items-start mb-4">
             <h1 className="text-3xl font-semibold text-carbon-gray-100 font-ibm">{fieldNote.title}</h1>
-            <Button asChild variant="outline" className="gap-2">
-              <Link href={`/admin/${fieldNote.id}`}>
-                <Edit className="h-4 w-4" />
-                Edit
-              </Link>
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button asChild variant="outline" className="gap-2">
+                <Link href={`/admin/${fieldNote.id}`}>
+                  <Edit className="h-4 w-4" />
+                  Edit
+                </Link>
+              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive" className="gap-2" data-testid="button-delete">
+                    <Trash2 className="h-4 w-4" />
+                    Delete
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete Field Note</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Are you sure you want to delete "{fieldNote.title}"? This action cannot be undone and will also delete all associated photos.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => deleteFieldNoteMutation.mutate()}
+                      disabled={deleteFieldNoteMutation.isPending}
+                      className="bg-red-600 hover:bg-red-700"
+                    >
+                      {deleteFieldNoteMutation.isPending ? "Deleting..." : "Delete"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
           </div>
           <p className="text-carbon-gray-70 mb-4 font-ibm">{fieldNote.description}</p>
           <div className="flex flex-wrap gap-6 text-sm text-carbon-gray-70 font-ibm">

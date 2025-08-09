@@ -119,6 +119,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Delete field note
+  app.delete("/api/field-notes/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const deleted = await storage.deleteFieldNote(id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Field note not found" });
+      }
+      
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting field note:", error);
+      res.status(500).json({ message: "Failed to delete field note" });
+    }
+  });
+
   // Object Storage endpoints for photo uploads
   const objectStorageService = new ObjectStorageService();
 

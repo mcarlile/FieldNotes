@@ -72,10 +72,13 @@ export default function Home() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All trip types</SelectItem>
-                <SelectItem value="hiking">Hiking</SelectItem>
-                <SelectItem value="cycling">Cycling</SelectItem>
-                <SelectItem value="photography">Photography</SelectItem>
-                <SelectItem value="running">Running</SelectItem>
+                <SelectItem value="Hiking">Hiking</SelectItem>
+                <SelectItem value="Cycling">Cycling</SelectItem>
+                <SelectItem value="Motorcycle">Motorcycle</SelectItem>
+                <SelectItem value="Running">Running</SelectItem>
+                <SelectItem value="Climbing">Climbing</SelectItem>
+                <SelectItem value="Skiing">Skiing</SelectItem>
+                <SelectItem value="Other">Other</SelectItem>
               </SelectContent>
             </Select>
           </div>

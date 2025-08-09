@@ -395,7 +395,7 @@ export default function AdminPage() {
                   <FormLabel>Photos</FormLabel>
                   <div className="mt-2 space-y-3">
                     <ObjectUploader
-                      maxNumberOfFiles={10}
+                      maxNumberOfFiles={50}
                       maxFileSize={50 * 1024 * 1024} // 50MB
                       onGetUploadParameters={handlePhotoUploadParameters}
                       onComplete={handlePhotoUploadComplete}

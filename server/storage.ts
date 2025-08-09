@@ -12,6 +12,7 @@ export interface IStorage {
   getFieldNoteById(id: string): Promise<FieldNote | undefined>;
   createFieldNote(fieldNote: InsertFieldNote): Promise<FieldNote>;
   updateFieldNote(id: string, fieldNote: InsertFieldNote): Promise<FieldNote | undefined>;
+  deleteFieldNote(id: string): Promise<boolean>;
   
   // Photos
   getPhotosByFieldNoteId(fieldNoteId: string): Promise<Photo[]>;
@@ -38,20 +39,20 @@ export class DatabaseStorage implements IStorage {
     }
     
     if (conditions.length > 0) {
-      query = query.where(and(...conditions));
+      query = query.where(and(...conditions)) as typeof query;
     }
     
     // Apply sorting
     switch (options.sortOrder) {
       case 'oldest':
-        query = query.orderBy(asc(fieldNotes.date));
+        query = query.orderBy(asc(fieldNotes.date)) as typeof query;
         break;
       case 'name':
-        query = query.orderBy(asc(fieldNotes.title));
+        query = query.orderBy(asc(fieldNotes.title)) as typeof query;
         break;
       case 'recent':
       default:
-        query = query.orderBy(desc(fieldNotes.date));
+        query = query.orderBy(desc(fieldNotes.date)) as typeof query;
         break;
     }
     
@@ -80,21 +81,17 @@ export class DatabaseStorage implements IStorage {
     return fieldNote || undefined;
   }
 
+  async deleteFieldNote(id: string): Promise<boolean> {
+    // First delete all associated photos
+    await db.delete(photos).where(eq(photos.fieldNoteId, id));
+    
+    // Then delete the field note
+    const result = await db.delete(fieldNotes).where(eq(fieldNotes.id, id));
+    return result.rowCount !== null && result.rowCount > 0;
+  }
+
   async getPhotosByFieldNoteId(fieldNoteId: string): Promise<Photo[]> {
     return await db.select().from(photos).where(eq(photos.fieldNoteId, fieldNoteId));
-  }
-
-  async getPhotoById(id: string): Promise<Photo | undefined> {
-    const [photo] = await db.select().from(photos).where(eq(photos.id, id));
-    return photo || undefined;
-  }
-
-  async createPhoto(insertPhoto: InsertPhoto): Promise<Photo> {
-    const [photo] = await db
-      .insert(photos)
-      .values(insertPhoto)
-      .returning();
-    return photo;
   }
 
   async getPhotoById(id: string): Promise<Photo | undefined> {
