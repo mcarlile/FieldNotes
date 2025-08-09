@@ -9,7 +9,6 @@ import {
 import { Upload } from "@carbon/icons-react";
 import type { UploadResult } from "@uppy/core";
 import { type PhotoExifData } from "@/lib/exif-extractor";
-import { apiRequest } from '@/lib/queryClient';
 
 interface CarbonPhotoUploaderProps {
   maxNumberOfFiles?: number;
@@ -44,6 +43,30 @@ export function CarbonPhotoUploader({
   const [files, setFiles] = useState<FileUploadState[]>([]);
   const [isUploading, setIsUploading] = useState(false);
 
+  const extractExifFromFile = async (file: File): Promise<PhotoExifData | null> => {
+    try {
+      const formData = new FormData();
+      formData.append('photo', file);
+      
+      const exifResponse = await fetch('/api/photos/extract-exif', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      });
+      
+      if (!exifResponse.ok) {
+        console.error('EXIF extraction failed:', exifResponse.statusText);
+        return null;
+      }
+      
+      const exifData = await exifResponse.json();
+      return exifData;
+    } catch (error) {
+      console.error('Failed to extract EXIF data:', error);
+      return null;
+    }
+  };
+
   const handleFileAdd = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(event.target.files || []);
     
@@ -77,25 +100,13 @@ export function CarbonPhotoUploader({
     // Extract EXIF data from each new file using server-side extraction
     for (let i = 0; i < validFiles.length; i++) {
       const file = validFiles[i];
-      try {
-        const formData = new FormData();
-        formData.append('photo', file);
-        
-        const exifResponse = await apiRequest('/api/photos/extract-exif', {
-          method: 'POST',
-          body: formData,
-          headers: {} // Let browser set Content-Type for FormData
-        });
-        
-        const exifData = await exifResponse.json();
+      const exifData = await extractExifFromFile(file);
+      if (exifData) {
         setFiles(prev => prev.map((f, idx) => 
           idx === prev.length - validFiles.length + i 
             ? { ...f, exifData }
             : f
         ));
-      } catch (error) {
-        console.error('Failed to extract EXIF data:', error);
-        // Continue without EXIF data if extraction fails
       }
     }
   };
@@ -131,25 +142,13 @@ export function CarbonPhotoUploader({
     // Extract EXIF data from each new file using server-side extraction
     for (let i = 0; i < validFiles.length; i++) {
       const file = validFiles[i];
-      try {
-        const formData = new FormData();
-        formData.append('photo', file);
-        
-        const exifResponse = await apiRequest('/api/photos/extract-exif', {
-          method: 'POST',
-          body: formData,
-          headers: {} // Let browser set Content-Type for FormData
-        });
-        
-        const exifData = await exifResponse.json();
+      const exifData = await extractExifFromFile(file);
+      if (exifData) {
         setFiles(prev => prev.map((f, idx) => 
           idx === prev.length - validFiles.length + i 
             ? { ...f, exifData }
             : f
         ));
-      } catch (error) {
-        console.error('Failed to extract EXIF data:', error);
-        // Continue without EXIF data if extraction fails
       }
     }
   };
@@ -243,31 +242,16 @@ export function CarbonPhotoUploader({
     }
   };
 
-  const handleClose = () => {
-    setShowModal(false);
+  const resetUploader = () => {
     setFiles([]);
-  };
-
-  const getStatusText = (file: FileUploadState) => {
-    switch (file.status) {
-      case 'pending':
-        return 'Ready to upload';
-      case 'uploading':
-        return `Uploading... ${file.progress}%`;
-      case 'complete':
-        return 'Upload complete';
-      case 'error':
-        return file.errorMessage || 'Upload failed';
-      default:
-        return '';
-    }
+    setIsUploading(false);
   };
 
   const allFilesComplete = files.length > 0 && files.every(f => f.status === 'complete');
-  const hasErrors = files.some(f => f.status === 'error');
+  const anyErrors = files.some(f => f.status === 'error');
 
   return (
-    <>
+    <div>
       <CarbonButton 
         onClick={() => setShowModal(true)} 
         className={buttonClassName}
@@ -278,98 +262,114 @@ export function CarbonPhotoUploader({
 
       <Modal
         open={showModal}
-        onRequestClose={handleClose}
+        onRequestClose={() => setShowModal(false)}
         modalHeading="Upload Photos"
-        primaryButtonText={allFilesComplete ? "Done" : "Upload"}
-        primaryButtonDisabled={files.length === 0 || isUploading}
+        primaryButtonText={allFilesComplete ? "Done" : isUploading ? "Uploading..." : "Upload"}
         secondaryButtonText="Cancel"
-        onRequestSubmit={allFilesComplete ? handleClose : uploadFiles}
-        size="md"
+        onRequestSubmit={allFilesComplete ? () => setShowModal(false) : uploadFiles}
+        onSecondarySubmit={() => setShowModal(false)}
+        primaryButtonDisabled={files.length === 0 || isUploading}
+        size="lg"
       >
-        <div className="space-y-6">
-          {/* Upload Progress Summary */}
-          {files.length > 0 && (
-            <div className="bg-gray-50 p-4 rounded">
-              <div className="text-sm font-medium text-gray-700 mb-2">
-                Upload Progress: {files.filter(f => f.status === 'complete').length} of {files.length} complete
-              </div>
-              {isUploading && (
-                <div className="text-xs text-gray-600">
-                  Uploading files in parallel for faster processing...
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* File Drop Zone */}
+        <div className="space-y-4">
+          {/* File Drop Area */}
           <FileUploaderDropContainer
-            accept={["image/*"]}
-            labelText="Drag and drop images here or click to browse"
+            accept={['image/*']}
             multiple={maxNumberOfFiles > 1}
-            onAddFiles={(event, { addedFiles }) => {
+            onAddFiles={(_, { addedFiles }) => {
               handleFilesFromDropContainer(addedFiles);
             }}
-            disabled={files.length >= maxNumberOfFiles || isUploading}
-          />
+          >
+            <div className="p-8 text-center">
+              <Upload size={32} className="mx-auto mb-4 text-gray-400" />
+              <p className="mb-2">Drag and drop images here or click to browse</p>
+              <p className="text-sm text-gray-500">
+                Maximum {maxNumberOfFiles} files, {Math.round(maxFileSize / 1024 / 1024)}MB each
+              </p>
+            </div>
+          </FileUploaderDropContainer>
+
+          {/* Alternative file input */}
+          <div className="text-center">
+            <input
+              type="file"
+              accept="image/*"
+              multiple={maxNumberOfFiles > 1}
+              onChange={handleFileAdd}
+              className="hidden"
+              id="file-input"
+            />
+            <label
+              htmlFor="file-input"
+              className="cursor-pointer text-blue-600 hover:text-blue-800 text-sm"
+            >
+              Or click here to select files
+            </label>
+          </div>
 
           {/* File List */}
           {files.length > 0 && (
-            <div className="space-y-4">
-              <h4 className="text-productive-heading-02">
-                Selected Files ({files.length}/{maxNumberOfFiles})
-              </h4>
-              
-              {files.map((fileState, index) => (
+            <div className="space-y-2">
+              <h4 className="font-medium">Selected Files</h4>
+              {files.map((fileState, i) => (
                 <FileUploaderItem
-                  key={index}
+                  key={i}
                   name={fileState.file.name}
-                  size="md"
-                  status={fileState.status === 'complete' ? 'complete' : 
-                           fileState.status === 'error' ? 'edit' :
-                           fileState.status === 'uploading' ? 'uploading' : 'edit'}
-                  onDelete={() => !isUploading && removeFile(index)}
-                  iconDescription="Remove file"
-                  invalid={fileState.status === 'error'}
-                  errorBody={fileState.errorMessage}
+                  size={fileState.file.size}
+                  status={fileState.status === 'error' ? 'edit' : fileState.status === 'complete' ? 'complete' : 'uploading'}
+                  onDelete={() => removeFile(i)}
                 >
-                  <div className="space-y-2">
-                    <div className="text-sm text-gray-600">
-                      {getStatusText(fileState)} ({Math.round(fileState.file.size / 1024)}KB)
+                  {fileState.status === 'uploading' && (
+                    <ProgressBar 
+                      value={fileState.progress} 
+                      label={`${fileState.progress}%`}
+                      size="sm"
+                    />
+                  )}
+                  {fileState.status === 'error' && (
+                    <div className="text-red-600 text-sm mt-1">
+                      {fileState.errorMessage}
                     </div>
-                    
-                    {fileState.status === 'uploading' && (
-                      <ProgressBar
-                        value={fileState.progress}
-                        max={100}
-                        size="small"
-                        label={`Uploading ${fileState.progress}%`}
-                        hideLabel={true}
-                      />
-                    )}
-                  </div>
+                  )}
+                  {fileState.exifData && (
+                    <div className="text-xs text-gray-600 mt-1">
+                      {fileState.exifData.camera && (
+                        <span>📷 {fileState.exifData.camera}</span>
+                      )}
+                      {fileState.exifData.latitude && fileState.exifData.longitude && (
+                        <span className="ml-2">📍 GPS: {fileState.exifData.latitude.toFixed(4)}, {fileState.exifData.longitude.toFixed(4)}</span>
+                      )}
+                    </div>
+                  )}
                 </FileUploaderItem>
               ))}
             </div>
           )}
 
-          {/* Upload Status */}
-          {isUploading && (
-            <div className="p-4 bg-blue-10 border border-blue-40 rounded">
-              <p className="text-sm text-blue-70">
-                Uploading files... Please don't close this window.
+          {/* Status Messages */}
+          {anyErrors && (
+            <div className="bg-red-50 border border-red-200 rounded p-3">
+              <p className="text-red-800 text-sm">
+                Some files failed to upload. Please try again.
               </p>
             </div>
           )}
 
-          {hasErrors && (
-            <div className="p-4 bg-red-10 border border-red-40 rounded">
-              <p className="text-sm text-red-70">
-                Some files failed to upload. Please try again or remove the failed files.
+          {allFilesComplete && (
+            <div className="bg-green-50 border border-green-200 rounded p-3">
+              <p className="text-green-800 text-sm">
+                All files uploaded successfully!
               </p>
+              <button
+                onClick={resetUploader}
+                className="text-green-600 hover:text-green-800 text-sm mt-1"
+              >
+                Upload more files
+              </button>
             </div>
           )}
         </div>
       </Modal>
-    </>
+    </div>
   );
 }
