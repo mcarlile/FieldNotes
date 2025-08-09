@@ -115,6 +115,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Update all existing photos with EXIF data
+  app.post("/api/photos/update-all-exif", async (req, res) => {
+    try {
+      console.log('Starting batch EXIF extraction for all photos...');
+      
+      // Get all photos without EXIF data
+      const photos = await storage.getPhotosByFieldNoteId('');
+      const photosWithoutExif = photos.filter(p => !p.camera);
+      
+      console.log(`Found ${photosWithoutExif.length} photos without EXIF data`);
+      
+      let successCount = 0;
+      let errorCount = 0;
+      
+      for (const photo of photosWithoutExif) {
+        try {
+          console.log(`Processing ${photo.filename}...`);
+          const exifData = await extractExifData(photo.url);
+          
+          if (Object.keys(exifData).length > 0) {
+            await storage.updatePhoto(photo.id, {
+              latitude: exifData.latitude,
+              longitude: exifData.longitude,
+              elevation: exifData.elevation,
+              timestamp: exifData.timestamp,
+              camera: exifData.camera,
+              lens: exifData.lens,
+              aperture: exifData.aperture,
+              shutterSpeed: exifData.shutterSpeed,
+              iso: exifData.iso,
+              focalLength: exifData.focalLength,
+              fileSize: exifData.fileSize
+            });
+            console.log(`✓ Updated ${photo.filename}`);
+            successCount++;
+          }
+        } catch (error) {
+          console.error(`Error updating ${photo.filename}:`, error);
+          errorCount++;
+        }
+      }
+      
+      res.json({
+        message: `EXIF extraction complete`,
+        processed: photosWithoutExif.length,
+        successful: successCount,
+        errors: errorCount
+      });
+    } catch (error) {
+      console.error("Error updating photos with EXIF:", error);
+      res.status(500).json({ message: "Failed to update photos with EXIF data" });
+    }
+  });
+
   // Create new field note
   app.post("/api/field-notes", async (req, res) => {
     try {
@@ -222,7 +276,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Remove the PUT endpoint as it conflicts with Vite routing
   // The POST endpoint above handles upload URL requests
 
-  // Endpoint to create photo record after upload
+  // Endpoint to create photo record after upload and extract EXIF data
   app.post("/api/photos", async (req, res) => {
     try {
       const validatedData = insertPhotoSchema.parse(req.body);
@@ -232,8 +286,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
         validatedData.url = objectStorageService.normalizeObjectEntityPath(validatedData.url);
       }
       
+      // Create the photo record first
       const photo = await storage.createPhoto(validatedData);
-      res.status(201).json(photo);
+      
+      // Extract EXIF data asynchronously after creating the photo
+      try {
+        console.log(`Extracting EXIF data for photo: ${photo.url}`);
+        const exifData = await extractExifData(photo.url);
+        
+        if (Object.keys(exifData).length > 0) {
+          console.log(`Found EXIF data:`, exifData);
+          
+          // Update the photo with EXIF data
+          const updatedPhoto = await storage.updatePhoto(photo.id, {
+            latitude: exifData.latitude,
+            longitude: exifData.longitude,
+            elevation: exifData.elevation,
+            timestamp: exifData.timestamp,
+            camera: exifData.camera,
+            lens: exifData.lens,
+            aperture: exifData.aperture,
+            shutterSpeed: exifData.shutterSpeed,
+            iso: exifData.iso,
+            focalLength: exifData.focalLength,
+            fileSize: exifData.fileSize
+          });
+          
+          console.log(`Updated photo with EXIF data:`, updatedPhoto?.id);
+          res.status(201).json(updatedPhoto || photo);
+        } else {
+          console.log(`No EXIF data found for photo: ${photo.url}`);
+          res.status(201).json(photo);
+        }
+      } catch (exifError) {
+        console.error(`Error extracting EXIF data for photo ${photo.url}:`, exifError);
+        // Return the photo without EXIF data if extraction fails
+        res.status(201).json(photo);
+      }
     } catch (error) {
       console.error("Error creating photo:", error);
       res.status(500).json({ error: "Failed to create photo" });

@@ -18,6 +18,7 @@ export interface IStorage {
   getPhotosByFieldNoteId(fieldNoteId: string): Promise<Photo[]>;
   getPhotoById(id: string): Promise<Photo | undefined>;
   createPhoto(photo: InsertPhoto): Promise<Photo>;
+  updatePhoto(id: string, photo: Partial<InsertPhoto>): Promise<Photo | undefined>;
   deletePhoto(id: string): Promise<boolean>;
   updateFieldNotePhotos(fieldNoteId: string, photosData: any[]): Promise<Photo[]>;
 }
@@ -109,6 +110,15 @@ export class DatabaseStorage implements IStorage {
     return photo;
   }
 
+  async updatePhoto(id: string, updatePhoto: Partial<InsertPhoto>): Promise<Photo | undefined> {
+    const [photo] = await db
+      .update(photos)
+      .set(updatePhoto)
+      .where(eq(photos.id, id))
+      .returning();
+    return photo || undefined;
+  }
+
   async deletePhoto(id: string): Promise<boolean> {
     const result = await db.delete(photos).where(eq(photos.id, id));
     return result.rowCount !== null && result.rowCount > 0;
@@ -188,6 +198,14 @@ export class MemStorage implements IStorage {
     this.fieldNotesData.splice(index, 1);
     return true;
   }
+
+  async updatePhoto(id: string, updatePhoto: Partial<InsertPhoto>): Promise<Photo | undefined> {
+    const index = this.photosData.findIndex(photo => photo.id === id);
+    if (index === -1) return undefined;
+    
+    this.photosData[index] = { ...this.photosData[index], ...updatePhoto };
+    return this.photosData[index];
+  }
   private fieldNotesData: FieldNote[] = [
     {
       id: "1",
@@ -233,6 +251,7 @@ export class MemStorage implements IStorage {
       id: "1",
       fieldNoteId: "1",
       filename: "whitney-summit.jpg",
+      altText: "",
       latitude: 36.578,
       longitude: -118.292,
       elevation: 14505,
@@ -251,6 +270,7 @@ export class MemStorage implements IStorage {
       id: "2",
       fieldNoteId: "1",
       filename: "alpine-lake.jpg",
+      altText: "",
       latitude: 36.580,
       longitude: -118.290,
       elevation: 12000,
@@ -269,6 +289,7 @@ export class MemStorage implements IStorage {
       id: "3",
       fieldNoteId: "2",
       filename: "el-capitan.jpg",
+      altText: "",
       latitude: 37.748,
       longitude: -119.651,
       elevation: 4000,
