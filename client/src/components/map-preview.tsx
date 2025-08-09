@@ -121,8 +121,9 @@ export default function MapPreview({ gpxData, photos, onPhotoClick, className = 
     const maxDiff = Math.max(latDiff, lngDiff);
     const zoom = Math.max(8, Math.min(15, 15 - Math.log2(maxDiff * 100)));
 
-    // Create path string for the route
-    const pathString = coordinates.map((coord: number[]) => `${coord[0]},${coord[1]}`).join(',');
+    // Create path string for the route - simplify to avoid URL length limits
+    const simplifiedCoords = coordinates.filter((_, index) => index % Math.max(1, Math.floor(coordinates.length / 100)) === 0);
+    const pathString = simplifiedCoords.map((coord: number[]) => `${coord[0]},${coord[1]}`).join(',');
     const encodedPath = encodeURIComponent(`path-5+ff0000-0.8(${pathString})`);
 
     // Add photo markers
@@ -139,7 +140,8 @@ export default function MapPreview({ gpxData, photos, onPhotoClick, className = 
     }
 
     const url = `https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/static/${encodedPath}${markers}/${centerLng},${centerLat},${zoom}/400x300@2x?access_token=${accessToken}`;
-    console.log('Generated static map URL:', url.substring(0, 100) + '...');
+    console.log('Generated static map URL (simplified coords):', url.substring(0, 100) + '...');
+    console.log('Original coords:', coordinates.length, 'Simplified coords:', simplifiedCoords.length);
     return url;
   };
 
@@ -178,9 +180,6 @@ export default function MapPreview({ gpxData, photos, onPhotoClick, className = 
             <div className="text-center p-6">
               <View size={48} className="mx-auto mb-4 text-gray-600" />
               <p className="text-gray-600 text-sm">Map preview unavailable</p>
-              <p className="text-xs text-gray-500 mt-1">
-                {coordinates.length} track points
-              </p>
             </div>
           </div>
         ) : (
@@ -193,21 +192,7 @@ export default function MapPreview({ gpxData, photos, onPhotoClick, className = 
           </div>
         )}
 
-        {/* Overlay with stats */}
-        {hasValidTrack && (
-          <div className="absolute top-4 left-4 bg-white bg-opacity-90 rounded px-3 py-2 text-sm">
-            <div className="flex items-center gap-4">
-              <span className="text-gray-600">
-                {coordinates.length} points
-              </span>
-              {photos.length > 0 && (
-                <span className="text-blue-600">
-                  {photos.filter(p => p.latitude && p.longitude).length} photos
-                </span>
-              )}
-            </div>
-          </div>
-        )}
+
 
         {/* View Details Button */}
         <div className="absolute bottom-4 right-4">
