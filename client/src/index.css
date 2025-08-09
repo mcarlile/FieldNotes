@@ -157,3 +157,11 @@
   transform: scale(1.5) !important;
   background: #ff6900 !important;
 }
+
+/* Hide Carbon Modal footer on mobile devices */
+@media (max-width: 767px) {
+  .cds--modal-footer,
+  .bx--modal-footer {
+    display: none !important;
+  }
+}

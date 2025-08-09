@@ -151,34 +151,17 @@ export default function PhotoLightbox({ photoId, photos, onClose, onPhotoChange 
     </div>
   );
 
-  // Mobile detection using a more reliable approach
-  const [isMobile, setIsMobile] = useState(false);
-
-  useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768);
-    };
-    
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
-
-  const modalProps = {
-    open: true,
-    onRequestClose: onClose,
-    size: "lg" as const,
-    modalHeading,
-    hasScrollingContent: true,
-    "aria-label": "Photo details and metadata",
-    ...(isMobile ? {} : {
-      primaryButtonText: "Close",
-      onRequestSubmit: onClose
-    })
-  };
-
   return (
-    <Modal {...modalProps}>
+    <Modal
+      open={true}
+      onRequestClose={onClose}
+      size="lg"
+      modalHeading={modalHeading}
+      primaryButtonText="Close"
+      onRequestSubmit={onClose}
+      hasScrollingContent
+      aria-label="Photo details and metadata"
+    >
       <div ref={containerRef} className="select-none">
         {isLoading ? (
           <div className="p-8 text-center">
