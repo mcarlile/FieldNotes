@@ -192,6 +192,7 @@ export default function AdminPage() {
       toast({
         title: "Success",
         description: "Field note created successfully!",
+        variant: "success"
       });
       queryClient.invalidateQueries({ queryKey: ["/api/field-notes"] });
       setLocation("/");
@@ -220,8 +221,11 @@ export default function AdminPage() {
       toast({
         title: "Success",
         description: "Field note updated successfully!",
+        variant: "success"
       });
       queryClient.invalidateQueries({ queryKey: ["/api/field-notes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/field-notes", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/field-notes", id, "photos"] });
       setLocation(`/field-notes/${id}`);
     },
     onError: (error) => {

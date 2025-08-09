@@ -93,10 +93,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { id } = req.params;
       
+      // Extract photos from the request body
+      const { photos: photosData, ...fieldNoteData } = req.body;
+      
       // Convert string date to Date object
       const bodyWithDate = {
-        ...req.body,
-        date: req.body.date ? new Date(req.body.date) : undefined
+        ...fieldNoteData,
+        date: fieldNoteData.date ? new Date(fieldNoteData.date) : undefined
       };
       
       const result = insertFieldNoteSchema.safeParse(bodyWithDate);
@@ -107,9 +110,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
+      // Update the field note
       const fieldNote = await storage.updateFieldNote(id, result.data);
       if (!fieldNote) {
         return res.status(404).json({ message: "Field note not found" });
+      }
+      
+      // Update photos if provided
+      if (photosData && Array.isArray(photosData)) {
+        await storage.updateFieldNotePhotos(id, photosData);
       }
       
       res.json(fieldNote);

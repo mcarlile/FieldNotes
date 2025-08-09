@@ -1,13 +1,13 @@
 import * as React from "react"
 
 const TOAST_LIMIT = 1
-const TOAST_REMOVE_DELAY = 1000000
+const TOAST_REMOVE_DELAY = 4000
 
 type ToasterToast = {
   id: string
   title?: React.ReactNode
   description?: React.ReactNode
-  variant?: "default" | "destructive"
+  variant?: "default" | "destructive" | "success"
   open?: boolean
   onOpenChange?: (open: boolean) => void
 }
