@@ -100,10 +100,16 @@ export default function MapPreview({ gpxData, photos, onPhotoClick, className = 
 
   // Generate static map preview URL using Mapbox Static API
   const getStaticMapUrl = () => {
-    if (!bounds || !hasValidTrack) return null;
+    if (!bounds || !hasValidTrack) {
+      console.log('No bounds or invalid track:', { bounds, hasValidTrack, coordinatesLength: coordinates.length });
+      return null;
+    }
     
     const accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
-    if (!accessToken) return null;
+    if (!accessToken) {
+      console.error('VITE_MAPBOX_ACCESS_TOKEN not found');
+      return null;
+    }
 
     // Calculate center and zoom level
     const centerLat = (bounds.minLat + bounds.maxLat) / 2;
@@ -132,7 +138,9 @@ export default function MapPreview({ gpxData, photos, onPhotoClick, className = 
       }
     }
 
-    return `https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/static/${encodedPath}${markers}/${centerLng},${centerLat},${zoom}/400x300@2x?access_token=${accessToken}`;
+    const url = `https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/static/${encodedPath}${markers}/${centerLng},${centerLat},${zoom}/400x300@2x?access_token=${accessToken}`;
+    console.log('Generated static map URL:', url.substring(0, 100) + '...');
+    return url;
   };
 
   const staticMapUrl = getStaticMapUrl();
@@ -156,6 +164,13 @@ export default function MapPreview({ gpxData, photos, onPhotoClick, className = 
             alt="Map preview"
             className="w-full h-full object-cover"
             loading="lazy"
+            onError={(e) => {
+              console.error('Failed to load static map:', staticMapUrl);
+              console.error('Error:', e);
+              // Hide the broken image and show fallback
+              const target = e.target as HTMLImageElement;
+              target.style.display = 'none';
+            }}
           />
         ) : hasValidTrack ? (
           // Fallback for when static map fails to load

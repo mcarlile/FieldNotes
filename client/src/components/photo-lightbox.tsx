@@ -37,6 +37,7 @@ export default function PhotoLightbox({ photoId, onClose }: PhotoLightboxProps) 
       primaryButtonText="Close"
       onRequestSubmit={onClose}
       hasScrollingContent
+      aria-label="Photo details and metadata"
     >
       {isLoading ? (
         <div className="p-8 text-center">
