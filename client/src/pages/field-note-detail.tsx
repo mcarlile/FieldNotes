@@ -18,7 +18,7 @@ import {
 import { ArrowLeft, Edit, TrashCan, Calendar, Location, ChartLineSmooth, Time, Maximize } from "@carbon/icons-react";
 import MapboxRoutePreview from "@/components/mapbox-route-preview";
 import PhotoLightbox from "@/components/photo-lightbox";
-import MapboxMap from "@/components/mapbox-map";
+
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { queryClient } from "@/lib/queryClient";
@@ -31,7 +31,7 @@ export default function FieldNoteDetail() {
   const [, setLocation] = useLocation();
   const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [showFullMap, setShowFullMap] = useState(false);
+
   const { toast } = useToast();
 
   // Single query that fetches field note with photos included
@@ -192,21 +192,23 @@ export default function FieldNoteDetail() {
             <Grid className="gap-y-6">
               <Column sm={4} md={5} lg={10} className="mb-6">
                 <Tile className="p-0 overflow-hidden">
-                  <div className="space-y-4">
+                  <div className="relative">
                     <MapboxRoutePreview 
                       fieldNote={fieldNote} 
                       className="w-full h-64 sm:h-96 rounded overflow-hidden"
                     />
-                    <div className="flex justify-center p-4">
-                      <Button
-                        kind="primary"
-                        size="sm"
-                        renderIcon={Maximize}
-                        onClick={() => setShowFullMap(true)}
-                        data-testid="button-view-details"
-                      >
-                        View Details
-                      </Button>
+                    {/* Overlay button positioned within the map */}
+                    <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2">
+                      <Link href={`/field-notes/${fieldNote.id}/route`}>
+                        <Button
+                          kind="primary"
+                          size="sm"
+                          renderIcon={Maximize}
+                          data-testid="button-view-details"
+                        >
+                          View Details
+                        </Button>
+                      </Link>
                     </div>
                   </div>
                 </Tile>
@@ -281,24 +283,7 @@ export default function FieldNoteDetail() {
         <p>Are you sure you want to delete "{fieldNote.title}"? This action cannot be undone.</p>
       </Modal>
 
-      {/* Fullscreen Interactive Map Modal */}
-      <Modal
-        open={showFullMap}
-        onRequestClose={() => setShowFullMap(false)}
-        modalHeading="Interactive Map"
-        passiveModal
-        size="lg"
-        className="fullscreen-map-modal"
-      >
-        <div className="h-[80vh] w-full">
-          <MapboxMap
-            gpxData={fieldNote.gpxData}
-            photos={photos}
-            onPhotoClick={setSelectedPhotoId}
-            className="w-full h-full"
-          />
-        </div>
-      </Modal>
+
 
       {/* Photo Lightbox */}
       {selectedPhotoId && (
