@@ -259,5 +259,5 @@ export class MemStorage implements IStorage {
   }
 }
 
-// Use in-memory storage temporarily until database connection is resolved
-export const storage = new MemStorage();
+// Use database storage for permanent data persistence
+export const storage = new DatabaseStorage();

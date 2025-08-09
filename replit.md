@@ -21,7 +21,7 @@ Preferred communication style: Simple, everyday language.
 ### Backend Architecture
 - **Runtime**: Node.js with Express.js web framework
 - **Language**: TypeScript with ES modules
-- **Database**: PostgreSQL with Replit Database (using node-postgres driver)
+- **Database**: PostgreSQL with Replit Database (using node-postgres driver) - **MIGRATED AND ACTIVE**
 - **ORM**: Drizzle ORM for type-safe database operations
 - **API Pattern**: RESTful API design with structured endpoints
 
@@ -40,6 +40,7 @@ Preferred communication style: Simple, everyday language.
 
 #### API Endpoints
 - `GET /api/field-notes` - Retrieve field notes with optional filtering and sorting
+- `POST /api/field-notes` - Create new field note with GPX data
 - `GET /api/field-notes/:id` - Get specific field note details
 - `GET /api/field-notes/:id/photos` - Get photos associated with a field note
 - `GET /api/photos/:id` - Get detailed photo information with EXIF data
@@ -47,10 +48,12 @@ Preferred communication style: Simple, everyday language.
 ## Data Flow
 
 1. **Data Ingestion**: Field notes and photos are stored with comprehensive metadata including GPS coordinates, EXIF data, and GPX tracks
-2. **API Layer**: Express server provides RESTful endpoints for data retrieval with filtering capabilities
-3. **Frontend Queries**: React Query manages API calls with caching and background updates
-4. **Map Visualization**: GPX data is rendered on Mapbox maps with photo markers showing precise locations
-5. **User Interaction**: Search, filter, and navigation interactions update the display in real-time
+2. **Database Storage**: PostgreSQL database provides permanent data persistence with proper migrations
+3. **API Layer**: Express server provides RESTful endpoints for data retrieval and creation with filtering capabilities
+4. **Frontend Queries**: React Query manages API calls with caching and background updates
+5. **Map Visualization**: GPX data is rendered on Mapbox maps with photo markers showing precise locations
+6. **User Interaction**: Search, filter, and navigation interactions update the display in real-time
+7. **Admin Interface**: Built-in admin page at `/admin` allows adding new field notes with GPX file upload
 
 ## External Dependencies
 
