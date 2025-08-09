@@ -15,6 +15,7 @@ function Router() {
       <Route path="/field-notes/:id" component={FieldNoteDetail} />
       <Route path="/admin" component={Admin} />
       <Route path="/admin/:id" component={Admin} />
+      <Route path="/field-notes/:id/edit" component={Admin} />
       <Route component={NotFound} />
     </Switch>
   );

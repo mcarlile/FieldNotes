@@ -168,7 +168,7 @@ export default function FieldNoteDetail() {
               </div>
               
               <div className="flex items-center gap-2">
-                <Link href={`/admin/${fieldNote.id}`}>
+                <Link href={`/field-notes/${fieldNote.id}/edit`}>
                   <CarbonButton kind="tertiary" size="sm" renderIcon={Edit}>
                     Edit
                   </CarbonButton>

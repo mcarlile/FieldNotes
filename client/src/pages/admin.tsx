@@ -48,8 +48,10 @@ const tripTypeOptions = [
 ];
 
 export default function AdminPage() {
-  const { id } = useParams();
+  const params = useParams();
   const [, setLocation] = useLocation();
+  // Get ID from either /admin/:id or /field-notes/:id/edit routes
+  const id = params.id;
   const isEditing = !!id;
   
   const [gpxFile, setGpxFile] = useState<File | null>(null);
@@ -262,16 +264,22 @@ export default function AdminPage() {
 
   // Load existing photos when editing
   useEffect(() => {
-    if (existingPhotos && existingPhotos.length > 0) {
+    console.log('Loading photos effect:', { isEditing, existingPhotos, id });
+    if (isEditing && existingPhotos && existingPhotos.length > 0) {
+      console.log('Formatting existing photos:', existingPhotos);
       const formattedPhotos = existingPhotos.map((photo: any) => ({
-        url: `/public-objects/${photo.filename}`,
+        url: photo.url, // Use the URL as stored in database
         filename: photo.filename,
-        caption: photo.altText || '',
+        caption: photo.altText || photo.description || '',
         id: photo.id, // Keep track of existing photo IDs
       }));
+      console.log('Setting uploaded photos:', formattedPhotos);
       setUploadedPhotos(formattedPhotos);
+    } else if (!isEditing) {
+      // Clear photos when creating new note
+      setUploadedPhotos([]);
     }
-  }, [existingPhotos]);
+  }, [existingPhotos, isEditing, id]);
 
   if (isLoadingFieldNote) {
     return (
