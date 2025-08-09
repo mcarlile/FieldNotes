@@ -15,9 +15,10 @@ import {
   InlineNotification,
   SkeletonText,
 } from "@carbon/react";
-import { ArrowLeft, Edit, TrashCan, Calendar, Location, ChartLineSmooth, Time, View, Close } from "@carbon/icons-react";
+import { ArrowLeft, Edit, TrashCan, Calendar, Location, ChartLineSmooth, Time, Maximize } from "@carbon/icons-react";
 import MapboxRoutePreview from "@/components/mapbox-route-preview";
 import PhotoLightbox from "@/components/photo-lightbox";
+import MapboxMap from "@/components/mapbox-map";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { queryClient } from "@/lib/queryClient";
@@ -196,15 +197,15 @@ export default function FieldNoteDetail() {
                       fieldNote={fieldNote} 
                       className="w-full h-64 sm:h-96 rounded overflow-hidden"
                     />
-                    <div className="flex justify-center">
+                    <div className="flex justify-center p-4">
                       <Button
                         kind="primary"
                         size="sm"
-                        renderIcon={View}
+                        renderIcon={Maximize}
                         onClick={() => setShowFullMap(true)}
-                        data-testid="button-view-full-map"
+                        data-testid="button-view-details"
                       >
-                        View Interactive Map
+                        View Details
                       </Button>
                     </div>
                   </div>
@@ -278,6 +279,25 @@ export default function FieldNoteDetail() {
         }}
       >
         <p>Are you sure you want to delete "{fieldNote.title}"? This action cannot be undone.</p>
+      </Modal>
+
+      {/* Fullscreen Interactive Map Modal */}
+      <Modal
+        open={showFullMap}
+        onRequestClose={() => setShowFullMap(false)}
+        modalHeading="Interactive Map"
+        passiveModal
+        size="lg"
+        className="fullscreen-map-modal"
+      >
+        <div className="h-[80vh] w-full">
+          <MapboxMap
+            gpxData={fieldNote.gpxData}
+            photos={photos}
+            onPhotoClick={setSelectedPhotoId}
+            className="w-full h-full"
+          />
+        </div>
       </Modal>
 
       {/* Photo Lightbox */}
