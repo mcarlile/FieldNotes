@@ -327,7 +327,9 @@ export default function FieldNoteDetail() {
       {selectedPhotoId && (
         <PhotoLightbox
           photoId={selectedPhotoId}
+          photos={photos}
           onClose={() => setSelectedPhotoId(null)}
+          onPhotoChange={setSelectedPhotoId}
         />
       )}
     </div>
