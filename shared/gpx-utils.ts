@@ -3,6 +3,7 @@ import { DOMParser } from "xmldom";
 export interface GpxStats {
   distance: number; // in miles
   elevationGain: number; // in feet
+  date: Date | null; // extracted from GPX metadata or track points
   coordinates: [number, number][];
 }
 
@@ -29,7 +30,7 @@ function metersToFeet(meters: number): number {
 }
 
 /**
- * Parses GPX content and extracts distance, elevation gain, and coordinates
+ * Parses GPX content and extracts distance, elevation gain, date, and coordinates
  */
 export function parseGpxData(gpxContent: string): GpxStats {
   const parser = new DOMParser();
@@ -40,6 +41,32 @@ export function parseGpxData(gpxContent: string): GpxStats {
   
   if (trackPoints.length === 0) {
     throw new Error("No track points found in GPX file");
+  }
+  
+  // Extract date from GPX metadata or first track point
+  let extractedDate: Date | null = null;
+  
+  // Try to get date from GPX metadata first
+  const metadataTime = xmlDoc.querySelector("metadata time");
+  if (metadataTime?.textContent) {
+    extractedDate = new Date(metadataTime.textContent);
+  }
+  
+  // If no metadata time, try to get from first track point timestamp
+  if (!extractedDate) {
+    const firstTrackPoint = trackPoints[0];
+    const timeElement = firstTrackPoint?.querySelector("time");
+    if (timeElement?.textContent) {
+      extractedDate = new Date(timeElement.textContent);
+    }
+  }
+  
+  // If still no date, try track segment metadata
+  if (!extractedDate) {
+    const trkTime = xmlDoc.querySelector("trk time");
+    if (trkTime?.textContent) {
+      extractedDate = new Date(trkTime.textContent);
+    }
   }
   
   let totalDistance = 0;
@@ -86,6 +113,7 @@ export function parseGpxData(gpxContent: string): GpxStats {
   return {
     distance: Math.round(totalDistance * 100) / 100, // Round to 2 decimal places
     elevationGain: Math.round(totalElevationGain),
+    date: extractedDate,
     coordinates
   };
 }

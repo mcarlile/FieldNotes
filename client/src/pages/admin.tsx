@@ -21,9 +21,6 @@ const fieldNoteFormSchema = z.object({
   title: z.string().min(1, "Title is required"),
   description: z.string().min(1, "Description is required"),
   tripType: z.string().min(1, "Trip type is required"),
-  date: z.string().min(1, "Date is required"),
-  distance: z.number().optional(),
-  elevationGain: z.number().optional(),
 });
 
 type FieldNoteFormData = z.infer<typeof fieldNoteFormSchema>;
@@ -35,6 +32,12 @@ export default function AdminPage() {
   
   const [gpxFile, setGpxFile] = useState<File | null>(null);
   const [gpxContent, setGpxContent] = useState<string>("");
+  const [gpxStats, setGpxStats] = useState<{
+    distance: number;
+    elevationGain: number;
+    date: Date | null;
+    coordinates: [number, number][];
+  } | null>(null);
   const [uploadedPhotos, setUploadedPhotos] = useState<Array<{
     url: string;
     filename: string;
@@ -59,9 +62,6 @@ export default function AdminPage() {
       title: "",
       description: "",
       tripType: "",
-      date: "",
-      distance: undefined,
-      elevationGain: undefined,
     },
   });
 
@@ -72,20 +72,22 @@ export default function AdminPage() {
         title: existingFieldNote.title,
         description: existingFieldNote.description,
         tripType: existingFieldNote.tripType,
-        date: new Date(existingFieldNote.date).toISOString().split('T')[0],
-        distance: existingFieldNote.distance || undefined,
-        elevationGain: existingFieldNote.elevationGain || undefined,
       });
 
-      // Set GPX data if available
-      if (existingFieldNote.gpxData) {
-        setGpxContent(""); // We don't need to recreate the file content for editing
+      // Set GPX stats if available
+      if (existingFieldNote.gpxData && 'coordinates' in existingFieldNote.gpxData) {
+        setGpxStats({
+          distance: existingFieldNote.distance || 0,
+          elevationGain: existingFieldNote.elevationGain || 0,
+          date: existingFieldNote.date ? new Date(existingFieldNote.date) : null,
+          coordinates: existingFieldNote.gpxData.coordinates || []
+        });
       }
     }
   }, [existingFieldNote, isEditing, form]);
 
   const saveFieldNoteMutation = useMutation({
-    mutationFn: async (data: FieldNoteFormData & { gpxData?: any, date: Date }) => {
+    mutationFn: async (data: FieldNoteFormData & { gpxData?: any, date: Date, distance?: number, elevationGain?: number }) => {
       if (isEditing) {
         return apiRequest(`/api/field-notes/${id}`, "PUT", data);
       } else {
@@ -105,11 +107,12 @@ export default function AdminPage() {
       form.reset();
       setGpxFile(null);
       setGpxContent("");
+      setGpxStats(null);
       setUploadedPhotos([]);
       queryClient.invalidateQueries({ queryKey: ["/api/field-notes"] });
       
       // Navigate to the field note detail page
-      const fieldNoteId = isEditing ? id : result.id;
+      const fieldNoteId = isEditing ? id : (result as any).id;
       setLocation(`/field-notes/${fieldNoteId}`);
     },
     onError: (error) => {
@@ -144,82 +147,45 @@ export default function AdminPage() {
 
   const parseGpxContent = (content: string) => {
     try {
-      const parser = new DOMParser();
-      const xmlDoc = parser.parseFromString(content, "text/xml");
+      // Parse GPX data to extract all statistics
+      const stats = parseGpxData(content);
+      setGpxStats(stats);
       
-      // Check for XML parsing errors
-      const parserError = xmlDoc.querySelector("parsererror");
-      if (parserError) {
-        throw new Error("Invalid XML format");
-      }
-      
-      // Extract track points from various GPX formats
-      const trackPoints = xmlDoc.querySelectorAll("trkpt, rtept, wpt");
-      const coordinates: [number, number][] = [];
-      
-      trackPoints.forEach(point => {
-        const lat = parseFloat(point.getAttribute("lat") || "0");
-        const lon = parseFloat(point.getAttribute("lon") || "0");
-        if (!isNaN(lat) && !isNaN(lon)) {
-          coordinates.push([lon, lat]); // GeoJSON format: [longitude, latitude]
-        }
+      // Show parsing results with all extracted data
+      const dateStr = stats.date ? stats.date.toLocaleDateString() : "No date found";
+      toast({ 
+        title: "GPX Analysis Complete", 
+        description: `Distance: ${stats.distance} miles, Elevation: ${stats.elevationGain} ft, Date: ${dateStr}`,
+        className: "bg-green-50 border-green-200 text-green-900"
       });
-
-      if (coordinates.length > 0) {
-        const fileSize = (content.length / 1024).toFixed(1);
-        toast({ 
-          title: "GPX Parsed Successfully", 
-          description: `Found ${coordinates.length} points from ${fileSize}KB file` 
-        });
-      } else {
-        toast({ 
-          title: "Warning", 
-          description: "No track points found in GPX file",
-          variant: "destructive" 
-        });
-      }
-    } catch (error) {
+    } catch (error: any) {
       toast({ 
         title: "Error", 
         description: `Failed to parse GPX file: ${error.message}`,
         variant: "destructive" 
       });
+      setGpxStats(null);
     }
   };
 
   const onSubmit = (data: FieldNoteFormData) => {
-    let gpxData = null;
-    let gpxStats = null;
-    
-    if (gpxContent) {
-      try {
-        // Parse GPX data to extract coordinates, distance, and elevation gain
-        gpxStats = parseGpxData(gpxContent);
-        gpxData = { coordinates: gpxStats.coordinates };
-        
-        // Show parsing results
-        toast({ 
-          title: "GPX Analysis Complete", 
-          description: `Distance: ${gpxStats.distance} miles, Elevation: ${gpxStats.elevationGain} ft`,
-          variant: "default" 
-        });
-      } catch (error) {
-        toast({ 
-          title: "GPX Parse Error", 
-          description: error.message || "Failed to parse GPX data",
-          variant: "destructive" 
-        });
-        return;
-      }
+    // Validate that we have GPX data for new entries
+    if (!isEditing && !gpxStats) {
+      toast({ 
+        title: "GPX Required", 
+        description: "Please upload a GPX file to extract distance, elevation, and date information.",
+        variant: "destructive" 
+      });
+      return;
     }
 
-    // Merge form data with parsed GPX stats (auto-populate if not manually entered)
+    // Use GPX stats or existing data for editing
     const fieldNoteData = { 
       ...data, 
-      date: new Date(data.date), 
-      distance: data.distance || gpxStats?.distance,
-      elevationGain: data.elevationGain || gpxStats?.elevationGain,
-      gpxData 
+      date: gpxStats?.date || (existingFieldNote ? new Date(existingFieldNote.date) : new Date()),
+      distance: gpxStats?.distance || existingFieldNote?.distance || undefined,
+      elevationGain: gpxStats?.elevationGain || existingFieldNote?.elevationGain || undefined,
+      gpxData: gpxStats ? { coordinates: gpxStats.coordinates } : existingFieldNote?.gpxData
     };
 
     // Save field note (create or update)
@@ -230,7 +196,7 @@ export default function AdminPage() {
           uploadedPhotos.forEach(async (photo) => {
             try {
               await apiRequest("/api/photos", "POST", {
-                fieldNoteId: savedFieldNote.id,
+                fieldNoteId: (savedFieldNote as any).id,
                 filename: photo.filename,
                 url: photo.url,
                 // TODO: Add EXIF data extraction if needed
@@ -328,7 +294,7 @@ export default function AdminPage() {
                   )}
                 />
 
-                <div className="grid grid-cols-2 gap-4">
+                <div>
                   <FormField
                     control={form.control}
                     name="tripType"
@@ -355,68 +321,30 @@ export default function AdminPage() {
                       </FormItem>
                     )}
                   />
-
-                  <FormField
-                    control={form.control}
-                    name="date"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Date</FormLabel>
-                        <FormControl>
-                          <Input 
-                            type="datetime-local" 
-                            data-testid="input-date"
-                            {...field} 
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="distance"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Distance (miles)</FormLabel>
-                        <FormControl>
-                          <Input 
-                            type="number" 
-                            step="0.1"
-                            placeholder="Auto-populated from GPX"
-                            data-testid="input-distance"
-                            onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
-                            value={field.value || ""} 
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="elevationGain"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Elevation Gain (feet)</FormLabel>
-                        <FormControl>
-                          <Input 
-                            type="number" 
-                            placeholder="Auto-populated from GPX"
-                            data-testid="input-elevation"
-                            onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
-                            value={field.value || ""} 
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
+                {/* GPX Analysis Results */}
+                {gpxStats && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <h4 className="font-medium text-green-900 mb-2">GPX Analysis Results</h4>
+                    <div className="grid grid-cols-3 gap-4 text-sm">
+                      <div>
+                        <span className="text-green-700 font-medium">Date:</span>
+                        <p className="text-green-800">
+                          {gpxStats.date ? gpxStats.date.toLocaleDateString() : "No date found"}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-green-700 font-medium">Distance:</span>
+                        <p className="text-green-800">{gpxStats.distance} miles</p>
+                      </div>
+                      <div>
+                        <span className="text-green-700 font-medium">Elevation Gain:</span>
+                        <p className="text-green-800">{gpxStats.elevationGain} ft</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div>
                   <FormLabel>GPX File</FormLabel>
@@ -429,7 +357,7 @@ export default function AdminPage() {
                       className="cursor-pointer"
                     />
                     <p className="text-xs text-muted-foreground mt-1">
-                      Distance and elevation gain will be automatically calculated from GPX data
+                      Date, distance, and elevation gain will be automatically extracted from GPX data
                     </p>
                     {gpxFile && (
                       <div className="mt-2 space-y-1">
