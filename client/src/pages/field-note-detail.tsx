@@ -18,6 +18,9 @@ import {
 import { ArrowLeft, Edit, TrashCan, Calendar, Location, ChartLineSmooth, Time, Maximize } from "@carbon/icons-react";
 import MapboxRoutePreview from "@/components/mapbox-route-preview";
 import PhotoLightbox from "@/components/photo-lightbox";
+import MapboxMap from "@/components/mapbox-map";
+import ElevationProfile from "@/components/elevation-profile";
+import { parseGpxData } from "@shared/gpx-utils";
 
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -31,6 +34,7 @@ export default function FieldNoteDetail() {
   const [, setLocation] = useLocation();
   const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [hoveredElevationPoint, setHoveredElevationPoint] = useState<any>(null);
 
   const { toast } = useToast();
 
@@ -49,6 +53,21 @@ export default function FieldNoteDetail() {
 
   const fieldNote = fieldNoteData;
   const photos = fieldNoteData?.photos || [];
+
+  // Parse GPX data to get elevation profile
+  const parsedGpxData = useMemo(() => {
+    if (!fieldNote?.gpxData) return null;
+    try {
+      if (typeof fieldNote.gpxData === 'string') {
+        return parseGpxData(fieldNote.gpxData);
+      } else if (typeof fieldNote.gpxData === 'object' && fieldNote.gpxData.elevationProfile) {
+        return fieldNote.gpxData;
+      }
+    } catch (error) {
+      console.error('Failed to parse GPX data for elevation profile:', error);
+    }
+    return null;
+  }, [fieldNote?.gpxData]);
 
   const deleteFieldNoteMutation = useMutation({
     mutationFn: async () => {
@@ -190,30 +209,40 @@ export default function FieldNoteDetail() {
 
             {/* Main Content Grid */}
             <Grid className="gap-y-6">
+              {/* Map and Elevation Profile Column */}
               <Column sm={4} md={5} lg={10} className="mb-6">
-                <Tile className="p-0 overflow-hidden">
-                  <div className="relative">
-                    <MapboxRoutePreview 
-                      fieldNote={fieldNote} 
-                      className="w-full h-64 sm:h-96 rounded overflow-hidden"
-                    />
-                    {/* Overlay button positioned within the map */}
-                    <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2">
-                      <Link href={`/field-notes/${fieldNote.id}/route`}>
-                        <Button
-                          kind="primary"
-                          size="sm"
-                          renderIcon={Maximize}
-                          data-testid="button-view-details"
-                        >
-                          View Details
-                        </Button>
-                      </Link>
+                <div className="space-y-6">
+                  {/* Interactive Map */}
+                  <Tile className="p-0 overflow-hidden">
+                    <div className="w-full h-64 sm:h-96">
+                      <MapboxMap
+                        gpxData={fieldNote.gpxData}
+                        photos={photos}
+                        onPhotoClick={setSelectedPhotoId}
+                        hoveredElevationPoint={hoveredElevationPoint}
+                        className="w-full h-full"
+                      />
                     </div>
-                  </div>
-                </Tile>
+                  </Tile>
+                  
+                  {/* Elevation Profile */}
+                  <Tile className="p-6">
+                    {parsedGpxData && parsedGpxData.elevationProfile ? (
+                      <ElevationProfile 
+                        elevationProfile={parsedGpxData.elevationProfile}
+                        onHoverPoint={setHoveredElevationPoint}
+                        className="w-full"
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center h-64 bg-gray-50 rounded">
+                        <p className="text-gray-500">No elevation data available</p>
+                      </div>
+                    )}
+                  </Tile>
+                </div>
               </Column>
 
+              {/* Photos Column */}
               <Column sm={4} md={3} lg={6}>
                 <Tile className="p-4">
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">

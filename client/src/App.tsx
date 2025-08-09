@@ -5,7 +5,6 @@ import { CarbonNotificationContainer } from "@/components/carbon-notification";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import FieldNoteDetail from "@/pages/field-note-detail";
-import RouteDetails from "@/pages/route-details";
 import Admin from "@/pages/admin";
 
 function Router() {
@@ -13,7 +12,6 @@ function Router() {
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/field-notes/:id" component={FieldNoteDetail} />
-      <Route path="/field-notes/:id/route" component={RouteDetails} />
       <Route path="/admin" component={Admin} />
       <Route path="/admin/:id" component={Admin} />
       <Route path="/field-notes/:id/edit" component={Admin} />
