@@ -108,9 +108,11 @@ export function parseGpxData(gpxContent: string): GpxStats {
     // Calculate elevation gain and build elevation profile
     const eleElements = point.getElementsByTagName("ele");
     let currentElevation = 0;
+    let hasElevationData = false;
     if (eleElements.length > 0) {
       const ele = parseFloat(eleElements[0].textContent || "0");
-      if (!isNaN(ele)) {
+      if (!isNaN(ele) && ele !== 0) {
+        hasElevationData = true;
         currentElevation = metersToFeet(ele);
         if (previousEle !== null && ele > previousEle) {
           totalElevationGain += metersToFeet(ele - previousEle);
@@ -119,12 +121,14 @@ export function parseGpxData(gpxContent: string): GpxStats {
       }
     }
     
-    // Add point to elevation profile
-    elevationProfile.push({
-      distance: totalDistance,
-      elevation: currentElevation,
-      coordinates: [lon, lat]
-    });
+    // Add point to elevation profile (only if we have elevation data)
+    if (hasElevationData || elevationProfile.length === 0) {
+      elevationProfile.push({
+        distance: totalDistance,
+        elevation: currentElevation,
+        coordinates: [lon, lat]
+      });
+    }
     
     previousLat = lat;
     previousLon = lon;

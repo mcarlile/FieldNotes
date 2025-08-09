@@ -62,14 +62,23 @@ export default function FieldNoteDetail() {
       if (typeof fieldNote.gpxData === 'string') {
         const parsed = parseGpxData(fieldNote.gpxData);
         return parsed;
-      } else if (typeof fieldNote.gpxData === 'object' && fieldNote.gpxData.elevationProfile) {
-        return fieldNote.gpxData;
+      } else if (typeof fieldNote.gpxData === 'object') {
+        // Handle pre-parsed GPX data (coordinates array without elevation)
+        const data = fieldNote.gpxData as any;
+        if (data.coordinates && Array.isArray(data.coordinates)) {
+          return {
+            coordinates: data.coordinates,
+            elevationProfile: data.elevationProfile || [], // Empty if no elevation data
+            distance: fieldNote.distance || 0,
+            elevationGain: fieldNote.elevationGain || 0
+          };
+        }
       }
     } catch (error) {
       console.error('Failed to parse GPX data for elevation profile:', error);
     }
     return null;
-  }, [fieldNote?.gpxData]);
+  }, [fieldNote?.gpxData, fieldNote?.distance, fieldNote?.elevationGain]);
 
   const deleteFieldNoteMutation = useMutation({
     mutationFn: async () => {
