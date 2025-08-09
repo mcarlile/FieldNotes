@@ -72,15 +72,15 @@ export function CarbonPhotoUploader({
     setFiles(prev => [...prev, ...newFileStates]);
   };
 
-  const handleFilesFromDropContainer = (files: File[]) => {
+  const handleFilesFromDropContainer = (newFiles: File[]) => {
     // Check file limits
-    if (files.length + files.length > maxNumberOfFiles) {
+    if (files.length + newFiles.length > maxNumberOfFiles) {
       alert(`Maximum ${maxNumberOfFiles} files allowed`);
       return;
     }
 
     // Check file sizes and types
-    const validFiles = files.filter(file => {
+    const validFiles = newFiles.filter(file => {
       if (file.size > maxFileSize) {
         alert(`File ${file.name} is too large. Maximum size is ${Math.round(maxFileSize / 1024 / 1024)}MB`);
         return false;
@@ -244,7 +244,7 @@ export function CarbonPhotoUploader({
                 <FileUploaderItem
                   key={index}
                   name={fileState.file.name}
-                  size={fileState.file.size}
+                  size="md"
                   status={fileState.status === 'complete' ? 'complete' : 
                            fileState.status === 'error' ? 'edit' :
                            fileState.status === 'uploading' ? 'uploading' : 'edit'}
@@ -255,7 +255,7 @@ export function CarbonPhotoUploader({
                 >
                   <div className="space-y-2">
                     <div className="text-sm text-gray-600">
-                      {getStatusText(fileState)}
+                      {getStatusText(fileState)} ({Math.round(fileState.file.size / 1024)}KB)
                     </div>
                     
                     {fileState.status === 'uploading' && (
@@ -263,8 +263,8 @@ export function CarbonPhotoUploader({
                         value={fileState.progress}
                         max={100}
                         size="small"
-                        labelText=""
-                        hideLabel
+                        label={`Uploading ${fileState.progress}%`}
+                        hideLabel={true}
                       />
                     )}
                   </div>
