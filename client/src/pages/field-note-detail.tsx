@@ -5,7 +5,7 @@ import { Link } from "wouter";
 import { 
   Grid,
   Column,
-  Button as CarbonButton,
+  Button,
   Breadcrumb,
   BreadcrumbItem,
   Tag,
@@ -15,8 +15,8 @@ import {
   InlineNotification,
   SkeletonText,
 } from "@carbon/react";
-import { ArrowLeft, Edit, TrashCan, Calendar, Location, ChartLineSmooth, Time } from "@carbon/icons-react";
-import MapPreview from "@/components/map-preview";
+import { ArrowLeft, Edit, TrashCan, Calendar, Location, ChartLineSmooth, Time, View, Close } from "@carbon/icons-react";
+import MapboxRoutePreview from "@/components/mapbox-route-preview";
 import PhotoLightbox from "@/components/photo-lightbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -30,6 +30,7 @@ export default function FieldNoteDetail() {
   const [, setLocation] = useLocation();
   const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showFullMap, setShowFullMap] = useState(false);
   const { toast } = useToast();
 
   // Single query that fetches field note with photos included
@@ -99,7 +100,7 @@ export default function FieldNoteDetail() {
             <h1 className="text-2xl font-semibold text-gray-900 mb-4">Field Note Not Found</h1>
             <p className="text-gray-600 mb-6">The requested field note could not be found.</p>
             <Link href="/">
-              <CarbonButton>Return to Home</CarbonButton>
+              <Button>Return to Home</Button>
             </Link>
           </Tile>
         </Column>
@@ -168,19 +169,19 @@ export default function FieldNoteDetail() {
               
               <div className="flex items-center gap-2 flex-shrink-0">
                 <Link href={`/field-notes/${fieldNote.id}/edit`}>
-                  <CarbonButton kind="tertiary" size="sm" renderIcon={Edit}>
+                  <Button kind="tertiary" size="sm" renderIcon={Edit}>
                     <span className="hidden sm:inline">Edit</span>
-                  </CarbonButton>
+                  </Button>
                 </Link>
                 
-                <CarbonButton
+                <Button
                   kind="danger--tertiary"
                   size="sm"
                   renderIcon={TrashCan}
                   onClick={() => setShowDeleteModal(true)}
                 >
                   <span className="hidden sm:inline">Delete</span>
-                </CarbonButton>
+                </Button>
               </div>
             </div>
 
@@ -190,12 +191,23 @@ export default function FieldNoteDetail() {
             <Grid className="gap-y-6">
               <Column sm={4} md={5} lg={10} className="mb-6">
                 <Tile className="p-0 overflow-hidden">
-                  <MapPreview
-                    gpxData={fieldNote.gpxData}
-                    photos={photos}
-                    onPhotoClick={setSelectedPhotoId}
-                    className="w-full"
-                  />
+                  <div className="space-y-4">
+                    <MapboxRoutePreview 
+                      fieldNote={fieldNote} 
+                      className="w-full h-64 sm:h-96 rounded overflow-hidden"
+                    />
+                    <div className="flex justify-center">
+                      <Button
+                        kind="primary"
+                        size="sm"
+                        renderIcon={View}
+                        onClick={() => setShowFullMap(true)}
+                        data-testid="button-view-full-map"
+                      >
+                        View Interactive Map
+                      </Button>
+                    </div>
+                  </div>
                 </Tile>
               </Column>
 
