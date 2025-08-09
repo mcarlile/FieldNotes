@@ -146,10 +146,19 @@ export default function MapboxMap({
           .setLngLat(parsedGpxData.coordinates[0])
           .addTo(map.current);
 
-        // Fine-tune bounds without animation
+        // Calculate bounds to include both GPX track and photos
         const bounds = new mapboxgl.LngLatBounds();
+        
+        // Add GPX coordinates to bounds
         parsedGpxData.coordinates.forEach((coord: [number, number]) => {
           bounds.extend(coord);
+        });
+        
+        // Add photo coordinates to bounds
+        photos.forEach(photo => {
+          if (photo.latitude && photo.longitude) {
+            bounds.extend([photo.longitude, photo.latitude]);
+          }
         });
         
         if (!bounds.isEmpty()) {
@@ -163,6 +172,7 @@ export default function MapboxMap({
       // Add photo markers with labels
       photos.forEach((photo, index) => {
         if (photo.latitude && photo.longitude && map.current) {
+          
           // Create marker container
           const markerContainer = document.createElement('div');
           markerContainer.className = 'photo-marker-container';

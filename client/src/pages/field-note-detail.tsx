@@ -60,7 +60,8 @@ export default function FieldNoteDetail() {
     if (!fieldNote?.gpxData) return null;
     try {
       if (typeof fieldNote.gpxData === 'string') {
-        return parseGpxData(fieldNote.gpxData);
+        const parsed = parseGpxData(fieldNote.gpxData);
+        return parsed;
       } else if (typeof fieldNote.gpxData === 'object' && fieldNote.gpxData.elevationProfile) {
         return fieldNote.gpxData;
       }

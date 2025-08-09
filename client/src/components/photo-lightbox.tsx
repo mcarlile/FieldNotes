@@ -244,7 +244,7 @@ export default function PhotoLightbox({ photoId, photos, onClose, onPhotoChange 
                   </div>
                   <div>
                     <span className="text-gray-600">Taken:</span>
-                    <span className="ml-2">{formatTimestamp(photo.timestamp)}</span>
+                    <span className="ml-2">{formatTimestamp(photo.timestamp?.toString() || null)}</span>
                   </div>
                   <div>
                     <span className="text-gray-600">Location:</span>
