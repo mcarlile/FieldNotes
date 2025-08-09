@@ -94,7 +94,7 @@ export default function Home() {
             <Dropdown
               id="trip-type-filter"
               titleText="Trip Type"
-              label="All trip types"
+              label={tripTypeItems.find(item => item.id === tripType)?.text || "All trip types"}
               items={tripTypeItems}
               selectedItem={tripTypeItems.find(item => item.id === tripType)}
               onChange={({ selectedItem }) => setTripType(selectedItem?.id || "all")}
@@ -105,8 +105,8 @@ export default function Home() {
           <Column sm={2} md={1} lg={3}>
             <Dropdown
               id="sort-order"
-              titleText="Sort By"
-              label="Most Recent"
+              titleText="Sort By"  
+              label={sortOrderItems.find(item => item.id === sortOrder)?.text || "Most Recent"}
               items={sortOrderItems}
               selectedItem={sortOrderItems.find(item => item.id === sortOrder)}
               onChange={({ selectedItem }) => setSortOrder(selectedItem?.id || "recent")}
