@@ -109,9 +109,9 @@ export function CarbonPhotoUploader({
     setIsUploading(true);
     const uploadResults: any[] = [];
 
-    for (let i = 0; i < files.length; i++) {
-      const fileState = files[i];
-      if (fileState.status !== 'pending') continue;
+    // Upload files in parallel for better performance
+    const uploadPromises = files.map(async (fileState, i) => {
+      if (fileState.status !== 'pending') return null;
 
       try {
         // Update status to uploading
@@ -119,14 +119,19 @@ export function CarbonPhotoUploader({
           idx === i ? { ...f, status: 'uploading' as const, progress: 10 } : f
         ));
 
-        // Get upload parameters
-        const uploadParams = await onGetUploadParameters();
+        // Get upload parameters with timeout
+        const uploadParams = await Promise.race([
+          onGetUploadParameters(),
+          new Promise<never>((_, reject) => 
+            setTimeout(() => reject(new Error('Upload URL request timed out')), 10000)
+          )
+        ]);
         
         setFiles(prev => prev.map((f, idx) => 
           idx === i ? { ...f, progress: 30, uploadUrl: uploadParams.url } : f
         ));
 
-        // Upload file
+        // Upload file with progress tracking
         const response = await fetch(uploadParams.url, {
           method: uploadParams.method,
           body: fileState.file,
@@ -136,7 +141,8 @@ export function CarbonPhotoUploader({
         });
 
         if (!response.ok) {
-          throw new Error(`Upload failed: ${response.statusText}`);
+          const errorText = await response.text();
+          throw new Error(`Upload failed: ${response.status} ${response.statusText} - ${errorText}`);
         }
 
         // Update progress
@@ -144,14 +150,14 @@ export function CarbonPhotoUploader({
           idx === i ? { ...f, status: 'complete' as const, progress: 100 } : f
         ));
 
-        uploadResults.push({
+        return {
           successful: [{
             name: fileState.file.name,
             size: fileState.file.size,
             type: fileState.file.type,
             uploadURL: uploadParams.url,
           }]
-        });
+        };
 
       } catch (error) {
         console.error('Upload error:', error);
@@ -162,8 +168,13 @@ export function CarbonPhotoUploader({
             errorMessage: error instanceof Error ? error.message : 'Upload failed' 
           } : f
         ));
+        return null;
       }
-    }
+    });
+
+    // Wait for all uploads to complete
+    const results = await Promise.all(uploadPromises);
+    uploadResults.push(...results.filter(Boolean));
 
     setIsUploading(false);
 
@@ -222,6 +233,20 @@ export function CarbonPhotoUploader({
         size="md"
       >
         <div className="space-y-6">
+          {/* Upload Progress Summary */}
+          {files.length > 0 && (
+            <div className="bg-gray-50 p-4 rounded">
+              <div className="text-sm font-medium text-gray-700 mb-2">
+                Upload Progress: {files.filter(f => f.status === 'complete').length} of {files.length} complete
+              </div>
+              {isUploading && (
+                <div className="text-xs text-gray-600">
+                  Uploading files in parallel for faster processing...
+                </div>
+              )}
+            </div>
+          )}
+
           {/* File Drop Zone */}
           <FileUploaderDropContainer
             accept={["image/*"]}

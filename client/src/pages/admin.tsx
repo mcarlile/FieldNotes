@@ -143,29 +143,41 @@ export default function AdminPage() {
   // Photo upload handlers
   const handlePhotoUpload = async () => {
     try {
+      console.log('Requesting upload URL...');
       const response = await fetch('/api/photos/upload', { 
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
       });
+      
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Upload URL response error:', errorText);
-        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
+        console.error('Upload URL response error:', response.status, errorText);
+        throw new Error(`Failed to get upload URL: ${response.status} - ${errorText}`);
       }
+      
       const data = await response.json();
+      console.log('Upload URL received successfully');
+      
       return {
         method: 'PUT' as const,
         url: data.uploadURL,
       };
     } catch (error) {
       console.error('Error getting upload URL:', error);
+      toast({
+        title: "Upload Error",
+        description: error instanceof Error ? error.message : "Failed to prepare upload",
+        variant: "destructive"
+      });
       throw error;
     }
   };
 
   const handlePhotoUploadComplete = (result: any) => {
+    console.log('Upload complete:', result);
+    
     if (result.successful && result.successful.length > 0) {
       const newPhotos = result.successful.map((upload: any) => ({
         url: upload.uploadURL,
@@ -175,8 +187,14 @@ export default function AdminPage() {
       setUploadedPhotos(prev => [...prev, ...newPhotos]);
       
       toast({
-        title: "Success",
+        title: "Upload Complete",
         description: `${result.successful.length} photo(s) uploaded successfully!`,
+      });
+    } else if (result.failed && result.failed.length > 0) {
+      toast({
+        title: "Upload Failed",
+        description: `${result.failed.length} photo(s) failed to upload`,
+        variant: "destructive"
       });
     }
   };
