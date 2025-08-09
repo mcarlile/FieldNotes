@@ -6,7 +6,7 @@ import "@uppy/core/dist/style.min.css";
 import "@uppy/dashboard/dist/style.min.css";
 import AwsS3 from "@uppy/aws-s3";
 import type { UploadResult } from "@uppy/core";
-import { Button } from "@/components/ui/button";
+import { Button as CarbonButton } from "@carbon/react";
 
 interface ObjectUploaderProps {
   maxNumberOfFiles?: number;
@@ -78,13 +78,12 @@ export function ObjectUploader({
 
   return (
     <div>
-      <Button 
-        type="button"
+      <CarbonButton 
         onClick={() => setShowModal(true)} 
         className={buttonClassName}
       >
         {children}
-      </Button>
+      </CarbonButton>
 
       <DashboardModal
         uppy={uppy}

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import mapboxgl from "mapbox-gl";
 import type { FieldNote } from "@shared/schema";
+import { parseGpxData } from "@shared/gpx-utils";
 
 interface MapboxRoutePreviewProps {
   fieldNote: FieldNote;
@@ -12,13 +13,36 @@ export default function MapboxRoutePreview({ fieldNote, className = "" }: Mapbox
   const map = useRef<mapboxgl.Map | null>(null);
 
   useEffect(() => {
-    if (!mapContainer.current || !fieldNote.gpxData || !('coordinates' in fieldNote.gpxData)) return;
+    if (!mapContainer.current || !fieldNote.gpxData) return;
+    
+    // Handle both string (XML) and object forms of GPX data
+    let coordinates: [number, number][] = [];
+    
+    try {
+      if (typeof fieldNote.gpxData === 'string') {
+        // Parse GPX data if it's XML string
+        const parsedData = parseGpxData(fieldNote.gpxData);
+        coordinates = parsedData.coordinates;
+      } else if (fieldNote.gpxData && typeof fieldNote.gpxData === 'object' && fieldNote.gpxData !== null) {
+        // Check if it's a parsed object with coordinates
+        const gpxObject = fieldNote.gpxData as any;
+        if ('coordinates' in gpxObject && Array.isArray(gpxObject.coordinates)) {
+          coordinates = gpxObject.coordinates;
+        }
+      }
+    } catch (error) {
+      console.error('Failed to process GPX data:', error);
+      return;
+    }
+    
+    if (!coordinates || coordinates.length === 0) {
+      console.warn('No coordinates found in GPX data');
+      return;
+    }
 
     // Initialize the map only once
     if (!map.current) {
       mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
-      
-      const coordinates = (fieldNote.gpxData as any).coordinates as [number, number][];
       
       // Calculate initial bounds and center
       let initialCenter: [number, number] = [0, 0];
@@ -60,9 +84,7 @@ export default function MapboxRoutePreview({ fieldNote, className = "" }: Mapbox
       });
 
       map.current.on('load', () => {
-        if (!map.current || !fieldNote.gpxData || !('coordinates' in fieldNote.gpxData)) return;
-
-        const coordinates = (fieldNote.gpxData as any).coordinates as [number, number][];
+        if (!map.current || coordinates.length === 0) return;
         
         // Add the route line
         map.current.addSource('route', {
@@ -114,7 +136,8 @@ export default function MapboxRoutePreview({ fieldNote, className = "" }: Mapbox
     };
   }, [fieldNote.gpxData]);
 
-  if (!fieldNote.gpxData || !('coordinates' in fieldNote.gpxData)) {
+  // Show fallback when no valid GPX data
+  if (!fieldNote.gpxData) {
     return (
       <div className={`bg-carbon-gray-20 flex items-center justify-center text-carbon-gray-70 text-sm font-ibm ${className}`}>
         No Route Data

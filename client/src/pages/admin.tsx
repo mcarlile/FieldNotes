@@ -264,16 +264,13 @@ export default function AdminPage() {
 
   // Load existing photos when editing
   useEffect(() => {
-    console.log('Loading photos effect:', { isEditing, existingPhotos, id });
     if (isEditing && existingPhotos && existingPhotos.length > 0) {
-      console.log('Formatting existing photos:', existingPhotos);
       const formattedPhotos = existingPhotos.map((photo: any) => ({
         url: photo.url, // Use the URL as stored in database
         filename: photo.filename,
         caption: photo.altText || photo.description || '',
         id: photo.id, // Keep track of existing photo IDs
       }));
-      console.log('Setting uploaded photos:', formattedPhotos);
       setUploadedPhotos(formattedPhotos);
     } else if (!isEditing) {
       // Clear photos when creating new note
