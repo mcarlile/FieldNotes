@@ -221,8 +221,8 @@ export default function FieldNoteDetail() {
                           className="w-full h-24 bg-gray-200 rounded overflow-hidden hover:opacity-80 transition-opacity"
                         >
                           <img
-                            src={`/public-objects/${photo.filename}`}
-                            alt={photo.altText || 'Field note photo'}
+                            src={photo.url}
+                            alt="Field note photo"
                             className="w-full h-full object-cover"
                           />
                         </button>

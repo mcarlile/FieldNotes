@@ -1,15 +1,17 @@
 import { useEffect, useRef } from "react";
 import mapboxgl from "mapbox-gl";
 import { initMapbox } from "@/lib/mapbox";
+import { parseGpxData } from "@shared/gpx-utils";
 import type { Photo } from "@shared/schema";
 
 interface MapboxMapProps {
   gpxData: any;
   photos: Photo[];
   onPhotoClick: (photoId: string) => void;
+  className?: string;
 }
 
-export default function MapboxMap({ gpxData, photos, onPhotoClick }: MapboxMapProps) {
+export default function MapboxMap({ gpxData, photos, onPhotoClick, className }: MapboxMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
 
@@ -18,13 +20,27 @@ export default function MapboxMap({ gpxData, photos, onPhotoClick }: MapboxMapPr
 
     initMapbox();
 
+    // Parse GPX data if it's a string
+    let parsedGpxData: any = null;
+    if (gpxData) {
+      try {
+        if (typeof gpxData === 'string') {
+          parsedGpxData = parseGpxData(gpxData);
+        } else if (typeof gpxData === 'object' && gpxData.coordinates) {
+          parsedGpxData = gpxData;
+        }
+      } catch (error) {
+        console.error('Failed to parse GPX data:', error);
+      }
+    }
+
     // Calculate initial center and zoom from GPX data
     let initialCenter: [number, number] = [-74.006, 40.7128];
     let initialZoom = 12;
     
-    if (gpxData && gpxData.coordinates && gpxData.coordinates.length > 0) {
+    if (parsedGpxData && parsedGpxData.coordinates && parsedGpxData.coordinates.length > 0) {
       const bounds = new mapboxgl.LngLatBounds();
-      gpxData.coordinates.forEach((coord: [number, number]) => {
+      parsedGpxData.coordinates.forEach((coord: [number, number]) => {
         bounds.extend(coord);
       });
       
@@ -60,7 +76,7 @@ export default function MapboxMap({ gpxData, photos, onPhotoClick }: MapboxMapPr
       if (!map.current) return;
 
       // Add GPX track if available
-      if (gpxData && gpxData.coordinates && gpxData.coordinates.length > 0) {
+      if (parsedGpxData && parsedGpxData.coordinates && parsedGpxData.coordinates.length > 0) {
         const geojsonData = {
           type: 'FeatureCollection' as const,
           features: [{
@@ -68,7 +84,7 @@ export default function MapboxMap({ gpxData, photos, onPhotoClick }: MapboxMapPr
             properties: {},
             geometry: {
               type: 'LineString' as const,
-              coordinates: gpxData.coordinates
+              coordinates: parsedGpxData.coordinates
             }
           }]
         };
@@ -94,7 +110,7 @@ export default function MapboxMap({ gpxData, photos, onPhotoClick }: MapboxMapPr
 
         // Fine-tune bounds without animation
         const bounds = new mapboxgl.LngLatBounds();
-        gpxData.coordinates.forEach((coord: [number, number]) => {
+        parsedGpxData.coordinates.forEach((coord: [number, number]) => {
           bounds.extend(coord);
         });
         
@@ -152,7 +168,7 @@ export default function MapboxMap({ gpxData, photos, onPhotoClick }: MapboxMapPr
   return (
     <div 
       ref={mapContainer} 
-      className="w-full h-96 bg-carbon-gray-20"
+      className={className || "w-full h-96 bg-gray-20"}
       style={{ minHeight: '400px' }}
     />
   );
