@@ -54,9 +54,16 @@ export default function AdminPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/field-notes"] });
     },
     onError: (error) => {
+      let errorMessage = "Failed to create field note";
+      if (error.message.includes("request entity too large") || error.message.includes("413")) {
+        errorMessage = "GPX file is too large. Please try a file smaller than 50MB or compress your GPX data.";
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       toast({ 
-        title: "Error", 
-        description: "Failed to create field note: " + error.message,
+        title: "Upload Error", 
+        description: errorMessage,
         variant: "destructive" 
       });
     },
@@ -81,26 +88,41 @@ export default function AdminPage() {
       const parser = new DOMParser();
       const xmlDoc = parser.parseFromString(content, "text/xml");
       
-      // Extract track points
-      const trackPoints = xmlDoc.querySelectorAll("trkpt");
+      // Check for XML parsing errors
+      const parserError = xmlDoc.querySelector("parsererror");
+      if (parserError) {
+        throw new Error("Invalid XML format");
+      }
+      
+      // Extract track points from various GPX formats
+      const trackPoints = xmlDoc.querySelectorAll("trkpt, rtept, wpt");
       const coordinates: [number, number][] = [];
       
       trackPoints.forEach(point => {
         const lat = parseFloat(point.getAttribute("lat") || "0");
         const lon = parseFloat(point.getAttribute("lon") || "0");
-        coordinates.push([lon, lat]); // GeoJSON format: [longitude, latitude]
+        if (!isNaN(lat) && !isNaN(lon)) {
+          coordinates.push([lon, lat]); // GeoJSON format: [longitude, latitude]
+        }
       });
 
       if (coordinates.length > 0) {
+        const fileSize = (content.length / 1024).toFixed(1);
         toast({ 
-          title: "GPX Parsed", 
-          description: `Found ${coordinates.length} track points` 
+          title: "GPX Parsed Successfully", 
+          description: `Found ${coordinates.length} points from ${fileSize}KB file` 
+        });
+      } else {
+        toast({ 
+          title: "Warning", 
+          description: "No track points found in GPX file",
+          variant: "destructive" 
         });
       }
     } catch (error) {
       toast({ 
         title: "Error", 
-        description: "Failed to parse GPX file",
+        description: `Failed to parse GPX file: ${error.message}`,
         variant: "destructive" 
       });
     }
@@ -113,20 +135,34 @@ export default function AdminPage() {
       try {
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(gpxContent, "text/xml");
-        const trackPoints = xmlDoc.querySelectorAll("trkpt");
+        
+        // Check for XML parsing errors
+        const parserError = xmlDoc.querySelector("parsererror");
+        if (parserError) {
+          throw new Error("Invalid GPX file format");
+        }
+        
+        // Extract track points from various GPX elements
+        const trackPoints = xmlDoc.querySelectorAll("trkpt, rtept, wpt");
         const coordinates: [number, number][] = [];
         
         trackPoints.forEach(point => {
           const lat = parseFloat(point.getAttribute("lat") || "0");
           const lon = parseFloat(point.getAttribute("lon") || "0");
-          coordinates.push([lon, lat]);
+          if (!isNaN(lat) && !isNaN(lon)) {
+            coordinates.push([lon, lat]);
+          }
         });
+        
+        if (coordinates.length === 0) {
+          throw new Error("No valid track points found in GPX file");
+        }
         
         gpxData = { coordinates };
       } catch (error) {
         toast({ 
-          title: "Error", 
-          description: "Failed to parse GPX data",
+          title: "GPX Parse Error", 
+          description: error.message || "Failed to parse GPX data",
           variant: "destructive" 
         });
         return;
@@ -287,15 +323,22 @@ export default function AdminPage() {
                   <div className="mt-2">
                     <Input
                       type="file"
-                      accept=".gpx"
+                      accept=".gpx,.xml"
                       onChange={handleGpxFileChange}
                       data-testid="input-gpx-file"
                       className="cursor-pointer"
                     />
                     {gpxFile && (
-                      <p className="text-sm text-muted-foreground mt-2">
-                        Selected: {gpxFile.name}
-                      </p>
+                      <div className="mt-2 space-y-1">
+                        <p className="text-sm text-muted-foreground">
+                          Selected: {gpxFile.name} ({(gpxFile.size / 1024).toFixed(1)}KB)
+                        </p>
+                        {gpxFile.size > 10 * 1024 * 1024 && (
+                          <p className="text-sm text-orange-600">
+                            ⚠️ Large file detected. Upload may take longer.
+                          </p>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
