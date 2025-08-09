@@ -35,6 +35,7 @@ export default function FieldNoteDetail() {
   const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [hoveredElevationPoint, setHoveredElevationPoint] = useState<any>(null);
+  const [hoveredPhotoId, setHoveredPhotoId] = useState<string | null>(null);
 
   const { toast } = useToast();
 
@@ -220,6 +221,7 @@ export default function FieldNoteDetail() {
                         photos={photos}
                         onPhotoClick={setSelectedPhotoId}
                         hoveredElevationPoint={hoveredElevationPoint}
+                        hoveredPhotoId={hoveredPhotoId}
                         className="w-full h-full"
                       />
                     </div>
@@ -257,15 +259,22 @@ export default function FieldNoteDetail() {
                     </div>
                   ) : (
                     <div className="grid grid-cols-2 gap-2">
-                      {photos.map((photo: Photo) => (
+                      {photos.map((photo: Photo, index: number) => (
                         <button
                           key={photo.id}
                           onClick={() => setSelectedPhotoId(photo.id)}
-                          className="w-full h-24 bg-gray-200 rounded overflow-hidden hover:opacity-80 transition-opacity"
+                          onMouseEnter={() => setHoveredPhotoId(photo.id)}
+                          onMouseLeave={() => setHoveredPhotoId(null)}
+                          className="relative w-full h-24 bg-gray-200 rounded overflow-hidden hover:opacity-80 transition-all duration-200 hover:scale-105 hover:shadow-lg"
+                          data-testid={`photo-thumbnail-${photo.id}`}
                         >
+                          {/* Photo Label Overlay */}
+                          <div className="absolute top-2 left-2 bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded">
+                            Photo {index + 1}
+                          </div>
                           <img
                             src={photo.url}
-                            alt="Field note photo"
+                            alt={`Field note photo ${index + 1}`}
                             className="w-full h-full object-cover"
                             onError={(e) => {
                               console.error(`Failed to load photo: ${photo.url}`);
