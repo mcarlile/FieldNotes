@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { X } from "lucide-react";
+import { Modal } from "@carbon/react";
+import { Close } from "@carbon/icons-react";
 import type { Photo } from "@shared/schema";
 
 interface PhotoLightboxProps {
@@ -29,119 +29,112 @@ export default function PhotoLightbox({ photoId, onClose }: PhotoLightboxProps) 
   };
 
   return (
-    <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto p-0 bg-white">
-        {/* Modal Header */}
-        <DialogHeader className="flex flex-row justify-between items-center p-4 border-b border-carbon-gray-20">
-          <DialogTitle className="text-lg font-medium text-carbon-gray-100 font-ibm">
-            {photo?.filename || "Loading..."}
-          </DialogTitle>
-          <button 
-            onClick={onClose}
-            className="text-carbon-gray-70 hover:text-carbon-gray-100 transition-colors"
-          >
-            <X className="w-6 h-6" />
-          </button>
-        </DialogHeader>
-
-        {isLoading ? (
-          <div className="p-8 text-center">
-            <div className="animate-pulse">
-              <div className="w-full h-96 bg-carbon-gray-20 mb-4"></div>
-              <div className="h-4 bg-carbon-gray-20 mb-2"></div>
-              <div className="h-4 bg-carbon-gray-20 w-2/3 mx-auto"></div>
-            </div>
+    <Modal
+      open={true}
+      onRequestClose={onClose}
+      size="lg"
+      modalHeading={photo?.filename || "Loading..."}
+      primaryButtonText="Close"
+      onRequestSubmit={onClose}
+      hasScrollingContent
+    >
+      {isLoading ? (
+        <div className="p-8 text-center">
+          <div className="animate-pulse">
+            <div className="w-full h-96 bg-gray-20 mb-4"></div>
+            <div className="h-4 bg-gray-20 mb-2"></div>
+            <div className="h-4 bg-gray-20 w-2/3 mx-auto"></div>
           </div>
-        ) : !photo ? (
-          <div className="p-8 text-center text-carbon-gray-70 font-ibm">
-            Photo not found
+        </div>
+      ) : !photo ? (
+        <div className="p-8 text-center text-text-secondary">
+          Photo not found
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Photo Display (2/3) */}
+          <div className="lg:col-span-2">
+            <img
+              src={photo.url}
+              alt={photo.filename}
+              className="w-full h-auto max-h-[60vh] object-contain"
+            />
           </div>
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-3">
-            {/* Photo Display (2/3) */}
-            <div className="lg:col-span-2 p-4">
-              <img
-                src={photo.url}
-                alt={photo.filename}
-                className="w-full h-auto max-h-[60vh] object-contain"
-              />
-            </div>
 
-            {/* Photo Metadata (1/3) */}
-            <div className="lg:col-span-1 p-4 bg-carbon-gray-10">
-              <h4 className="font-medium mb-4 text-carbon-gray-100 font-ibm">Photo Details</h4>
-              <div className="space-y-3 text-sm font-ibm">
-                <div>
-                  <span className="font-medium text-carbon-gray-100">Filename:</span>
-                  <span className="block text-carbon-gray-70 font-mono text-xs break-all">
-                    {photo.filename}
-                  </span>
-                </div>
-                
-                <div>
-                  <span className="font-medium text-carbon-gray-100">Timestamp:</span>
-                  <span className="block text-carbon-gray-70">
-                    {formatTimestamp(photo.timestamp?.toString() || null)}
-                  </span>
-                </div>
-                
-                <div>
-                  <span className="font-medium text-carbon-gray-100">Location:</span>
-                  <span className="block text-carbon-gray-70 font-mono text-xs">
-                    {formatCoordinates(photo.latitude, photo.longitude)}
-                  </span>
-                </div>
-                
-                {photo.elevation && (
-                  <div>
-                    <span className="font-medium text-carbon-gray-100">Elevation:</span>
-                    <span className="block text-carbon-gray-70">{photo.elevation}m</span>
-                  </div>
-                )}
-                
-                {photo.camera && (
-                  <div>
-                    <span className="font-medium text-carbon-gray-100">Camera:</span>
-                    <span className="block text-carbon-gray-70">{photo.camera}</span>
-                  </div>
-                )}
-                
-                {photo.lens && (
-                  <div>
-                    <span className="font-medium text-carbon-gray-100">Lens:</span>
-                    <span className="block text-carbon-gray-70">{photo.lens}</span>
-                  </div>
-                )}
-                
-                {(photo.aperture || photo.shutterSpeed || photo.iso) && (
-                  <div>
-                    <span className="font-medium text-carbon-gray-100">Settings:</span>
-                    <span className="block text-carbon-gray-70 font-mono text-xs">
-                      {[photo.aperture, photo.shutterSpeed, photo.iso && `ISO ${photo.iso}`]
-                        .filter(Boolean)
-                        .join(", ")}
-                    </span>
-                  </div>
-                )}
-                
-                {photo.focalLength && (
-                  <div>
-                    <span className="font-medium text-carbon-gray-100">Focal Length:</span>
-                    <span className="block text-carbon-gray-70">{photo.focalLength}</span>
-                  </div>
-                )}
-                
-                {photo.fileSize && (
-                  <div>
-                    <span className="font-medium text-carbon-gray-100">File Size:</span>
-                    <span className="block text-carbon-gray-70">{photo.fileSize}</span>
-                  </div>
-                )}
+          {/* Photo Metadata (1/3) */}
+          <div className="lg:col-span-1 p-4 bg-layer-01">
+            <h4 className="text-heading-03 mb-4 text-text-primary">Photo Details</h4>
+            <div className="space-y-3 text-body-compact-01">
+              <div>
+                <span className="font-semibold text-text-primary">Filename:</span>
+                <span className="block text-text-secondary font-mono text-xs break-all">
+                  {photo.filename}
+                </span>
               </div>
+              
+              <div>
+                <span className="font-semibold text-text-primary">Timestamp:</span>
+                <span className="block text-text-secondary">
+                  {formatTimestamp(photo.timestamp?.toString() || null)}
+                </span>
+              </div>
+              
+              <div>
+                <span className="font-semibold text-text-primary">Location:</span>
+                <span className="block text-text-secondary font-mono text-xs">
+                  {formatCoordinates(photo.latitude, photo.longitude)}
+                </span>
+              </div>
+              
+              {photo.elevation && (
+                <div>
+                  <span className="font-semibold text-text-primary">Elevation:</span>
+                  <span className="block text-text-secondary">{photo.elevation}m</span>
+                </div>
+              )}
+              
+              {photo.camera && (
+                <div>
+                  <span className="font-semibold text-text-primary">Camera:</span>
+                  <span className="block text-text-secondary">{photo.camera}</span>
+                </div>
+              )}
+              
+              {photo.lens && (
+                <div>
+                  <span className="font-semibold text-text-primary">Lens:</span>
+                  <span className="block text-text-secondary">{photo.lens}</span>
+                </div>
+              )}
+              
+              {(photo.aperture || photo.shutterSpeed || photo.iso) && (
+                <div>
+                  <span className="font-semibold text-text-primary">Settings:</span>
+                  <span className="block text-text-secondary font-mono text-xs">
+                    {[photo.aperture, photo.shutterSpeed, photo.iso && `ISO ${photo.iso}`]
+                      .filter(Boolean)
+                      .join(", ")}
+                  </span>
+                </div>
+              )}
+              
+              {photo.focalLength && (
+                <div>
+                  <span className="font-semibold text-text-primary">Focal Length:</span>
+                  <span className="block text-text-secondary">{photo.focalLength}</span>
+                </div>
+              )}
+              
+              {photo.fileSize && (
+                <div>
+                  <span className="font-semibold text-text-primary">File Size:</span>
+                  <span className="block text-text-secondary">{photo.fileSize}</span>
+                </div>
+              )}
             </div>
           </div>
-        )}
-      </DialogContent>
-    </Dialog>
+        </div>
+      )}
+    </Modal>
   );
 }
