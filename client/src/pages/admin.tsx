@@ -75,12 +75,12 @@ export default function AdminPage() {
       });
 
       // Set GPX stats if available
-      if (existingFieldNote.gpxData && 'coordinates' in existingFieldNote.gpxData) {
+      if (existingFieldNote.gpxData && typeof existingFieldNote.gpxData === 'object' && 'coordinates' in existingFieldNote.gpxData) {
         setGpxStats({
           distance: existingFieldNote.distance || 0,
           elevationGain: existingFieldNote.elevationGain || 0,
           date: existingFieldNote.date ? new Date(existingFieldNote.date) : null,
-          coordinates: existingFieldNote.gpxData.coordinates || []
+          coordinates: (existingFieldNote.gpxData.coordinates as [number, number][]) || []
         });
       }
     }
@@ -190,21 +190,26 @@ export default function AdminPage() {
 
     // Save field note (create or update)
     saveFieldNoteMutation.mutate(fieldNoteData, {
-      onSuccess: (savedFieldNote) => {
+      onSuccess: async (savedFieldNote) => {
         // Create photo records for uploaded photos (only for new uploads)
         if (uploadedPhotos.length > 0) {
-          uploadedPhotos.forEach(async (photo) => {
+          const photoPromises = uploadedPhotos.map(async (photo) => {
             try {
-              await apiRequest("/api/photos", "POST", {
+              const response = await apiRequest("/api/photos", "POST", {
                 fieldNoteId: (savedFieldNote as any).id,
                 filename: photo.filename,
                 url: photo.url,
                 // TODO: Add EXIF data extraction if needed
               });
+              return response;
             } catch (error) {
               console.error("Error creating photo record:", error);
+              return null;
             }
           });
+          
+          // Wait for all photo records to be created
+          await Promise.all(photoPromises);
         }
       },
     });

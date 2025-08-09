@@ -24,6 +24,7 @@ Preferred communication style: Simple, everyday language.
 - **Database**: PostgreSQL with Replit Database (using node-postgres driver) - **MIGRATED AND ACTIVE**
 - **ORM**: Drizzle ORM for type-safe database operations
 - **API Pattern**: RESTful API design with structured endpoints
+- **Object Storage**: Replit Object Storage for photo management with normalized URL serving
 
 ### Key Components
 

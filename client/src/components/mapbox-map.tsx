@@ -18,11 +18,40 @@ export default function MapboxMap({ gpxData, photos, onPhotoClick }: MapboxMapPr
 
     initMapbox();
 
+    // Calculate initial center and zoom from GPX data
+    let initialCenter: [number, number] = [-74.006, 40.7128];
+    let initialZoom = 12;
+    
+    if (gpxData && gpxData.coordinates && gpxData.coordinates.length > 0) {
+      const bounds = new mapboxgl.LngLatBounds();
+      gpxData.coordinates.forEach((coord: [number, number]) => {
+        bounds.extend(coord);
+      });
+      
+      if (!bounds.isEmpty()) {
+        initialCenter = bounds.getCenter().toArray() as [number, number];
+        
+        // Calculate appropriate zoom level for the bounds
+        const ne = bounds.getNorthEast();
+        const sw = bounds.getSouthWest();
+        const latSpan = ne.lat - sw.lat;
+        const lngSpan = ne.lng - sw.lng;
+        const maxSpan = Math.max(latSpan, lngSpan);
+        
+        if (maxSpan > 10) initialZoom = 4;
+        else if (maxSpan > 5) initialZoom = 6;
+        else if (maxSpan > 1) initialZoom = 8;
+        else if (maxSpan > 0.5) initialZoom = 10;
+        else if (maxSpan > 0.1) initialZoom = 12;
+        else initialZoom = 14;
+      }
+    }
+
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
       style: 'mapbox://styles/mapbox/outdoors-v12',
-      center: [-74.006, 40.7128], // Default to NYC if no data
-      zoom: 12,
+      center: initialCenter,
+      zoom: initialZoom,
     });
 
     map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
@@ -33,12 +62,12 @@ export default function MapboxMap({ gpxData, photos, onPhotoClick }: MapboxMapPr
       // Add GPX track if available
       if (gpxData && gpxData.coordinates && gpxData.coordinates.length > 0) {
         const geojsonData = {
-          type: 'FeatureCollection',
+          type: 'FeatureCollection' as const,
           features: [{
-            type: 'Feature',
+            type: 'Feature' as const,
             properties: {},
             geometry: {
-              type: 'LineString',
+              type: 'LineString' as const,
               coordinates: gpxData.coordinates
             }
           }]
@@ -63,14 +92,17 @@ export default function MapboxMap({ gpxData, photos, onPhotoClick }: MapboxMapPr
           },
         });
 
-        // Fit map to GPX bounds
+        // Fine-tune bounds without animation
         const bounds = new mapboxgl.LngLatBounds();
         gpxData.coordinates.forEach((coord: [number, number]) => {
           bounds.extend(coord);
         });
         
         if (!bounds.isEmpty()) {
-          map.current.fitBounds(bounds, { padding: 50 });
+          map.current.fitBounds(bounds, { 
+            padding: 50,
+            duration: 0 // No animation
+          });
         }
       }
 
