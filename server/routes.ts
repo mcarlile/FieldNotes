@@ -157,7 +157,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Object Storage endpoints for photo uploads
   const objectStorageService = new ObjectStorageService();
 
-  // Endpoint to get upload URL for photos
+  // Endpoint to get upload URL for photos (both POST and PUT for compatibility)
   app.post("/api/photos/upload", async (req, res) => {
     try {
       const uploadURL = await objectStorageService.getObjectEntityUploadURL();
@@ -167,6 +167,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: "Failed to get upload URL" });
     }
   });
+
+  // Remove the PUT endpoint as it conflicts with Vite routing
+  // The POST endpoint above handles upload URL requests
 
   // Endpoint to create photo record after upload
   app.post("/api/photos", async (req, res) => {

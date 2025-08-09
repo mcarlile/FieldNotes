@@ -142,10 +142,27 @@ export default function AdminPage() {
 
   // Photo upload handlers
   const handlePhotoUpload = async () => {
-    return {
-      method: "PUT" as const,
-      url: "/api/photos/upload-url", // This would need to be implemented
-    };
+    try {
+      const response = await fetch('/api/photos/upload', { 
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Upload URL response error:', errorText);
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
+      }
+      const data = await response.json();
+      return {
+        method: 'PUT' as const,
+        url: data.uploadURL,
+      };
+    } catch (error) {
+      console.error('Error getting upload URL:', error);
+      throw error;
+    }
   };
 
   const handlePhotoUploadComplete = (result: any) => {
