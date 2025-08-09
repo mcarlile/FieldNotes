@@ -96,12 +96,17 @@ export default function AdminPage() {
         savedFieldNote = await apiRequest("/api/field-notes", "POST", data);
       }
       
+      // Parse the response
+      const fieldNoteResponse = await savedFieldNote.json();
+      console.log("Saved field note:", fieldNoteResponse);
+      
       // Then create photo records if any were uploaded
       if (uploadedPhotos.length > 0) {
         const photoPromises = uploadedPhotos.map(async (photo) => {
           try {
+            console.log("Creating photo with fieldNoteId:", fieldNoteResponse.id);
             return await apiRequest("/api/photos", "POST", {
-              fieldNoteId: (savedFieldNote as any).id,
+              fieldNoteId: fieldNoteResponse.id,
               filename: photo.filename,
               url: photo.url,
             });
@@ -115,7 +120,7 @@ export default function AdminPage() {
         await Promise.all(photoPromises);
       }
       
-      return savedFieldNote;
+      return fieldNoteResponse;
     },
     onSuccess: (result) => {
       const successMessage = isEditing ? "Field note updated" : "Field note created";
