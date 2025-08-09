@@ -21,7 +21,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get specific field note by ID
+  // Get specific field note by ID with photos included
   app.get("/api/field-notes/:id", async (req, res) => {
     try {
       const { id } = req.params;
@@ -29,7 +29,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!fieldNote) {
         return res.status(404).json({ message: "Field note not found" });
       }
-      res.json(fieldNote);
+      
+      // Also fetch photos in the same request to reduce round trips
+      const photos = await storage.getPhotosByFieldNoteId(id);
+      const fieldNoteWithPhotos = {
+        ...fieldNote,
+        photos
+      };
+      
+      // Add cache headers for better performance
+      res.set('Cache-Control', 'public, max-age=300'); // 5 minutes cache
+      res.json(fieldNoteWithPhotos);
     } catch (error) {
       console.error("Error fetching field note:", error);
       res.status(500).json({ message: "Failed to fetch field note" });

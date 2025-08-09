@@ -23,6 +23,8 @@ import { apiRequest } from "@/lib/queryClient";
 import { queryClient } from "@/lib/queryClient";
 import type { FieldNote, Photo } from "@shared/schema";
 
+type FieldNoteWithPhotos = FieldNote & { photos: Photo[] };
+
 export default function FieldNoteDetail() {
   const { id } = useParams();
   const [, setLocation] = useLocation();
@@ -30,7 +32,8 @@ export default function FieldNoteDetail() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const { toast } = useToast();
 
-  const { data: fieldNote, isLoading: isLoadingFieldNote } = useQuery<FieldNote>({
+  // Single query that fetches field note with photos included
+  const { data: fieldNoteData, isLoading: isLoadingFieldNote } = useQuery({
     queryKey: ["/api/field-notes", id],
     queryFn: async () => {
       const response = await fetch(`/api/field-notes/${id}`);
@@ -38,17 +41,12 @@ export default function FieldNoteDetail() {
       return response.json();
     },
     enabled: !!id,
+    staleTime: 5 * 60 * 1000, // 5 minutes cache
+    gcTime: 10 * 60 * 1000, // 10 minutes in cache (renamed from cacheTime in v5)
   });
 
-  const { data: photos = [], isLoading: isLoadingPhotos } = useQuery<Photo[]>({
-    queryKey: ["/api/field-notes", id, "photos"],
-    queryFn: async () => {
-      const response = await fetch(`/api/field-notes/${id}/photos`);
-      if (!response.ok) throw new Error("Failed to fetch photos");
-      return response.json();
-    },
-    enabled: !!id,
-  });
+  const fieldNote = fieldNoteData;
+  const photos = fieldNoteData?.photos || [];
 
   const deleteFieldNoteMutation = useMutation({
     mutationFn: async () => {
@@ -71,6 +69,7 @@ export default function FieldNoteDetail() {
     },
   });
 
+  // Show loading state only when initially loading
   if (isLoadingFieldNote) {
     return (
       <Grid fullWidth className="min-h-screen">
@@ -206,7 +205,7 @@ export default function FieldNoteDetail() {
                     Photos ({photos.length})
                   </h3>
                   
-                  {isLoadingPhotos ? (
+                  {isLoadingFieldNote ? (
                     <div className="grid grid-cols-2 gap-2">
                       {Array.from({ length: 4 }).map((_, i) => (
                         <div key={i} className="w-full h-24 bg-gray-200 animate-pulse rounded"></div>
@@ -230,7 +229,7 @@ export default function FieldNoteDetail() {
                     </div>
                   )}
 
-                  {photos.length === 0 && !isLoadingPhotos && (
+                  {photos.length === 0 && !isLoadingFieldNote && (
                     <p className="text-gray-500 text-sm">No photos available</p>
                   )}
                 </Tile>

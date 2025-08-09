@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, real, jsonb, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, real, jsonb, integer, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -33,7 +33,9 @@ export const photos = pgTable("photos", {
   focalLength: text("focal_length"),
   fileSize: text("file_size"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  fieldNoteIdIdx: index("photos_field_note_id_idx").on(table.fieldNoteId),
+}));
 
 export const fieldNotesRelations = relations(fieldNotes, ({ many }) => ({
   photos: many(photos),
