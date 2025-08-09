@@ -45,7 +45,7 @@ function FullScreenMapModal({ gpxData, photos, onPhotoClick, onClose }: FullScre
           <MapboxMap
             gpxData={gpxData}
             photos={photos}
-            onPhotoClick={onPhotoClick}
+            onPhotoClick={onPhotoClick || (() => {})}
             className="w-full h-full"
           />
         </Suspense>
@@ -151,9 +151,13 @@ export default function MapPreview({ gpxData, photos, onPhotoClick, className = 
     else zoom = 15;
 
     // Create path string for the route - simplify to avoid URL length limits
-    const simplifiedCoords = coordinates.filter((_, index) => index % Math.max(1, Math.floor(coordinates.length / 100)) === 0);
+    const simplifiedCoords = coordinates.filter((_: number[], index: number) => index % Math.max(1, Math.floor(coordinates.length / 100)) === 0);
     const pathString = simplifiedCoords.map((coord: number[]) => `${coord[0]},${coord[1]}`).join(',');
-    const encodedPath = encodeURIComponent(`path-5+ff0000-0.8(${pathString})`);
+    
+    // Try a different path encoding approach for better compatibility
+    const pathOverlay = `path-5+ff0000-0.8(${pathString})`;
+    console.log('Path overlay string length:', pathOverlay.length);
+    console.log('Sample path coords:', simplifiedCoords.slice(0, 3));
 
     // Add photo markers
     let markers = '';
@@ -168,14 +172,16 @@ export default function MapPreview({ gpxData, photos, onPhotoClick, className = 
       }
     }
 
-    const url = `https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/static/${encodedPath}${markers}/${centerLng},${centerLat},${zoom}/400x300@2x?access_token=${accessToken}`;
+    // Try without encoding first to see if that's the issue
+    const url = `https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/static/${pathOverlay}${markers}/${centerLng},${centerLat},${zoom}/400x300@2x?access_token=${accessToken}`;
     console.log('Generated static map URL (simplified coords):', url.substring(0, 100) + '...');
     console.log('Route stats:', {
       originalCoords: coordinates.length,
       simplifiedCoords: simplifiedCoords.length,
       bounds,
       zoom,
-      center: [centerLng, centerLat]
+      center: [centerLng, centerLat],
+      urlLength: url.length
     });
     return url;
   };
