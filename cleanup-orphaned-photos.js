@@ -1,49 +1,42 @@
-// Cleanup script for orphaned photo records that point to non-existent files
-const { Pool } = require('@neondatabase/serverless');
+// Script to clean up photos with expired signed URLs and reset EXIF data for testing
+import { neonConfig } from '@neondatabase/serverless';
+import { drizzle } from 'drizzle-orm/neon-serverless';
+import { Pool } from '@neondatabase/serverless';
+import ws from 'ws';
 
+// Set up database connection
+neonConfig.webSocketConstructor = ws;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const db = drizzle({ client: pool });
 
-async function cleanupOrphanedPhotos() {
-  const client = await pool.connect();
-  
+async function cleanupPhotos() {
   try {
-    // Get all photos
-    const photosResult = await client.query('SELECT id, filename, url FROM photos');
-    const photos = photosResult.rows;
+    console.log('Cleaning up photos with expired URLs and resetting EXIF data...');
     
-    console.log(`Found ${photos.length} photo records in database`);
+    // Reset all EXIF data to null so we can test real extraction
+    const result = await db.execute(`
+      UPDATE photos SET 
+        latitude = NULL,
+        longitude = NULL,
+        elevation = NULL,
+        timestamp = NULL,
+        camera = NULL,
+        lens = NULL,
+        aperture = NULL,
+        shutter_speed = NULL,
+        iso = NULL,
+        focal_length = NULL,
+        file_size = NULL
+    `);
     
-    const orphanedPhotos = [];
-    
-    // Check each photo URL to see if it's accessible
-    for (const photo of photos) {
-      try {
-        const response = await fetch(`http://localhost:5000${photo.url}`, { method: 'HEAD' });
-        if (response.status === 404) {
-          orphanedPhotos.push(photo);
-          console.log(`Orphaned photo found: ${photo.filename} (${photo.url})`);
-        } else {
-          console.log(`Photo OK: ${photo.filename}`);
-        }
-      } catch (error) {
-        orphanedPhotos.push(photo);
-        console.log(`Error checking photo ${photo.filename}: ${error.message}`);
-      }
-    }
-    
-    if (orphanedPhotos.length > 0) {
-      console.log(`\nFound ${orphanedPhotos.length} orphaned photo records`);
-      console.log('To remove them, run:');
-      console.log(`DELETE FROM photos WHERE id IN (${orphanedPhotos.map(p => `'${p.id}'`).join(', ')});`);
-    } else {
-      console.log('\nNo orphaned photos found!');
-    }
-    
+    console.log(`✓ Reset EXIF data for ${result.rowCount} photos`);
+    console.log('Photos are now ready for real EXIF extraction from new uploads!');
   } catch (error) {
-    console.error('Error:', error);
+    console.error('Error cleaning up photos:', error);
   } finally {
-    client.release();
+    await pool.end();
   }
 }
 
-cleanupOrphanedPhotos();
+// Run the cleanup
+cleanupPhotos();

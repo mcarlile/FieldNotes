@@ -8,7 +8,8 @@ import {
 } from "@carbon/react";
 import { Upload } from "@carbon/icons-react";
 import type { UploadResult } from "@uppy/core";
-import { extractExifFromFile, type PhotoExifData } from "@/lib/exif-extractor";
+import { type PhotoExifData } from "@/lib/exif-extractor";
+import { apiRequest } from '@/lib/queryClient';
 
 interface CarbonPhotoUploaderProps {
   maxNumberOfFiles?: number;
@@ -73,19 +74,33 @@ export function CarbonPhotoUploader({
 
     setFiles(prev => [...prev, ...newFileStates]);
     
-    // Extract EXIF data from each new file
+    // Extract EXIF data from each new file using server-side extraction
     for (let i = 0; i < validFiles.length; i++) {
       const file = validFiles[i];
-      const exifData = await extractExifFromFile(file);
-      setFiles(prev => prev.map((f, idx) => 
-        idx === prev.length - validFiles.length + i 
-          ? { ...f, exifData }
-          : f
-      ));
+      try {
+        const formData = new FormData();
+        formData.append('photo', file);
+        
+        const exifResponse = await apiRequest('/api/photos/extract-exif', {
+          method: 'POST',
+          body: formData,
+          headers: {} // Let browser set Content-Type for FormData
+        });
+        
+        const exifData = await exifResponse.json();
+        setFiles(prev => prev.map((f, idx) => 
+          idx === prev.length - validFiles.length + i 
+            ? { ...f, exifData }
+            : f
+        ));
+      } catch (error) {
+        console.error('Failed to extract EXIF data:', error);
+        // Continue without EXIF data if extraction fails
+      }
     }
   };
 
-  const handleFilesFromDropContainer = (newFiles: File[]) => {
+  const handleFilesFromDropContainer = async (newFiles: File[]) => {
     // Check file limits
     if (files.length + newFiles.length > maxNumberOfFiles) {
       alert(`Maximum ${maxNumberOfFiles} files allowed`);
@@ -112,6 +127,31 @@ export function CarbonPhotoUploader({
     }));
 
     setFiles(prev => [...prev, ...newFileStates]);
+    
+    // Extract EXIF data from each new file using server-side extraction
+    for (let i = 0; i < validFiles.length; i++) {
+      const file = validFiles[i];
+      try {
+        const formData = new FormData();
+        formData.append('photo', file);
+        
+        const exifResponse = await apiRequest('/api/photos/extract-exif', {
+          method: 'POST',
+          body: formData,
+          headers: {} // Let browser set Content-Type for FormData
+        });
+        
+        const exifData = await exifResponse.json();
+        setFiles(prev => prev.map((f, idx) => 
+          idx === prev.length - validFiles.length + i 
+            ? { ...f, exifData }
+            : f
+        ));
+      } catch (error) {
+        console.error('Failed to extract EXIF data:', error);
+        // Continue without EXIF data if extraction fails
+      }
+    }
   };
 
   const removeFile = (index: number) => {

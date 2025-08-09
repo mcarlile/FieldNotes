@@ -3,6 +3,8 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertFieldNoteSchema, insertPhotoSchema } from "@shared/schema";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
+import { extractExifData, extractExifFromBuffer } from "./exif-extractor";
+import multer from 'multer';
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Get all field notes with optional filters
@@ -70,6 +72,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching photo:", error);
       res.status(500).json({ message: "Failed to fetch photo" });
+    }
+  });
+
+  // Extract EXIF data from an uploaded photo
+  const upload = multer({ storage: multer.memoryStorage() });
+  app.post("/api/photos/extract-exif", upload.single('photo'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No photo file provided" });
+      }
+
+      console.log(`Extracting EXIF from uploaded file: ${req.file.originalname}`);
+      const exifData = await extractExifFromBuffer(req.file.buffer, req.file.originalname);
+      
+      res.json({
+        filename: req.file.originalname,
+        fileSize: `${Math.round(req.file.size / 1024)} KB`,
+        ...exifData
+      });
+    } catch (error) {
+      console.error("Error extracting EXIF from uploaded photo:", error);
+      res.status(500).json({ message: "Failed to extract EXIF data" });
+    }
+  });
+
+  // Extract EXIF data from an existing photo URL
+  app.post("/api/photos/extract-exif-from-url", async (req, res) => {
+    try {
+      const { photoUrl } = req.body;
+      if (!photoUrl) {
+        return res.status(400).json({ message: "Photo URL is required" });
+      }
+
+      console.log(`Extracting EXIF from photo URL: ${photoUrl}`);
+      const exifData = await extractExifData(photoUrl);
+      
+      res.json(exifData);
+    } catch (error) {
+      console.error("Error extracting EXIF from photo URL:", error);
+      res.status(500).json({ message: "Failed to extract EXIF data" });
     }
   });
 
