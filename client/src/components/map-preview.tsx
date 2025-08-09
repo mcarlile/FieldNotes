@@ -1,0 +1,213 @@
+import { useState, lazy, Suspense } from "react";
+import { Button } from "@carbon/react";
+import { Maximize, View, Close } from "@carbon/icons-react";
+import type { Photo } from "@shared/schema";
+import { parseGpxData } from "@shared/gpx-utils";
+
+// Lazy load the MapboxMap component
+const MapboxMap = lazy(() => import('./mapbox-map'));
+
+interface FullScreenMapModalProps {
+  gpxData: unknown;
+  photos: Photo[];
+  onPhotoClick?: (photoId: string) => void;
+  onClose: () => void;
+}
+
+function FullScreenMapModal({ gpxData, photos, onPhotoClick, onClose }: FullScreenMapModalProps) {
+  return (
+    <div className="fixed inset-0 z-50 bg-white">
+      {/* Header with close button */}
+      <div className="flex items-center justify-between p-4 border-b bg-white">
+        <h2 className="text-lg font-semibold text-gray-900">Interactive Map</h2>
+        <Button
+          kind="ghost"
+          size="sm"
+          renderIcon={Close}
+          onClick={onClose}
+          className="flex items-center gap-2"
+          data-testid="button-close-map"
+        >
+          Close Map
+        </Button>
+      </div>
+      
+      {/* Full-screen map */}
+      <div className="h-[calc(100vh-5rem)]">
+        <Suspense fallback={
+          <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <p className="text-gray-600">Loading interactive map...</p>
+            </div>
+          </div>
+        }>
+          <MapboxMap
+            gpxData={gpxData}
+            photos={photos}
+            onPhotoClick={onPhotoClick}
+            className="w-full h-full"
+          />
+        </Suspense>
+      </div>
+    </div>
+  );
+}
+
+interface MapPreviewProps {
+  gpxData: unknown;
+  photos: Photo[];
+  onPhotoClick?: (photoId: string) => void;
+  className?: string;
+}
+
+export default function MapPreview({ gpxData, photos, onPhotoClick, className = "" }: MapPreviewProps) {
+  const [showFullMap, setShowFullMap] = useState(false);
+
+  // Parse GPX data to get coordinates for preview
+  const coordinates = (() => {
+    try {
+      if (typeof gpxData === 'string') {
+        const stats = parseGpxData(gpxData);
+        return stats.coordinates;
+      } else if (gpxData && typeof gpxData === 'object' && 'coordinates' in gpxData) {
+        return (gpxData as any).coordinates;
+      }
+      return [];
+    } catch (error) {
+      console.error('Failed to parse GPX data:', error);
+      return [];
+    }
+  })();
+  const hasValidTrack = coordinates && coordinates.length > 0;
+
+  // Calculate bounds for preview image
+  const getBounds = () => {
+    if (!hasValidTrack) return null;
+    
+    const lats = coordinates.map((coord: number[]) => coord[1]);
+    const lngs = coordinates.map((coord: number[]) => coord[0]);
+    
+    return {
+      minLat: Math.min(...lats),
+      maxLat: Math.max(...lats),
+      minLng: Math.min(...lngs),
+      maxLng: Math.max(...lngs)
+    };
+  };
+
+  const bounds = getBounds();
+
+  // Generate static map preview URL using Mapbox Static API
+  const getStaticMapUrl = () => {
+    if (!bounds || !hasValidTrack) return null;
+    
+    const accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
+    if (!accessToken) return null;
+
+    // Calculate center and zoom level
+    const centerLat = (bounds.minLat + bounds.maxLat) / 2;
+    const centerLng = (bounds.minLng + bounds.maxLng) / 2;
+    
+    // Simple zoom calculation based on bounds
+    const latDiff = bounds.maxLat - bounds.minLat;
+    const lngDiff = bounds.maxLng - bounds.minLng;
+    const maxDiff = Math.max(latDiff, lngDiff);
+    const zoom = Math.max(8, Math.min(15, 15 - Math.log2(maxDiff * 100)));
+
+    // Create path string for the route
+    const pathString = coordinates.map((coord: number[]) => `${coord[0]},${coord[1]}`).join(',');
+    const encodedPath = encodeURIComponent(`path-5+ff0000-0.8(${pathString})`);
+
+    // Add photo markers
+    let markers = '';
+    if (photos.length > 0) {
+      const photoMarkers = photos
+        .filter(photo => photo.latitude && photo.longitude)
+        .slice(0, 10) // Limit markers for URL length
+        .map(photo => `pin-s-camera+0080ff(${photo.longitude},${photo.latitude})`)
+        .join(',');
+      if (photoMarkers) {
+        markers = ',' + photoMarkers;
+      }
+    }
+
+    return `https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/static/${encodedPath}${markers}/${centerLng},${centerLat},${zoom}/400x300@2x?access_token=${accessToken}`;
+  };
+
+  const staticMapUrl = getStaticMapUrl();
+
+  if (showFullMap) {
+    return <FullScreenMapModal 
+      gpxData={gpxData} 
+      photos={photos} 
+      onPhotoClick={onPhotoClick} 
+      onClose={() => setShowFullMap(false)} 
+    />;
+  }
+
+  return (
+    <div className={`relative ${className}`}>
+      {/* Preview Image */}
+      <div className="relative w-full h-64 sm:h-96 bg-gray-200 rounded overflow-hidden">
+        {staticMapUrl ? (
+          <img
+            src={staticMapUrl}
+            alt="Map preview"
+            className="w-full h-full object-cover"
+            loading="lazy"
+          />
+        ) : hasValidTrack ? (
+          // Fallback for when static map fails to load
+          <div className="w-full h-full bg-gradient-to-br from-green-100 to-blue-100 flex items-center justify-center">
+            <div className="text-center p-6">
+              <View size={48} className="mx-auto mb-4 text-gray-600" />
+              <p className="text-gray-600 text-sm">Map preview unavailable</p>
+              <p className="text-xs text-gray-500 mt-1">
+                {coordinates.length} track points
+              </p>
+            </div>
+          </div>
+        ) : (
+          // No valid track data
+          <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+            <div className="text-center p-6">
+              <View size={48} className="mx-auto mb-4 text-gray-400" />
+              <p className="text-gray-500 text-sm">No route data available</p>
+            </div>
+          </div>
+        )}
+
+        {/* Overlay with stats */}
+        {hasValidTrack && (
+          <div className="absolute top-4 left-4 bg-white bg-opacity-90 rounded px-3 py-2 text-sm">
+            <div className="flex items-center gap-4">
+              <span className="text-gray-600">
+                {coordinates.length} points
+              </span>
+              {photos.length > 0 && (
+                <span className="text-blue-600">
+                  {photos.filter(p => p.latitude && p.longitude).length} photos
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* View Details Button */}
+        <div className="absolute bottom-4 right-4">
+          <Button
+            kind="primary"
+            size="sm"
+            renderIcon={Maximize}
+            onClick={() => setShowFullMap(true)}
+            className="flex items-center gap-2"
+            data-testid="button-view-map-details"
+          >
+            <span>View Details</span>
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}

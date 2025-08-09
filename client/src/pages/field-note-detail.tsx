@@ -16,7 +16,7 @@ import {
   SkeletonText,
 } from "@carbon/react";
 import { ArrowLeft, Edit, TrashCan, Calendar, Location, ChartLineSmooth, Time } from "@carbon/icons-react";
-import MapboxMap from "@/components/mapbox-map";
+import MapPreview from "@/components/map-preview";
 import PhotoLightbox from "@/components/photo-lightbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -190,11 +190,11 @@ export default function FieldNoteDetail() {
             <Grid className="gap-y-6">
               <Column sm={4} md={5} lg={10} className="mb-6">
                 <Tile className="p-0 overflow-hidden">
-                  <MapboxMap
+                  <MapPreview
                     gpxData={fieldNote.gpxData}
                     photos={photos}
                     onPhotoClick={setSelectedPhotoId}
-                    className="w-full h-64 sm:h-96"
+                    className="w-full"
                   />
                 </Tile>
               </Column>
