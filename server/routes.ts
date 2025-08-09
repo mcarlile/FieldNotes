@@ -76,10 +76,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create new field note
   app.post("/api/field-notes", async (req, res) => {
     try {
+      // Extract photos from the request body
+      const { photos: photosData, ...fieldNoteData } = req.body;
+      
       // Convert string date to Date object
       const bodyWithDate = {
-        ...req.body,
-        date: req.body.date ? new Date(req.body.date) : undefined
+        ...fieldNoteData,
+        date: fieldNoteData.date ? new Date(fieldNoteData.date) : undefined
       };
       
       const result = insertFieldNoteSchema.safeParse(bodyWithDate);
@@ -91,6 +94,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const fieldNote = await storage.createFieldNote(result.data);
+      
+      // Create photos if provided
+      if (photosData && Array.isArray(photosData)) {
+        await storage.updateFieldNotePhotos(fieldNote.id, photosData);
+      }
+      
       res.status(201).json(fieldNote);
     } catch (error) {
       console.error("Error creating field note:", error);

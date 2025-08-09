@@ -179,8 +179,34 @@ export default function AdminPage() {
     console.log('Upload complete:', result);
     
     if (result.successful && result.successful.length > 0) {
+      // Normalize the upload URLs to object storage paths for proper serving
+      const objectStorageService = {
+        normalizeObjectEntityPath: (url: string) => {
+          if (!url.startsWith("https://storage.googleapis.com/")) {
+            return url;
+          }
+          
+          const urlObj = new URL(url);
+          const pathname = urlObj.pathname;
+          
+          // Extract the bucket and object path
+          const bucketMatch = pathname.match(/^\/([^/]+)\/(.*)$/);
+          if (!bucketMatch) return url;
+          
+          const [, , objectPath] = bucketMatch;
+          
+          // Convert to our serving endpoint format
+          if (objectPath.startsWith('.private/uploads/')) {
+            const entityId = objectPath.replace('.private/uploads/', '');
+            return `/objects/uploads/${entityId}`;
+          }
+          
+          return url;
+        }
+      };
+      
       const newPhotos = result.successful.map((upload: any) => ({
-        url: upload.uploadURL,
+        url: objectStorageService.normalizeObjectEntityPath(upload.uploadURL),
         filename: upload.name,
         caption: '',
       }));

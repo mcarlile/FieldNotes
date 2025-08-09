@@ -115,6 +115,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateFieldNotePhotos(fieldNoteId: string, photosData: any[]): Promise<Photo[]> {
+    console.log('Updating field note photos:', fieldNoteId, photosData);
+    
     // Get existing photos to compare
     const existingPhotos = await this.getPhotosByFieldNoteId(fieldNoteId);
     const existingPhotoIds = new Set(existingPhotos.map(p => p.id));
@@ -125,6 +127,8 @@ export class DatabaseStorage implements IStorage {
     
     // Process each photo from the form
     for (const photoData of photosData) {
+      console.log('Processing photo:', photoData);
+      
       if (photoData.id && existingPhotoIds.has(photoData.id)) {
         // This is an existing photo to keep
         keepPhotoIds.add(photoData.id);
@@ -134,6 +138,7 @@ export class DatabaseStorage implements IStorage {
           fieldNoteId,
           filename: photoData.filename,
           url: photoData.url,
+          description: photoData.caption || '',
           latitude: photoData.latitude || null,
           longitude: photoData.longitude || null,
           elevation: photoData.elevation || null,
@@ -146,6 +151,7 @@ export class DatabaseStorage implements IStorage {
           focalLength: photoData.focalLength || null,
           fileSize: photoData.fileSize || null,
         });
+        console.log('Created new photo:', newPhoto);
         newPhotos.push(newPhoto);
       }
     }
@@ -229,7 +235,7 @@ export class MemStorage implements IStorage {
       filename: "whitney-summit.jpg",
       latitude: 36.578,
       longitude: -118.292,
-      altitude: 14505,
+      elevation: 14505,
       url: "https://example.com/photos/whitney-summit.jpg",
       timestamp: new Date("2024-07-15T14:30:00Z"),
       camera: "Canon EOS R5",
@@ -247,7 +253,7 @@ export class MemStorage implements IStorage {
       filename: "alpine-lake.jpg",
       latitude: 36.580,
       longitude: -118.290,
-      altitude: 12000,
+      elevation: 12000,
       url: "https://example.com/photos/alpine-lake.jpg",
       timestamp: new Date("2024-07-15T11:45:00Z"),
       camera: "Canon EOS R5",
@@ -265,7 +271,7 @@ export class MemStorage implements IStorage {
       filename: "el-capitan.jpg",
       latitude: 37.748,
       longitude: -119.651,
-      altitude: 4000,
+      elevation: 4000,
       url: "https://example.com/photos/el-capitan.jpg",
       timestamp: new Date("2024-06-20T10:15:00Z"),
       camera: "Sony A7IV",
