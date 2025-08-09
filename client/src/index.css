@@ -73,9 +73,26 @@
   .font-ibm {
     font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   }
-
+  
   .font-ibm-mono {
     font-family: 'IBM Plex Mono', Menlo, Monaco, monospace;
+  }
+  
+  /* Mobile overflow prevention */
+  .prevent-mobile-overflow {
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+  
+  /* Responsive container widths */
+  .mobile-safe-width {
+    max-width: calc(100vw - 2rem); /* Account for margins */
+  }
+  
+  /* Text that should break on mobile */
+  .break-mobile-text {
+    word-break: break-word;
+    overflow-wrap: break-word;
   }
 
   .carbon-tile {

@@ -56,12 +56,12 @@ export default function Home() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 overflow-x-hidden">
       {/* Header */}
       <div className="bg-white border-b border-gray-200">
         <Grid fullWidth>
           <Column sm={4} md={8} lg={16}>
-            <div className="flex justify-between items-center py-6">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 py-6">
               <h1 className="text-2xl font-semibold text-gray-900">Field Notes</h1>
               <div className="flex items-center gap-4">
                 <div className="text-sm text-gray-600">GPX Track Showcase</div>
@@ -79,7 +79,7 @@ export default function Home() {
       {/* Search and Filters */}
       <div className="py-6">
         <Grid fullWidth>
-          <Column sm={4} md={6} lg={10}>
+          <Column sm={4} md={6} lg={10} className="mb-4 sm:mb-0">
             <CarbonSearch
               size="lg"
               placeholder="Search field notes..."
@@ -90,7 +90,7 @@ export default function Home() {
             />
           </Column>
           
-          <Column sm={2} md={1} lg={3}>
+          <Column sm={2} md={1} lg={3} className="mb-4 sm:mb-0">
             <Dropdown
               id="trip-type-filter"
               titleText="Trip Type"

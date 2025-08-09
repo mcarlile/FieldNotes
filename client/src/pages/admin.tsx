@@ -310,7 +310,7 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 overflow-x-hidden">
       {/* Navigation */}
       <div className="bg-white border-b border-gray-200">
         <Grid fullWidth>
@@ -322,7 +322,7 @@ export default function AdminPage() {
                 </Link>
               </BreadcrumbItem>
               <BreadcrumbItem isCurrentPage>
-                <span className="text-gray-900 font-medium">
+                <span className="text-gray-900 font-medium break-words">
                   {isEditing ? "Edit Field Note" : "Add Field Note"}
                 </span>
               </BreadcrumbItem>

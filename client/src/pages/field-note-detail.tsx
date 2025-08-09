@@ -116,7 +116,7 @@ export default function FieldNoteDetail() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 overflow-x-hidden">
       {/* Navigation */}
       <div className="bg-white border-b border-gray-200">
         <Grid fullWidth>
@@ -128,7 +128,7 @@ export default function FieldNoteDetail() {
                 </Link>
               </BreadcrumbItem>
               <BreadcrumbItem isCurrentPage>
-                <span className="text-gray-900 font-medium">
+                <span className="text-gray-900 font-medium break-words">
                   {fieldNote.title}
                 </span>
               </BreadcrumbItem>
@@ -142,23 +142,23 @@ export default function FieldNoteDetail() {
         <Grid fullWidth>
           <Column sm={4} md={8} lg={16}>
             {/* Header */}
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h1 className="text-3xl font-semibold text-gray-900 mb-2">{fieldNote.title}</h1>
-                <div className="flex items-center gap-4 text-sm text-gray-600 mb-4">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-6">
+              <div className="min-w-0 flex-1">
+                <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-2 break-words">{fieldNote.title}</h1>
+                <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm text-gray-600 mb-4">
                   <Tag type="blue" size="sm">{fieldNote.tripType}</Tag>
-                  <span className="flex items-center gap-1">
+                  <span className="flex items-center gap-1 flex-shrink-0">
                     <Calendar size={16} />
                     {formatDate(fieldNote.date.toString())}
                   </span>
                   {fieldNote.distance && (
-                    <span className="flex items-center gap-1">
+                    <span className="flex items-center gap-1 flex-shrink-0">
                       <Location size={16} />
                       {fieldNote.distance} miles
                     </span>
                   )}
                   {fieldNote.elevationGain && (
-                    <span className="flex items-center gap-1">
+                    <span className="flex items-center gap-1 flex-shrink-0">
                       <ChartLineSmooth size={16} />
                       {fieldNote.elevationGain} ft elevation
                     </span>
@@ -166,10 +166,10 @@ export default function FieldNoteDetail() {
                 </div>
               </div>
               
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-shrink-0">
                 <Link href={`/field-notes/${fieldNote.id}/edit`}>
                   <CarbonButton kind="tertiary" size="sm" renderIcon={Edit}>
-                    Edit
+                    <span className="hidden sm:inline">Edit</span>
                   </CarbonButton>
                 </Link>
                 
@@ -179,22 +179,22 @@ export default function FieldNoteDetail() {
                   renderIcon={TrashCan}
                   onClick={() => setShowDeleteModal(true)}
                 >
-                  Delete
+                  <span className="hidden sm:inline">Delete</span>
                 </CarbonButton>
               </div>
             </div>
 
-            <p className="text-gray-700 mb-8 text-lg">{fieldNote.description}</p>
+            <p className="text-gray-700 mb-8 text-base sm:text-lg break-words">{fieldNote.description}</p>
 
             {/* Main Content Grid */}
-            <Grid>
+            <Grid className="gap-y-6">
               <Column sm={4} md={5} lg={10} className="mb-6">
                 <Tile className="p-0 overflow-hidden">
                   <MapboxMap
                     gpxData={fieldNote.gpxData}
                     photos={photos}
                     onPhotoClick={setSelectedPhotoId}
-                    className="w-full h-96"
+                    className="w-full h-64 sm:h-96"
                   />
                 </Tile>
               </Column>
@@ -213,7 +213,7 @@ export default function FieldNoteDetail() {
                     </div>
                   ) : (
                     <div className="grid grid-cols-2 gap-2">
-                      {photos.map((photo) => (
+                      {photos.map((photo: Photo) => (
                         <button
                           key={photo.id}
                           onClick={() => setSelectedPhotoId(photo.id)}
