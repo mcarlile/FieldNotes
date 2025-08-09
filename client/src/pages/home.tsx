@@ -96,6 +96,7 @@ export default function Home() {
               titleText="Trip Type"
               label={tripTypeItems.find(item => item.id === tripType)?.text || "All trip types"}
               items={tripTypeItems}
+              itemToString={(item) => item ? item.text : ""}
               selectedItem={tripTypeItems.find(item => item.id === tripType)}
               onChange={({ selectedItem }) => setTripType(selectedItem?.id || "all")}
               data-testid="select-trip-type"
@@ -108,6 +109,7 @@ export default function Home() {
               titleText="Sort By"  
               label={sortOrderItems.find(item => item.id === sortOrder)?.text || "Most Recent"}
               items={sortOrderItems}
+              itemToString={(item) => item ? item.text : ""}
               selectedItem={sortOrderItems.find(item => item.id === sortOrder)}
               onChange={({ selectedItem }) => setSortOrder(selectedItem?.id || "recent")}
               data-testid="select-sort-order"
