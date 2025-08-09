@@ -21,7 +21,7 @@ Preferred communication style: Simple, everyday language.
 ### Backend Architecture
 - **Runtime**: Node.js with Express.js web framework
 - **Language**: TypeScript with ES modules
-- **Database**: PostgreSQL with Supabase (using postgres-js driver)
+- **Database**: PostgreSQL with Replit Database (using node-postgres driver)
 - **ORM**: Drizzle ORM for type-safe database operations
 - **API Pattern**: RESTful API design with structured endpoints
 
