@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { insertFieldNoteSchema } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Get all field notes with optional filters
@@ -58,6 +59,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching photo:", error);
       res.status(500).json({ message: "Failed to fetch photo" });
+    }
+  });
+
+  // Create new field note
+  app.post("/api/field-notes", async (req, res) => {
+    try {
+      // Convert string date to Date object
+      const bodyWithDate = {
+        ...req.body,
+        date: req.body.date ? new Date(req.body.date) : undefined
+      };
+      
+      const result = insertFieldNoteSchema.safeParse(bodyWithDate);
+      if (!result.success) {
+        return res.status(400).json({ 
+          message: "Invalid field note data",
+          errors: result.error.errors 
+        });
+      }
+      
+      const fieldNote = await storage.createFieldNote(result.data);
+      res.status(201).json(fieldNote);
+    } catch (error) {
+      console.error("Error creating field note:", error);
+      res.status(500).json({ message: "Failed to create field note" });
     }
   });
 

@@ -49,6 +49,8 @@ export const photosRelations = relations(photos, ({ one }) => ({
 export const insertFieldNoteSchema = createInsertSchema(fieldNotes).omit({
   id: true,
   createdAt: true,
+}).extend({
+  date: z.coerce.date(), // Allow string to date conversion
 });
 
 export const insertPhotoSchema = createInsertSchema(photos).omit({

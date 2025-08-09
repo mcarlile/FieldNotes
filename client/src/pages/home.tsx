@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Search, Plus } from "lucide-react";
 import FieldNoteCard from "@/components/field-note-card";
 import type { FieldNote } from "@shared/schema";
 
@@ -32,7 +34,15 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-6">
             <h1 className="text-2xl font-semibold text-carbon-gray-100 font-ibm">Field Notes</h1>
-            <div className="text-sm text-carbon-gray-70 font-ibm">GPX Track Showcase</div>
+            <div className="flex items-center gap-4">
+              <div className="text-sm text-carbon-gray-70 font-ibm">GPX Track Showcase</div>
+              <Link href="/admin">
+                <Button size="sm" data-testid="link-admin">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add New
+                </Button>
+              </Link>
+            </div>
           </div>
         </div>
       </header>

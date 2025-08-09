@@ -139,13 +139,15 @@ export class MemStorage implements IStorage {
       latitude: 36.578,
       longitude: -118.292,
       altitude: 14505,
-      dateTaken: new Date("2024-07-15T14:30:00Z"),
+      url: "https://example.com/photos/whitney-summit.jpg",
+      timestamp: new Date("2024-07-15T14:30:00Z"),
       camera: "Canon EOS R5",
       lens: "RF 24-70mm f/2.8",
-      focalLength: 35,
+      focalLength: "35mm",
       aperture: "f/8",
       shutterSpeed: "1/250",
       iso: 100,
+      fileSize: "2.4 MB",
       createdAt: new Date("2024-07-16T10:05:00Z")
     },
     {
@@ -156,13 +158,15 @@ export class MemStorage implements IStorage {
       latitude: 36.580,
       longitude: -118.290,
       altitude: 12000,
-      dateTaken: new Date("2024-07-15T11:45:00Z"),
+      url: "https://example.com/photos/alpine-lake.jpg",
+      timestamp: new Date("2024-07-15T11:45:00Z"),
       camera: "Canon EOS R5",
       lens: "RF 16-35mm f/2.8",
-      focalLength: 24,
+      focalLength: "24mm",
       aperture: "f/11",
       shutterSpeed: "1/125",
       iso: 200,
+      fileSize: "3.1 MB",
       createdAt: new Date("2024-07-16T10:06:00Z")
     },
     {
@@ -173,13 +177,15 @@ export class MemStorage implements IStorage {
       latitude: 37.748,
       longitude: -119.651,
       altitude: 4000,
-      dateTaken: new Date("2024-06-20T10:15:00Z"),
+      url: "https://example.com/photos/el-capitan.jpg",
+      timestamp: new Date("2024-06-20T10:15:00Z"),
       camera: "Sony A7IV",
       lens: "24-70mm f/2.8",
-      focalLength: 50,
+      focalLength: "50mm",
       aperture: "f/5.6",
       shutterSpeed: "1/200",
       iso: 100,
+      fileSize: "1.8 MB",
       createdAt: new Date("2024-06-21T09:20:00Z")
     }
   ];
