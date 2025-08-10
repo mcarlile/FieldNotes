@@ -4,9 +4,26 @@ import MapboxRoutePreview from "./mapbox-route-preview";
 
 interface FieldNoteCardProps {
   fieldNote: FieldNote;
+  searchTerm?: string;
 }
 
-export default function FieldNoteCard({ fieldNote }: FieldNoteCardProps) {
+// Utility function to highlight search terms
+const highlightText = (text: string, searchTerm?: string): React.ReactNode => {
+  if (!searchTerm || !text) return text;
+  
+  const regex = new RegExp(`(${searchTerm})`, 'gi');
+  const parts = text.split(regex);
+  
+  return parts.map((part, index) => 
+    regex.test(part) ? (
+      <span key={index} style={{backgroundColor: 'var(--carbon-yellow-10)'}} className="px-0.5 rounded">
+        {part}
+      </span>
+    ) : part
+  );
+};
+
+export default function FieldNoteCard({ fieldNote, searchTerm }: FieldNoteCardProps) {
   const formatDate = (date: string) => {
     return new Date(date).toLocaleDateString('en-US', {
       month: 'short',
@@ -30,13 +47,17 @@ export default function FieldNoteCard({ fieldNote }: FieldNoteCardProps) {
       
       <div className="p-4">
         <div className="flex justify-between items-start gap-2 mb-2">
-          <h3 className="text-lg font-medium text-gray-900 break-words min-w-0 flex-1">{fieldNote.title}</h3>
+          <h3 className="text-lg font-medium text-gray-900 break-words min-w-0 flex-1">
+            {highlightText(fieldNote.title, searchTerm)}
+          </h3>
           <Tag type="blue" size="sm" className="flex-shrink-0">
-            {fieldNote.tripType.charAt(0).toUpperCase() + fieldNote.tripType.slice(1)}
+            {highlightText(fieldNote.tripType.charAt(0).toUpperCase() + fieldNote.tripType.slice(1), searchTerm)}
           </Tag>
         </div>
         
-        <p className="text-sm text-gray-600 mb-3 line-clamp-2 break-words">{fieldNote.description}</p>
+        <p className="text-sm text-gray-600 mb-3 line-clamp-2 break-words">
+          {highlightText(fieldNote.description || "", searchTerm)}
+        </p>
         
         <div className="flex justify-between items-center text-xs text-gray-500">
           <span className="flex-shrink-0">{formatDate(fieldNote.date.toString())}</span>
