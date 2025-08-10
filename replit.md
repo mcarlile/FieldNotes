@@ -10,6 +10,12 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+**August 10, 2025 - Mobile UI Improvements:**
+- ✓ Improved photo lightbox mobile experience by hiding close button on small screens
+- ✓ Added CSS media query targeting Carbon Modal footer elements
+- ✓ Enhanced mobile usability with top close icon remaining accessible
+- ✓ Fixed security vulnerability by removing hardcoded Mapbox token fallback
+
 **August 9, 2025 - Real EXIF Data Extraction System:**
 - ✓ Implemented authentic EXIF extraction using exifr library on server-side
 - ✓ Created comprehensive photo metadata processing (GPS, camera settings, timestamps)
