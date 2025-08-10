@@ -59,32 +59,62 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     }
 
     // Remove existing layers and sources
-    ["route-heat-low", "route-heat-medium", "route-heat-high", "route-touch-targets", "route-heat"].forEach(layerId => {
+    const existingLayers = ["route-heat-low", "route-heat-medium", "route-heat-high", "route-touch-targets", "route-heat"];
+    
+    // Also remove individual route layers
+    fieldNotes.forEach(note => {
+      existingLayers.push(`route-${note.id}`);
+    });
+    
+    existingLayers.forEach(layerId => {
       if (map.current.getLayer(layerId)) {
         map.current.removeLayer(layerId);
       }
     });
+    
     if (map.current.getSource("routes")) {
       map.current.removeSource("routes");
     }
 
-    // Collect all route coordinates
+    // Collect all route coordinates and debug info
     const allCoordinates: number[][] = [];
     let bounds = new mapboxgl.LngLatBounds();
+    let routeStats: any[] = [];
 
-    fieldNotes.forEach((note) => {
+    fieldNotes.forEach((note, index) => {
       const gpxData = note.gpxData as any;
       if (gpxData?.coordinates && Array.isArray(gpxData.coordinates)) {
-        gpxData.coordinates.forEach((coord: [number, number]) => {
-          if (Array.isArray(coord) && coord.length === 2) {
-            allCoordinates.push(coord);
-            bounds.extend(coord);
-          }
+        const validCoords = gpxData.coordinates.filter((coord: any) => 
+          Array.isArray(coord) && coord.length === 2 && 
+          typeof coord[0] === 'number' && typeof coord[1] === 'number'
+        );
+        
+        routeStats.push({
+          title: note.title,
+          coordCount: validCoords.length,
+          tripType: note.tripType
+        });
+
+        validCoords.forEach((coord: [number, number]) => {
+          allCoordinates.push(coord);
+          bounds.extend(coord);
+        });
+      } else {
+        routeStats.push({
+          title: note.title,
+          coordCount: 0,
+          tripType: note.tripType
         });
       }
     });
 
-    if (allCoordinates.length === 0) return;
+    console.log('Heat map route analysis:', routeStats);
+    console.log(`Total coordinates from ${fieldNotes.length} field notes: ${allCoordinates.length}`);
+
+    if (allCoordinates.length === 0) {
+      console.log('No valid coordinates found for heat map');
+      return;
+    }
 
     // Create a grid-based heat map approach for better visualization
     const gridSize = 0.001; // Adjust for granularity (degrees)
@@ -110,46 +140,58 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
 
     const maxCount = Math.max(...segmentCounts.values());
     
-    // Create GeoJSON features with weighted line segments
+    // Create GeoJSON features for each complete route
     const features: any[] = [];
+    let totalRoutes = 0;
     
     fieldNotes.forEach((note, noteIndex) => {
       const gpxData = note.gpxData as any;
       if (gpxData?.coordinates && Array.isArray(gpxData.coordinates)) {
         const coordinates = gpxData.coordinates.filter(
           (coord: any): coord is [number, number] => 
-            Array.isArray(coord) && coord.length === 2
+            Array.isArray(coord) && coord.length === 2 &&
+            typeof coord[0] === 'number' && typeof coord[1] === 'number'
         );
 
         if (coordinates.length > 1) {
-          // Create line segments with calculated weights based on density
-          for (let i = 0; i < coordinates.length - 1; i++) {
-            const startCoord = coordinates[i];
-            const endCoord = coordinates[i + 1];
-            
-            // Calculate weight based on grid density
-            const startGridX = Math.floor(startCoord[0] / gridSize) * gridSize;
-            const startGridY = Math.floor(startCoord[1] / gridSize) * gridSize;
-            const startGridKey = `${startGridX.toFixed(6)},${startGridY.toFixed(6)}`;
-            const weight = (segmentCounts.get(startGridKey) || 1) / maxCount;
-
-            features.push({
-              type: "Feature",
-              properties: {
-                noteId: note.id,
-                tripType: note.tripType,
-                weight: weight,
-                density: segmentCounts.get(startGridKey) || 1,
-              },
-              geometry: {
-                type: "LineString",
-                coordinates: [startCoord, endCoord],
-              },
-            });
+          totalRoutes++;
+          
+          // For routes with many points, sample them to avoid overwhelming the visualization
+          const maxPointsPerRoute = 500;
+          const sampleRate = coordinates.length > maxPointsPerRoute 
+            ? Math.ceil(coordinates.length / maxPointsPerRoute) 
+            : 1;
+          
+          const sampledCoords = coordinates.filter((_, index) => index % sampleRate === 0);
+          
+          // Ensure we keep the last coordinate
+          if (sampledCoords[sampledCoords.length - 1] !== coordinates[coordinates.length - 1]) {
+            sampledCoords.push(coordinates[coordinates.length - 1]);
           }
+
+          console.log(`Route "${note.title}": ${coordinates.length} coords → ${sampledCoords.length} sampled (rate: ${sampleRate})`);
+
+          // Create complete route as single feature
+          features.push({
+            type: "Feature",
+            properties: {
+              noteId: note.id,
+              title: note.title,
+              tripType: note.tripType,
+              routeIndex: totalRoutes,
+              originalLength: coordinates.length,
+              sampledLength: sampledCoords.length,
+            },
+            geometry: {
+              type: "LineString",
+              coordinates: sampledCoords,
+            },
+          });
         }
       }
     });
+
+    console.log(`Created ${features.length} route features from ${totalRoutes} valid routes`);
 
     if (features.length === 0) return;
 
@@ -163,66 +205,41 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       lineMetrics: true,
     });
 
-    // Add multiple layers for better heat map visualization
-    
-    // Base layer for low-density routes
-    map.current.addLayer({
-      id: "route-heat-low",
-      type: "line",
-      source: "routes",
-      filter: ["<", ["get", "weight"], 0.3],
-      paint: {
-        "line-color": "#3b82f6", // Blue for low density
-        "line-width": [
-          "interpolate",
-          ["linear"],
-          ["zoom"],
-          8, 4,
-          14, 8,
-          18, 16,
-        ],
-        "line-opacity": 0.8,
-      },
-    });
-    
-    // Medium layer for medium-density routes
-    map.current.addLayer({
-      id: "route-heat-medium",
-      type: "line",
-      source: "routes",
-      filter: ["all", [">=", ["get", "weight"], 0.3], ["<", ["get", "weight"], 0.7]],
-      paint: {
-        "line-color": "#f59e0b", // Orange for medium density
-        "line-width": [
-          "interpolate",
-          ["linear"],
-          ["zoom"],
-          8, 6,
-          14, 12,
-          18, 24,
-        ],
-        "line-opacity": 0.9,
-      },
-    });
-    
-    // High layer for high-density routes
-    map.current.addLayer({
-      id: "route-heat-high",
-      type: "line",
-      source: "routes",
-      filter: [">=", ["get", "weight"], 0.7],
-      paint: {
-        "line-color": "#dc2626", // Red for high density
-        "line-width": [
-          "interpolate",
-          ["linear"],
-          ["zoom"],
-          8, 8,
-          14, 16,
-          18, 32,
-        ],
-        "line-opacity": 1.0,
-      },
+    // Add all routes with distinct colors and good visibility
+    const routeColors = [
+      "#3b82f6", // Blue
+      "#ef4444", // Red  
+      "#10b981", // Green
+      "#f59e0b", // Amber
+      "#8b5cf6", // Purple
+      "#ec4899", // Pink
+      "#06b6d4", // Cyan
+      "#84cc16", // Lime
+    ];
+
+    // Add individual route layers for each route
+    features.forEach((feature, index) => {
+      const layerId = `route-${feature.properties.noteId}`;
+      const color = routeColors[index % routeColors.length];
+      
+      map.current.addLayer({
+        id: layerId,
+        type: "line",
+        source: "routes",
+        filter: ["==", ["get", "noteId"], feature.properties.noteId],
+        paint: {
+          "line-color": color,
+          "line-width": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            8, 4,
+            14, 8,
+            18, 16,
+          ],
+          "line-opacity": 0.8,
+        },
+      });
     });
 
     // Add invisible wider touch targets for better interaction
@@ -260,15 +277,16 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
 
       // Query all route features at this point with a generous buffer
       const buffer = 15; // Pixel buffer for generous touch targets
-      const features = map.current!.queryRenderedFeatures(
+      const routeLayerIds = features.map(f => `route-${f.properties.noteId}`);
+      const clickedFeatures = map.current!.queryRenderedFeatures(
         [
           [e.point.x - buffer, e.point.y - buffer],
           [e.point.x + buffer, e.point.y + buffer]
         ],
-        { layers: ["route-heat-low", "route-heat-medium", "route-heat-high"] }
+        { layers: routeLayerIds }
       );
 
-      if (features.length === 0) return;
+      if (clickedFeatures.length === 0) return;
 
       // Remove existing popup
       if (activePopup) {
@@ -278,13 +296,12 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
 
       // Group features by noteId to avoid duplicates
       const uniqueNotes = new Map();
-      features.forEach(feature => {
+      clickedFeatures.forEach(feature => {
         const noteId = feature.properties?.noteId;
-        const density = feature.properties?.density;
         if (noteId && !uniqueNotes.has(noteId)) {
           const note = fieldNotes.find(n => n.id === noteId);
           if (note) {
-            uniqueNotes.set(noteId, { note, density });
+            uniqueNotes.set(noteId, { note });
           }
         }
       });
@@ -325,7 +342,9 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     map.current.on("click", "route-touch-targets", handleRouteInteraction);
     
     // Add hover effects for visual feedback
-    ["route-heat-low", "route-heat-medium", "route-heat-high", "route-touch-targets"].forEach(layerId => {
+    const allLayerIds = [...features.map(f => `route-${f.properties.noteId}`), "route-touch-targets"];
+    
+    allLayerIds.forEach(layerId => {
       map.current.on("mouseenter", layerId, () => {
         map.current!.getCanvas().style.cursor = "pointer";
       });
