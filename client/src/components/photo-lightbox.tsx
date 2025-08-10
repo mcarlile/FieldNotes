@@ -161,6 +161,7 @@ export default function PhotoLightbox({ photoId, photos, onClose, onPhotoChange 
       onRequestSubmit={onClose}
       hasScrollingContent
       aria-label="Photo details and metadata"
+      className="photo-lightbox"
     >
       <div ref={containerRef} className="select-none">
         {isLoading ? (

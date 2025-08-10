@@ -349,7 +349,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       if (clickedFeatures.length === 0) return;
       const feature = clickedFeatures[0];
       const overlapCount = feature.properties?.overlapCount || 1;
-      const routeIds = feature.properties?.routeIds || [];
+      const routeIds = feature.properties?.routeIds || [feature.properties?.noteId];
 
       // Find all routes that intersect at this point
       const intersectingNotes = routeIds.map((id: string) => fieldNotes.find(n => n.id === id)).filter(Boolean);

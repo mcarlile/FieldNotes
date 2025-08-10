@@ -159,10 +159,10 @@
   background: #ff6900 !important;
 }
 
-/* Hide Carbon Modal footer on mobile devices */
+/* Hide Carbon Modal footer only for photo lightbox on mobile devices */
 @media (max-width: 767px) {
-  .cds--modal-footer,
-  .bx--modal-footer {
+  .photo-lightbox .cds--modal-footer,
+  .photo-lightbox .bx--modal-footer {
     display: none !important;
   }
 }
