@@ -1,6 +1,6 @@
 import { fieldNotes, photos, type FieldNote, type Photo, type InsertFieldNote, type InsertPhoto } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, asc, like, and, or } from "drizzle-orm";
+import { eq, desc, asc, like, ilike, and, or } from "drizzle-orm";
 
 export interface IStorage {
   // Field Notes
@@ -34,12 +34,16 @@ export class DatabaseStorage implements IStorage {
     const conditions = [];
     
     if (options.search) {
-      conditions.push(
-        or(
-          like(fieldNotes.title, `%${options.search}%`),
-          like(fieldNotes.description, `%${options.search}%`)
-        )
-      );
+      const searchTerm = options.search.trim();
+      if (searchTerm) {
+        conditions.push(
+          or(
+            ilike(fieldNotes.title, `%${searchTerm}%`),
+            ilike(fieldNotes.description, `%${searchTerm}%`),
+            ilike(fieldNotes.tripType, `%${searchTerm}%`)
+          )
+        );
+      }
     }
     
     if (options.tripType) {
@@ -319,11 +323,14 @@ export class MemStorage implements IStorage {
     let filtered = [...this.fieldNotesData];
 
     if (options.search) {
-      const searchLower = options.search.toLowerCase();
-      filtered = filtered.filter(note => 
-        note.title.toLowerCase().includes(searchLower) ||
-        note.description.toLowerCase().includes(searchLower)
-      );
+      const searchLower = options.search.toLowerCase().trim();
+      if (searchLower) {
+        filtered = filtered.filter(note => 
+          note.title.toLowerCase().includes(searchLower) ||
+          note.description.toLowerCase().includes(searchLower) ||
+          note.tripType.toLowerCase().includes(searchLower)
+        );
+      }
     }
 
     if (options.tripType) {
