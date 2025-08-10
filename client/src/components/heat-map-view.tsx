@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import { initMapbox } from "@/lib/mapbox";
 import type { FieldNote } from "@shared/schema";
+import { parseGpxData } from "@shared/gpx-utils";
 
 interface HeatMapViewProps {
   fieldNotes: FieldNote[];
@@ -85,30 +86,37 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     let routeStats: any[] = [];
 
     fieldNotes.forEach((note, index) => {
-      const gpxData = note.gpxData as any;
-      if (gpxData?.coordinates && Array.isArray(gpxData.coordinates)) {
-        const validCoords = gpxData.coordinates.filter((coord: any) => 
-          Array.isArray(coord) && coord.length === 2 && 
-          typeof coord[0] === 'number' && typeof coord[1] === 'number'
-        );
-        
-        routeStats.push({
-          title: note.title,
-          coordCount: validCoords.length,
-          tripType: note.tripType
-        });
-
-        validCoords.forEach((coord: [number, number]) => {
-          allCoordinates.push(coord);
-          bounds.extend(coord);
-        });
-      } else {
-        routeStats.push({
-          title: note.title,
-          coordCount: 0,
-          tripType: note.tripType
-        });
+      let coordinates: [number, number][] = [];
+      
+      try {
+        if (typeof note.gpxData === 'string') {
+          // Parse GPX XML data
+          const parsed = parseGpxData(note.gpxData);
+          coordinates = parsed.coordinates;
+        } else if (note.gpxData && typeof note.gpxData === 'object') {
+          // Handle pre-parsed GPX data
+          const gpxObject = note.gpxData as any;
+          if (gpxObject.coordinates && Array.isArray(gpxObject.coordinates)) {
+            coordinates = gpxObject.coordinates.filter((coord: any) => 
+              Array.isArray(coord) && coord.length === 2 && 
+              typeof coord[0] === 'number' && typeof coord[1] === 'number'
+            );
+          }
+        }
+      } catch (error) {
+        console.error(`Failed to parse GPX data for "${note.title}":`, error);
       }
+      
+      routeStats.push({
+        title: note.title,
+        coordCount: coordinates.length,
+        tripType: note.tripType
+      });
+
+      coordinates.forEach((coord: [number, number]) => {
+        allCoordinates.push(coord);
+        bounds.extend(coord);
+      });
     });
 
     console.log('Heat map route analysis:', routeStats);
@@ -125,25 +133,38 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     
     // First pass: map each route's path through grid cells
     fieldNotes.forEach((note) => {
-      const gpxData = note.gpxData as any;
-      if (gpxData?.coordinates && Array.isArray(gpxData.coordinates)) {
-        const coordinates = gpxData.coordinates.filter(
-          (coord: any): coord is [number, number] => 
-            Array.isArray(coord) && coord.length === 2 &&
-            typeof coord[0] === 'number' && typeof coord[1] === 'number'
-        );
-
-        coordinates.forEach((coord) => {
-          const gridX = Math.floor(coord[0] / gridSize) * gridSize;
-          const gridY = Math.floor(coord[1] / gridSize) * gridSize;
-          const gridKey = `${gridX.toFixed(8)},${gridY.toFixed(8)}`;
-          
-          if (!routeSegments.has(gridKey)) {
-            routeSegments.set(gridKey, new Set());
+      let coordinates: [number, number][] = [];
+      
+      try {
+        if (typeof note.gpxData === 'string') {
+          // Parse GPX XML data
+          const parsed = parseGpxData(note.gpxData);
+          coordinates = parsed.coordinates;
+        } else if (note.gpxData && typeof note.gpxData === 'object') {
+          // Handle pre-parsed GPX data
+          const gpxObject = note.gpxData as any;
+          if (gpxObject.coordinates && Array.isArray(gpxObject.coordinates)) {
+            coordinates = gpxObject.coordinates.filter(
+              (coord: any): coord is [number, number] => 
+                Array.isArray(coord) && coord.length === 2 &&
+                typeof coord[0] === 'number' && typeof coord[1] === 'number'
+            );
           }
-          routeSegments.get(gridKey)!.add(note.id);
-        });
+        }
+      } catch (error) {
+        console.error(`Failed to parse GPX data for grid analysis "${note.title}":`, error);
       }
+
+      coordinates.forEach((coord) => {
+        const gridX = Math.floor(coord[0] / gridSize) * gridSize;
+        const gridY = Math.floor(coord[1] / gridSize) * gridSize;
+        const gridKey = `${gridX.toFixed(8)},${gridY.toFixed(8)}`;
+        
+        if (!routeSegments.has(gridKey)) {
+          routeSegments.set(gridKey, new Set());
+        }
+        routeSegments.get(gridKey)!.add(note.id);
+      });
     });
 
     // Calculate overlap density for each grid cell
@@ -160,60 +181,73 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     let totalRoutes = 0;
     
     fieldNotes.forEach((note, noteIndex) => {
-      const gpxData = note.gpxData as any;
-      if (gpxData?.coordinates && Array.isArray(gpxData.coordinates)) {
-        const coordinates = gpxData.coordinates.filter(
-          (coord: any): coord is [number, number] => 
-            Array.isArray(coord) && coord.length === 2 &&
-            typeof coord[0] === 'number' && typeof coord[1] === 'number'
-        );
-
-        if (coordinates.length > 1) {
-          totalRoutes++;
-          
-          // For routes with many points, sample them to avoid overwhelming the visualization
-          const maxPointsPerRoute = 500;
-          const sampleRate = coordinates.length > maxPointsPerRoute 
-            ? Math.ceil(coordinates.length / maxPointsPerRoute) 
-            : 1;
-          
-          const sampledCoords = coordinates.filter((_, index) => index % sampleRate === 0);
-          
-          // Ensure we keep the last coordinate
-          if (sampledCoords[sampledCoords.length - 1] !== coordinates[coordinates.length - 1]) {
-            sampledCoords.push(coordinates[coordinates.length - 1]);
+      let coordinates: [number, number][] = [];
+      
+      try {
+        if (typeof note.gpxData === 'string') {
+          // Parse GPX XML data
+          const parsed = parseGpxData(note.gpxData);
+          coordinates = parsed.coordinates;
+        } else if (note.gpxData && typeof note.gpxData === 'object') {
+          // Handle pre-parsed GPX data
+          const gpxObject = note.gpxData as any;
+          if (gpxObject.coordinates && Array.isArray(gpxObject.coordinates)) {
+            coordinates = gpxObject.coordinates.filter(
+              (coord: any): coord is [number, number] => 
+                Array.isArray(coord) && coord.length === 2 &&
+                typeof coord[0] === 'number' && typeof coord[1] === 'number'
+            );
           }
+        }
+      } catch (error) {
+        console.error(`Failed to parse GPX data for feature creation "${note.title}":`, error);
+      }
 
-          console.log(`Route "${note.title}": ${coordinates.length} coords → ${sampledCoords.length} sampled (rate: ${sampleRate})`);
+      if (coordinates.length > 1) {
+        totalRoutes++;
+        
+        // For routes with many points, sample them to avoid overwhelming the visualization
+        const maxPointsPerRoute = 500;
+        const sampleRate = coordinates.length > maxPointsPerRoute 
+          ? Math.ceil(coordinates.length / maxPointsPerRoute) 
+          : 1;
+        
+        const sampledCoords = coordinates.filter((_, index) => index % sampleRate === 0);
+        
+        // Ensure we keep the last coordinate
+        if (sampledCoords[sampledCoords.length - 1] !== coordinates[coordinates.length - 1]) {
+          sampledCoords.push(coordinates[coordinates.length - 1]);
+        }
 
-          // Create line segments with overlap density calculation
-          for (let i = 0; i < sampledCoords.length - 1; i++) {
-            const startCoord = sampledCoords[i];
-            const endCoord = sampledCoords[i + 1];
-            
-            // Calculate overlap density for this segment
-            const gridX = Math.floor(startCoord[0] / gridSize) * gridSize;
-            const gridY = Math.floor(startCoord[1] / gridSize) * gridSize;
-            const gridKey = `${gridX.toFixed(8)},${gridY.toFixed(8)}`;
-            const overlapCount = overlapCounts.get(gridKey) || 1;
-            const density = overlapCount / maxOverlap;
+        console.log(`Route "${note.title}": ${coordinates.length} coords → ${sampledCoords.length} sampled (rate: ${sampleRate})`);
 
-            features.push({
-              type: "Feature",
-              properties: {
-                noteId: note.id,
-                title: note.title,
-                tripType: note.tripType,
-                overlapCount: overlapCount,
-                density: density,
-                routeIds: Array.from(routeSegments.get(gridKey) || [note.id]),
-              },
-              geometry: {
-                type: "LineString",
-                coordinates: [startCoord, endCoord],
-              },
-            });
-          }
+        // Create line segments with overlap density calculation
+        for (let i = 0; i < sampledCoords.length - 1; i++) {
+          const startCoord = sampledCoords[i];
+          const endCoord = sampledCoords[i + 1];
+          
+          // Calculate overlap density for this segment
+          const gridX = Math.floor(startCoord[0] / gridSize) * gridSize;
+          const gridY = Math.floor(startCoord[1] / gridSize) * gridSize;
+          const gridKey = `${gridX.toFixed(8)},${gridY.toFixed(8)}`;
+          const overlapCount = overlapCounts.get(gridKey) || 1;
+          const density = overlapCount / maxOverlap;
+
+          features.push({
+            type: "Feature",
+            properties: {
+              noteId: note.id,
+              title: note.title,
+              tripType: note.tripType,
+              overlapCount: overlapCount,
+              density: density,
+              routeIds: Array.from(routeSegments.get(gridKey) || [note.id]),
+            },
+            geometry: {
+              type: "LineString",
+              coordinates: [startCoord, endCoord],
+            },
+          });
         }
       }
     });
