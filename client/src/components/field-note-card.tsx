@@ -32,7 +32,7 @@ export default function FieldNoteCard({ fieldNote }: FieldNoteCardProps) {
         <div className="flex justify-between items-start gap-2 mb-2">
           <h3 className="text-lg font-medium text-gray-900 break-words min-w-0 flex-1">{fieldNote.title}</h3>
           <Tag type="blue" size="sm" className="flex-shrink-0">
-            {fieldNote.tripType}
+            {fieldNote.tripType.charAt(0).toUpperCase() + fieldNote.tripType.slice(1)}
           </Tag>
         </div>
         

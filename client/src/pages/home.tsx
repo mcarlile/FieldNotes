@@ -31,14 +31,9 @@ export default function Home() {
       if (tripType && tripType !== "all") params.append("tripType", tripType);
       if (sortOrder) params.append("sortOrder", sortOrder);
       
-      const url = `/api/field-notes?${params}`;
-      console.log("Fetching field notes:", url, { search, tripType, sortOrder });
-      
-      const response = await fetch(url);
+      const response = await fetch(`/api/field-notes?${params}`);
       if (!response.ok) throw new Error("Failed to fetch field notes");
-      const data = await response.json();
-      console.log("Field notes response:", data.length, "items");
-      return data;
+      return response.json();
     },
   });
 
