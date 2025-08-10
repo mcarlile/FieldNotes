@@ -1,6 +1,6 @@
 import { fieldNotes, photos, type FieldNote, type Photo, type InsertFieldNote, type InsertPhoto } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, asc, like, and } from "drizzle-orm";
+import { eq, desc, asc, like, and, or } from "drizzle-orm";
 
 export interface IStorage {
   // Field Notes
@@ -34,7 +34,12 @@ export class DatabaseStorage implements IStorage {
     const conditions = [];
     
     if (options.search) {
-      conditions.push(like(fieldNotes.title, `%${options.search}%`));
+      conditions.push(
+        or(
+          like(fieldNotes.title, `%${options.search}%`),
+          like(fieldNotes.description, `%${options.search}%`)
+        )
+      );
     }
     
     if (options.tripType) {
