@@ -59,9 +59,12 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     }
 
     // Remove existing layers and sources
-    const existingLayers = ["route-heat-low", "route-heat-medium", "route-heat-high", "route-touch-targets", "route-heat"];
+    const existingLayers = [
+      "route-heat-single", "route-heat-medium", "route-heat-high", 
+      "route-touch-targets", "route-heat-low", "route-heat"
+    ];
     
-    // Also remove individual route layers
+    // Also remove individual route layers if they exist
     fieldNotes.forEach(note => {
       existingLayers.push(`route-${note.id}`);
     });
@@ -116,29 +119,41 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       return;
     }
 
-    // Create a grid-based heat map approach for better visualization
-    const gridSize = 0.001; // Adjust for granularity (degrees)
-    const segmentCounts = new Map<string, number>();
+    // Create a more precise overlap detection system
+    const gridSize = 0.0005; // Smaller grid for better precision (degrees)
+    const routeSegments = new Map<string, Set<string>>(); // Track which routes pass through each grid cell
     
-    // First pass: count segments in each grid cell
+    // First pass: map each route's path through grid cells
     fieldNotes.forEach((note) => {
       const gpxData = note.gpxData as any;
       if (gpxData?.coordinates && Array.isArray(gpxData.coordinates)) {
         const coordinates = gpxData.coordinates.filter(
           (coord: any): coord is [number, number] => 
-            Array.isArray(coord) && coord.length === 2
+            Array.isArray(coord) && coord.length === 2 &&
+            typeof coord[0] === 'number' && typeof coord[1] === 'number'
         );
 
         coordinates.forEach((coord) => {
           const gridX = Math.floor(coord[0] / gridSize) * gridSize;
           const gridY = Math.floor(coord[1] / gridSize) * gridSize;
-          const gridKey = `${gridX.toFixed(6)},${gridY.toFixed(6)}`;
-          segmentCounts.set(gridKey, (segmentCounts.get(gridKey) || 0) + 1);
+          const gridKey = `${gridX.toFixed(8)},${gridY.toFixed(8)}`;
+          
+          if (!routeSegments.has(gridKey)) {
+            routeSegments.set(gridKey, new Set());
+          }
+          routeSegments.get(gridKey)!.add(note.id);
         });
       }
     });
 
-    const maxCount = Math.max(...segmentCounts.values());
+    // Calculate overlap density for each grid cell
+    const overlapCounts = new Map<string, number>();
+    routeSegments.forEach((routeIds, gridKey) => {
+      overlapCounts.set(gridKey, routeIds.size);
+    });
+
+    const maxOverlap = Math.max(...overlapCounts.values(), 1);
+    console.log(`Grid analysis: ${routeSegments.size} cells, max overlap: ${maxOverlap} routes`);
     
     // Create GeoJSON features for each complete route
     const features: any[] = [];
@@ -171,22 +186,34 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
 
           console.log(`Route "${note.title}": ${coordinates.length} coords → ${sampledCoords.length} sampled (rate: ${sampleRate})`);
 
-          // Create complete route as single feature
-          features.push({
-            type: "Feature",
-            properties: {
-              noteId: note.id,
-              title: note.title,
-              tripType: note.tripType,
-              routeIndex: totalRoutes,
-              originalLength: coordinates.length,
-              sampledLength: sampledCoords.length,
-            },
-            geometry: {
-              type: "LineString",
-              coordinates: sampledCoords,
-            },
-          });
+          // Create line segments with overlap density calculation
+          for (let i = 0; i < sampledCoords.length - 1; i++) {
+            const startCoord = sampledCoords[i];
+            const endCoord = sampledCoords[i + 1];
+            
+            // Calculate overlap density for this segment
+            const gridX = Math.floor(startCoord[0] / gridSize) * gridSize;
+            const gridY = Math.floor(startCoord[1] / gridSize) * gridSize;
+            const gridKey = `${gridX.toFixed(8)},${gridY.toFixed(8)}`;
+            const overlapCount = overlapCounts.get(gridKey) || 1;
+            const density = overlapCount / maxOverlap;
+
+            features.push({
+              type: "Feature",
+              properties: {
+                noteId: note.id,
+                title: note.title,
+                tripType: note.tripType,
+                overlapCount: overlapCount,
+                density: density,
+                routeIds: Array.from(routeSegments.get(gridKey) || [note.id]),
+              },
+              geometry: {
+                type: "LineString",
+                coordinates: [startCoord, endCoord],
+              },
+            });
+          }
         }
       }
     });
@@ -205,41 +232,65 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       lineMetrics: true,
     });
 
-    // Add all routes with distinct colors and good visibility
-    const routeColors = [
-      "#3b82f6", // Blue
-      "#ef4444", // Red  
-      "#10b981", // Green
-      "#f59e0b", // Amber
-      "#8b5cf6", // Purple
-      "#ec4899", // Pink
-      "#06b6d4", // Cyan
-      "#84cc16", // Lime
-    ];
+    // Add density-based heat map layers
+    // Low density (single route) - neutral blue
+    map.current.addLayer({
+      id: "route-heat-single",
+      type: "line",
+      source: "routes",
+      filter: ["==", ["get", "overlapCount"], 1],
+      paint: {
+        "line-color": "#3b82f6", // Neutral blue for single routes
+        "line-width": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          8, 3,
+          14, 6,
+          18, 12,
+        ],
+        "line-opacity": 0.7,
+      },
+    });
 
-    // Add individual route layers for each route
-    features.forEach((feature, index) => {
-      const layerId = `route-${feature.properties.noteId}`;
-      const color = routeColors[index % routeColors.length];
-      
-      map.current.addLayer({
-        id: layerId,
-        type: "line",
-        source: "routes",
-        filter: ["==", ["get", "noteId"], feature.properties.noteId],
-        paint: {
-          "line-color": color,
-          "line-width": [
-            "interpolate",
-            ["linear"],
-            ["zoom"],
-            8, 4,
-            14, 8,
-            18, 16,
-          ],
-          "line-opacity": 0.8,
-        },
-      });
+    // Medium overlap (2-3 routes) - orange
+    map.current.addLayer({
+      id: "route-heat-medium",
+      type: "line",
+      source: "routes",
+      filter: ["all", [">=", ["get", "overlapCount"], 2], ["<=", ["get", "overlapCount"], 3]],
+      paint: {
+        "line-color": "#f59e0b", // Orange for medium overlap
+        "line-width": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          8, 4,
+          14, 8,
+          18, 16,
+        ],
+        "line-opacity": 0.8,
+      },
+    });
+
+    // High overlap (4+ routes) - red
+    map.current.addLayer({
+      id: "route-heat-high",
+      type: "line",
+      source: "routes",
+      filter: [">=", ["get", "overlapCount"], 4],
+      paint: {
+        "line-color": "#dc2626", // Red for high overlap
+        "line-width": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          8, 5,
+          14, 10,
+          18, 20,
+        ],
+        "line-opacity": 0.9,
+      },
     });
 
     // Add invisible wider touch targets for better interaction
@@ -277,13 +328,13 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
 
       // Query all route features at this point with a generous buffer
       const buffer = 15; // Pixel buffer for generous touch targets
-      const routeLayerIds = features.map(f => `route-${f.properties.noteId}`);
+      const heatMapLayers = ["route-heat-single", "route-heat-medium", "route-heat-high"];
       const clickedFeatures = map.current!.queryRenderedFeatures(
         [
           [e.point.x - buffer, e.point.y - buffer],
           [e.point.x + buffer, e.point.y + buffer]
         ],
-        { layers: routeLayerIds }
+        { layers: heatMapLayers }
       );
 
       if (clickedFeatures.length === 0) return;
@@ -294,34 +345,27 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
         activePopup = null;
       }
 
-      // Group features by noteId to avoid duplicates
-      const uniqueNotes = new Map();
-      clickedFeatures.forEach(feature => {
-        const noteId = feature.properties?.noteId;
-        if (noteId && !uniqueNotes.has(noteId)) {
-          const note = fieldNotes.find(n => n.id === noteId);
-          if (note) {
-            uniqueNotes.set(noteId, { note });
-          }
-        }
-      });
+      // Get the first feature to show overlap info
+      if (clickedFeatures.length === 0) return;
+      const feature = clickedFeatures[0];
+      const overlapCount = feature.properties?.overlapCount || 1;
+      const routeIds = feature.properties?.routeIds || [];
 
-      if (uniqueNotes.size === 0) return;
+      // Find all routes that intersect at this point
+      const intersectingNotes = routeIds.map((id: string) => fieldNotes.find(n => n.id === id)).filter(Boolean);
 
-      // Create popup content
-      const notesList = Array.from(uniqueNotes.values());
-      const popupContent = notesList.length === 1 
+      const popupContent = intersectingNotes.length === 1
         ? // Single route
           `<div class="text-sm max-w-64">
-             <strong>${notesList[0].note.title}</strong><br/>
-             <span class="text-gray-600">${notesList[0].note.tripType}</span><br/>
-             <span class="text-xs text-gray-500">${notesList[0].note.distance}mi • ${notesList[0].note.elevationGain}ft gain</span>
+             <strong>${intersectingNotes[0].title}</strong><br/>
+             <span class="text-gray-600">${intersectingNotes[0].tripType}</span><br/>
+             <span class="text-xs text-gray-500">${intersectingNotes[0].distance}mi • ${intersectingNotes[0].elevationGain}ft gain</span>
            </div>`
-        : // Multiple routes
+        : // Multiple routes overlapping
           `<div class="text-sm max-w-64">
-             <strong>${notesList.length} Routes Intersect Here:</strong><br/>
-             ${notesList.map(({ note }) => 
-               `<div class="mt-2 pl-2 border-l-2 border-gray-300">
+             <strong>${overlapCount} Routes Overlap Here:</strong><br/>
+             ${intersectingNotes.map(note => 
+               `<div class="mt-2 pl-2 border-l-2 border-orange-300">
                   <strong>${note.title}</strong><br/>
                   <span class="text-gray-600 text-xs">${note.tripType} • ${note.distance}mi</span>
                 </div>`
@@ -342,7 +386,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     map.current.on("click", "route-touch-targets", handleRouteInteraction);
     
     // Add hover effects for visual feedback
-    const allLayerIds = [...features.map(f => `route-${f.properties.noteId}`), "route-touch-targets"];
+    const allLayerIds = ["route-heat-single", "route-heat-medium", "route-heat-high", "route-touch-targets"];
     
     allLayerIds.forEach(layerId => {
       map.current.on("mouseenter", layerId, () => {
