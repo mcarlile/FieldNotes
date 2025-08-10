@@ -10,6 +10,13 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+**August 10, 2025 - Search Highlighting & Data Sync:**
+- ✓ Implemented search term highlighting using Carbon Design System $support-warning token
+- ✓ Enhanced fuzzy search with case-insensitive matching across title, description, and trip type
+- ✓ Created data export/import system for production-development synchronization
+- ✓ Added comprehensive data sync scripts with merge and replace options
+- ✓ Fixed field note type badge capitalization display
+
 **August 10, 2025 - Mobile UI Improvements:**
 - ✓ Improved photo lightbox mobile experience by hiding close button on small screens
 - ✓ Added CSS media query targeting Carbon Modal footer elements
@@ -71,8 +78,17 @@ Preferred communication style: Simple, everyday language.
 3. **API Layer**: Express server provides RESTful endpoints for data retrieval and creation with filtering capabilities
 4. **Frontend Queries**: React Query manages API calls with caching and background updates
 5. **Map Visualization**: GPX data is rendered on Mapbox maps with photo markers showing precise locations
-6. **User Interaction**: Search, filter, and navigation interactions update the display in real-time
+6. **User Interaction**: Search, filter, and navigation interactions update the display in real-time with highlighted search terms
 7. **Admin Interface**: Built-in admin page at `/admin` allows adding new field notes with GPX file upload
+
+## Environment Data Synchronization
+
+The application supports data synchronization between development and production environments:
+
+- **Export/Import System**: Scripts to transfer field notes and photo metadata between databases
+- **Merge vs Replace**: Options to either merge new data or completely replace existing data
+- **Object Storage Separation**: Each environment maintains separate photo storage buckets
+- **Usage**: Run `./data-sync.sh export` to export data, transfer the JSON file, then `./data-sync.sh import` to import
 
 ## External Dependencies
 
