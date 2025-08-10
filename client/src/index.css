@@ -34,7 +34,7 @@
   --carbon-gray-20: hsl(0, 0%, 87.8%);
   --carbon-gray-70: hsl(0, 0%, 32.2%);
   --carbon-gray-100: hsl(0, 0%, 8.6%);
-  --carbon-yellow-10: hsl(50, 88%, 95%); /* Subtle yellow highlight for search */
+  --support-warning: #f1c21b; /* Carbon Design System $support-warning token for search highlighting */
 }
 
 .dark {
