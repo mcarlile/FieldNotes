@@ -44,9 +44,22 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
 
   useEffect(() => {
     if (!map.current || !mapLoaded || fieldNotes.length === 0) return;
+    
+    // Ensure map style is fully loaded before adding layers
+    if (!map.current.isStyleLoaded()) {
+      const checkStyleLoaded = () => {
+        if (map.current && map.current.isStyleLoaded()) {
+          map.current.off('styledata', checkStyleLoaded);
+          // Retry the layer creation
+          setTimeout(() => setMapLoaded(true), 100);
+        }
+      };
+      map.current.on('styledata', checkStyleLoaded);
+      return;
+    }
 
     // Remove existing layers and sources
-    ["route-heat-low", "route-heat-medium", "route-heat-high", "route-heat"].forEach(layerId => {
+    ["route-heat-low", "route-heat-medium", "route-heat-high", "route-touch-targets", "route-heat"].forEach(layerId => {
       if (map.current.getLayer(layerId)) {
         map.current.removeLayer(layerId);
       }
@@ -164,11 +177,11 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
           "interpolate",
           ["linear"],
           ["zoom"],
-          8, 1,
-          14, 3,
-          18, 6,
+          8, 4,
+          14, 8,
+          18, 16,
         ],
-        "line-opacity": 0.6,
+        "line-opacity": 0.8,
       },
     });
     
@@ -184,11 +197,11 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
           "interpolate",
           ["linear"],
           ["zoom"],
-          8, 2,
-          14, 5,
-          18, 10,
+          8, 6,
+          14, 12,
+          18, 24,
         ],
-        "line-opacity": 0.8,
+        "line-opacity": 0.9,
       },
     });
     
@@ -204,11 +217,30 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
           "interpolate",
           ["linear"],
           ["zoom"],
-          8, 3,
-          14, 7,
-          18, 14,
+          8, 8,
+          14, 16,
+          18, 32,
         ],
         "line-opacity": 1.0,
+      },
+    });
+
+    // Add invisible wider touch targets for better interaction
+    map.current.addLayer({
+      id: "route-touch-targets",
+      type: "line",
+      source: "routes",
+      paint: {
+        "line-color": "transparent",
+        "line-width": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          8, 20,
+          14, 30,
+          18, 40,
+        ],
+        "line-opacity": 0,
       },
     });
 
@@ -220,51 +252,88 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       });
     }
 
-    // Add hover effects for all heat map layers
-    let hoveredNoteId: string | null = null;
-    
-    const addHoverEffects = (layerId: string) => {
-      map.current.on("mouseenter", layerId, (e) => {
-        map.current!.getCanvas().style.cursor = "pointer";
-        
-        if (e.features && e.features[0]) {
-          const feature = e.features[0];
-          const noteId = feature.properties?.noteId;
-          const density = feature.properties?.density;
-          
-          if (noteId && noteId !== hoveredNoteId) {
-            hoveredNoteId = noteId;
-            const note = fieldNotes.find(n => n.id === noteId);
-            
-            if (note && e.lngLat) {
-              new mapboxgl.Popup({ closeButton: false, closeOnClick: false })
-                .setLngLat(e.lngLat)
-                .setHTML(`
-                  <div class="text-sm">
-                    <strong>${note.title}</strong><br/>
-                    <span class="text-gray-600">${note.tripType}</span><br/>
-                    <span class="text-xs text-gray-500">${note.distance}mi • ${note.elevationGain}ft gain</span><br/>
-                    <span class="text-xs text-blue-600">Density: ${density} ${density === 1 ? 'route' : 'routes'}</span>
-                  </div>
-                `)
-                .addTo(map.current!);
-            }
+    // Add click and hover effects for route interaction
+    let activePopup: mapboxgl.Popup | null = null;
+
+    const handleRouteInteraction = (e: mapboxgl.MapMouseEvent & mapboxgl.EventData) => {
+      if (!e.lngLat) return;
+
+      // Query all route features at this point with a generous buffer
+      const buffer = 15; // Pixel buffer for generous touch targets
+      const features = map.current!.queryRenderedFeatures(
+        [
+          [e.point.x - buffer, e.point.y - buffer],
+          [e.point.x + buffer, e.point.y + buffer]
+        ],
+        { layers: ["route-heat-low", "route-heat-medium", "route-heat-high"] }
+      );
+
+      if (features.length === 0) return;
+
+      // Remove existing popup
+      if (activePopup) {
+        activePopup.remove();
+        activePopup = null;
+      }
+
+      // Group features by noteId to avoid duplicates
+      const uniqueNotes = new Map();
+      features.forEach(feature => {
+        const noteId = feature.properties?.noteId;
+        const density = feature.properties?.density;
+        if (noteId && !uniqueNotes.has(noteId)) {
+          const note = fieldNotes.find(n => n.id === noteId);
+          if (note) {
+            uniqueNotes.set(noteId, { note, density });
           }
         }
       });
 
-      map.current.on("mouseleave", layerId, () => {
-        map.current!.getCanvas().style.cursor = "";
-        hoveredNoteId = null;
-        
-        // Remove all popups
-        const popups = document.querySelectorAll('.mapboxgl-popup');
-        popups.forEach(popup => popup.remove());
-      });
+      if (uniqueNotes.size === 0) return;
+
+      // Create popup content
+      const notesList = Array.from(uniqueNotes.values());
+      const popupContent = notesList.length === 1 
+        ? // Single route
+          `<div class="text-sm max-w-64">
+             <strong>${notesList[0].note.title}</strong><br/>
+             <span class="text-gray-600">${notesList[0].note.tripType}</span><br/>
+             <span class="text-xs text-gray-500">${notesList[0].note.distance}mi • ${notesList[0].note.elevationGain}ft gain</span>
+           </div>`
+        : // Multiple routes
+          `<div class="text-sm max-w-64">
+             <strong>${notesList.length} Routes Intersect Here:</strong><br/>
+             ${notesList.map(({ note }) => 
+               `<div class="mt-2 pl-2 border-l-2 border-gray-300">
+                  <strong>${note.title}</strong><br/>
+                  <span class="text-gray-600 text-xs">${note.tripType} • ${note.distance}mi</span>
+                </div>`
+             ).join('')}
+           </div>`;
+
+      activePopup = new mapboxgl.Popup({ 
+        closeButton: true, 
+        closeOnClick: false,
+        maxWidth: "300px"
+      })
+        .setLngLat(e.lngLat)
+        .setHTML(popupContent)
+        .addTo(map.current!);
     };
 
-    // Add hover effects to all layers
-    ["route-heat-low", "route-heat-medium", "route-heat-high"].forEach(addHoverEffects);
+    // Add click handlers to the touch target layer for generous interaction
+    map.current.on("click", "route-touch-targets", handleRouteInteraction);
+    
+    // Add hover effects for visual feedback
+    ["route-heat-low", "route-heat-medium", "route-heat-high", "route-touch-targets"].forEach(layerId => {
+      map.current.on("mouseenter", layerId, () => {
+        map.current!.getCanvas().style.cursor = "pointer";
+      });
+
+      map.current.on("mouseleave", layerId, () => {
+        map.current!.getCanvas().style.cursor = "";
+      });
+    });
 
   }, [fieldNotes, mapLoaded]);
 
