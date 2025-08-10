@@ -13,15 +13,18 @@ import {
   Tag,
   SkeletonText,
   SkeletonPlaceholder,
+  Toggle,
 } from "@carbon/react";
-import { Add, Search, Filter } from "@carbon/icons-react";
+import { Add, Search, Filter, Map } from "@carbon/icons-react";
 import FieldNoteCard from "@/components/field-note-card";
+import HeatMapView from "@/components/heat-map-view";
 import type { FieldNote } from "@shared/schema";
 
 export default function Home() {
   const [search, setSearch] = useState("");
   const [tripType, setTripType] = useState("all");
   const [sortOrder, setSortOrder] = useState("recent");
+  const [showHeatMap, setShowHeatMap] = useState(false);
 
   const { data: fieldNotes = [], isLoading } = useQuery<FieldNote[]>({
     queryKey: ["/api/field-notes", { search, tripType, sortOrder }],
@@ -55,6 +58,48 @@ export default function Home() {
     { id: "name", text: "By Name" },
   ];
 
+  // If heat map is enabled, show full-screen heat map
+  if (showHeatMap) {
+    return (
+      <div className="h-screen bg-gray-50 flex flex-col">
+        {/* Header */}
+        <div className="bg-white border-b border-gray-200 flex-shrink-0">
+          <Grid fullWidth>
+            <Column sm={4} md={8} lg={16}>
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 py-6">
+                <h1 className="text-2xl font-semibold text-gray-900">Field Notes - Heat Map</h1>
+                <div className="flex items-center gap-4">
+                  <Toggle
+                    id="heat-map-toggle"
+                    labelText=""
+                    aria-label="Toggle heat map view"
+                    toggled={showHeatMap}
+                    onToggle={setShowHeatMap}
+                    data-testid="toggle-heat-map"
+                  />
+                  <label htmlFor="heat-map-toggle" className="text-sm text-gray-600 cursor-pointer">
+                    Heat Map
+                  </label>
+                  <div className="text-sm text-gray-600">Route Aggregation View</div>
+                  <Link href="/admin">
+                    <CarbonButton size="sm" data-testid="link-admin" renderIcon={Add}>
+                      Add New
+                    </CarbonButton>
+                  </Link>
+                </div>
+              </div>
+            </Column>
+          </Grid>
+        </div>
+        
+        {/* Full-screen Heat Map */}
+        <div className="flex-1">
+          <HeatMapView fieldNotes={fieldNotes} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 overflow-x-hidden">
       {/* Header */}
@@ -64,6 +109,17 @@ export default function Home() {
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 py-6">
               <h1 className="text-2xl font-semibold text-gray-900">Field Notes</h1>
               <div className="flex items-center gap-4">
+                <Toggle
+                  id="heat-map-toggle"
+                  labelText=""
+                  aria-label="Toggle heat map view"
+                  toggled={showHeatMap}
+                  onToggle={setShowHeatMap}
+                  data-testid="toggle-heat-map"
+                />
+                <label htmlFor="heat-map-toggle" className="text-sm text-gray-600 cursor-pointer">
+                  Heat Map
+                </label>
                 <div className="text-sm text-gray-600">GPX Track Showcase</div>
                 <Link href="/admin">
                   <CarbonButton size="sm" data-testid="link-admin" renderIcon={Add}>
