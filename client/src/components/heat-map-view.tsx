@@ -399,19 +399,25 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       const popupContent = intersectingNotes.length === 1
         ? // Single route
           `<div class="text-sm max-w-64">
-             <strong>${intersectingNotes[0].title}</strong><br/>
+             <a href="/field-notes/${intersectingNotes[0].id}" class="text-blue-600 hover:text-blue-800 font-semibold underline" style="color: #2563eb; text-decoration: underline;">
+               ${intersectingNotes[0].title}
+             </a><br/>
              <span class="text-gray-600">${intersectingNotes[0].tripType}</span><br/>
-             <span class="text-xs text-gray-500">${intersectingNotes[0].distance}mi • ${intersectingNotes[0].elevationGain}ft gain</span>
+             <span class="text-xs text-gray-500">${intersectingNotes[0].distance}mi • ${intersectingNotes[0].elevationGain}ft gain</span><br/>
+             <span class="text-xs text-blue-600" style="color: #2563eb;">Click to view details</span>
            </div>`
         : // Multiple routes overlapping
           `<div class="text-sm max-w-64">
              <strong>${overlapCount} Routes Overlap Here:</strong><br/>
              ${intersectingNotes.map(note => 
                `<div class="mt-2 pl-2 border-l-2 border-orange-300">
-                  <strong>${note.title}</strong><br/>
+                  <a href="/field-notes/${note.id}" class="text-blue-600 hover:text-blue-800 font-semibold underline" style="color: #2563eb; text-decoration: underline;">
+                    ${note.title}
+                  </a><br/>
                   <span class="text-gray-600 text-xs">${note.tripType} • ${note.distance}mi</span>
                 </div>`
              ).join('')}
+             <div class="mt-2 text-xs text-blue-600" style="color: #2563eb;">Click any route to view details</div>
            </div>`;
 
       activePopup = new mapboxgl.Popup({ 
