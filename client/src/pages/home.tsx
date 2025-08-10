@@ -67,7 +67,7 @@ export default function Home() {
           <Grid fullWidth>
             <Column sm={4} md={8} lg={16}>
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 py-6">
-                <h1 className="text-2xl font-semibold text-gray-900">Field Notes - Heat Map</h1>
+                <h1 className="text-2xl font-semibold text-gray-900">Field Notes</h1>
                 <div className="flex items-center gap-4">
                   <label htmlFor="heat-map-toggle" className="text-sm text-gray-600 cursor-pointer">
                     Heat Map
@@ -81,7 +81,7 @@ export default function Home() {
                     onToggle={setShowHeatMap}
                     data-testid="toggle-heat-map"
                   />
-                  <div className="text-sm text-gray-600">Route Aggregation View</div>
+
                   <Link href="/admin">
                     <CarbonButton size="sm" data-testid="link-admin" renderIcon={Add}>
                       Add New
@@ -122,7 +122,7 @@ export default function Home() {
                   onToggle={setShowHeatMap}
                   data-testid="toggle-heat-map"
                 />
-                <div className="text-sm text-gray-600">GPX Track Showcase</div>
+
                 <Link href="/admin">
                   <CarbonButton size="sm" data-testid="link-admin" renderIcon={Add}>
                     Add New
