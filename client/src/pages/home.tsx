@@ -69,17 +69,18 @@ export default function Home() {
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 py-6">
                 <h1 className="text-2xl font-semibold text-gray-900">Field Notes - Heat Map</h1>
                 <div className="flex items-center gap-4">
+                  <label htmlFor="heat-map-toggle" className="text-sm text-gray-600 cursor-pointer">
+                    Heat Map
+                  </label>
                   <Toggle
                     id="heat-map-toggle"
                     labelText=""
+                    hideLabel
                     aria-label="Toggle heat map view"
                     toggled={showHeatMap}
                     onToggle={setShowHeatMap}
                     data-testid="toggle-heat-map"
                   />
-                  <label htmlFor="heat-map-toggle" className="text-sm text-gray-600 cursor-pointer">
-                    Heat Map
-                  </label>
                   <div className="text-sm text-gray-600">Route Aggregation View</div>
                   <Link href="/admin">
                     <CarbonButton size="sm" data-testid="link-admin" renderIcon={Add}>
@@ -109,17 +110,18 @@ export default function Home() {
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 py-6">
               <h1 className="text-2xl font-semibold text-gray-900">Field Notes</h1>
               <div className="flex items-center gap-4">
+                <label htmlFor="heat-map-toggle" className="text-sm text-gray-600 cursor-pointer">
+                  Heat Map
+                </label>
                 <Toggle
                   id="heat-map-toggle"
                   labelText=""
+                  hideLabel
                   aria-label="Toggle heat map view"
                   toggled={showHeatMap}
                   onToggle={setShowHeatMap}
                   data-testid="toggle-heat-map"
                 />
-                <label htmlFor="heat-map-toggle" className="text-sm text-gray-600 cursor-pointer">
-                  Heat Map
-                </label>
                 <div className="text-sm text-gray-600">GPX Track Showcase</div>
                 <Link href="/admin">
                   <CarbonButton size="sm" data-testid="link-admin" renderIcon={Add}>
