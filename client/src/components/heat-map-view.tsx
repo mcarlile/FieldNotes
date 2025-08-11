@@ -433,16 +433,93 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     // Add click handlers to the touch target layer for generous interaction
     map.current.on("click", "route-touch-targets", handleRouteInteraction);
     
-    // Add hover effects for visual feedback
-    const allLayerIds = ["route-heat-single", "route-heat-medium", "route-heat-high", "route-touch-targets"];
+    // Add enhanced hover effects with glowing and prominence
+    const visibleLayerIds = ["route-heat-single", "route-heat-medium", "route-heat-high"];
+    const allLayerIds = [...visibleLayerIds, "route-touch-targets"];
     
     allLayerIds.forEach(layerId => {
-      map.current.on("mouseenter", layerId, () => {
+      map.current.on("mouseenter", layerId, (e) => {
         map.current!.getCanvas().style.cursor = "pointer";
+        
+        // Query features at hover point to get route information
+        if (e.features && e.features.length > 0) {
+          const hoveredFeature = e.features[0];
+          const routeIds = hoveredFeature.properties?.routeIds;
+          const noteId = hoveredFeature.properties?.noteId;
+          
+          // Get all route IDs that should be highlighted
+          let highlightRouteIds: string[] = [];
+          if (Array.isArray(routeIds)) {
+            highlightRouteIds = routeIds;
+          } else if (noteId) {
+            highlightRouteIds = [noteId];
+          }
+          
+          // Apply enhanced styling to all layers for matching routes
+          visibleLayerIds.forEach(visibleLayerId => {
+            // Create filter to highlight only the hovered routes
+            const filter = ["in", ["get", "noteId"], ["literal", highlightRouteIds]];
+            
+            // Apply glowing effect with increased width and opacity
+            map.current!.setPaintProperty(visibleLayerId, "line-width", [
+              "case",
+              filter,
+              8, // Increased width for hovered routes
+              [
+                "case",
+                ["==", ["get", "overlapCount"], 1], 3,
+                ["==", ["get", "overlapCount"], 2], 4,
+                5 // Default for high overlap
+              ]
+            ]);
+            
+            map.current!.setPaintProperty(visibleLayerId, "line-opacity", [
+              "case", 
+              filter,
+              1.0, // Full opacity for hovered routes
+              [
+                "case",
+                ["==", ["get", "overlapCount"], 1], 0.6,
+                ["==", ["get", "overlapCount"], 2], 0.8,
+                0.9 // Default for high overlap
+              ]
+            ]);
+            
+            // Add glow effect with blur
+            map.current!.setPaintProperty(visibleLayerId, "line-blur", [
+              "case",
+              filter,
+              2, // Blur for glow effect on hovered routes
+              0  // No blur for non-hovered routes
+            ]);
+          });
+        }
       });
 
       map.current.on("mouseleave", layerId, () => {
         map.current!.getCanvas().style.cursor = "";
+        
+        // Reset all layers to original styling
+        visibleLayerIds.forEach(visibleLayerId => {
+          // Reset line width based on overlap count
+          map.current!.setPaintProperty(visibleLayerId, "line-width", [
+            "case",
+            ["==", ["get", "overlapCount"], 1], 3,
+            ["==", ["get", "overlapCount"], 2], 4,
+            5 // High overlap
+          ]);
+          
+          // Reset opacity based on overlap count
+          map.current!.setPaintProperty(visibleLayerId, "line-opacity", [
+            "case",
+            ["==", ["get", "overlapCount"], 1], 0.6,
+            ["==", ["get", "overlapCount"], 2], 0.8,
+            0.9 // High overlap
+          ]);
+          
+          // Remove blur effect
+          map.current!.setPaintProperty(visibleLayerId, "line-blur", 0);
+        });
       });
     });
 
