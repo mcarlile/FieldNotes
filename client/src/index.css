@@ -166,3 +166,15 @@
     display: none !important;
   }
 }
+
+/* Toast notification animations */
+@keyframes slideOut {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
