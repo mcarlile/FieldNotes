@@ -75,16 +75,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Extract EXIF data from an uploaded photo
-  const upload = multer({ storage: multer.memoryStorage() });
+  // Extract EXIF data from an uploaded photo with optimized limits
+  const upload = multer({ 
+    storage: multer.memoryStorage(),
+    limits: { 
+      fileSize: 50 * 1024 * 1024, // 50MB limit
+      files: 1,
+      fieldSize: 1024 * 1024, // 1MB field limit
+      fields: 10 // Max 10 fields
+    },
+    fileFilter: (req, file, cb) => {
+      // Only accept image files
+      if (file.mimetype.startsWith('image/')) {
+        cb(null, true);
+      } else {
+        cb(new Error('Only image files are allowed'), false);
+      }
+    }
+  });
+  
   app.post("/api/photos/extract-exif", upload.single('photo'), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No photo file provided" });
       }
 
-      console.log(`Extracting EXIF from uploaded file: ${req.file.originalname}`);
-      const exifData = await extractExifFromBuffer(req.file.buffer, req.file.originalname);
+      console.log(`Extracting EXIF from uploaded file: ${req.file.originalname} (${req.file.size} bytes)`);
+      
+      // Add timeout for EXIF processing
+      const exifData = await Promise.race([
+        extractExifFromBuffer(req.file.buffer, req.file.originalname),
+        new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error('EXIF extraction timeout')), 10000)
+        )
+      ]);
       
       res.json({
         filename: req.file.originalname,
@@ -93,7 +117,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       console.error("Error extracting EXIF from uploaded photo:", error);
-      res.status(500).json({ message: "Failed to extract EXIF data" });
+      if (error.message === 'EXIF extraction timeout') {
+        res.status(408).json({ message: "EXIF extraction timed out" });
+      } else {
+        res.status(500).json({ message: "Failed to extract EXIF data" });
+      }
     }
   });
 
@@ -286,43 +314,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
         validatedData.url = objectStorageService.normalizeObjectEntityPath(validatedData.url);
       }
       
-      // Create the photo record first
+      // Create the photo record first and return immediately
       const photo = await storage.createPhoto(validatedData);
+      res.status(201).json(photo);
       
-      // Extract EXIF data asynchronously after creating the photo
-      try {
-        console.log(`Extracting EXIF data for photo: ${photo.url}`);
-        const exifData = await extractExifData(photo.url);
-        
-        if (Object.keys(exifData).length > 0) {
-          console.log(`Found EXIF data:`, exifData);
+      // Process EXIF data asynchronously in the background
+      // This prevents blocking the response and improves upload performance
+      setImmediate(async () => {
+        try {
+          console.log(`Background EXIF processing for photo: ${photo.url}`);
           
-          // Update the photo with EXIF data
-          const updatedPhoto = await storage.updatePhoto(photo.id, {
-            latitude: exifData.latitude,
-            longitude: exifData.longitude,
-            elevation: exifData.elevation,
-            timestamp: exifData.timestamp,
-            camera: exifData.camera,
-            lens: exifData.lens,
-            aperture: exifData.aperture,
-            shutterSpeed: exifData.shutterSpeed,
-            iso: exifData.iso,
-            focalLength: exifData.focalLength,
-            fileSize: exifData.fileSize
-          });
+          const exifData = await Promise.race([
+            extractExifData(photo.url),
+            new Promise<never>((_, reject) => 
+              setTimeout(() => reject(new Error('Background EXIF extraction timeout')), 30000)
+            )
+          ]);
           
-          console.log(`Updated photo with EXIF data:`, updatedPhoto?.id);
-          res.status(201).json(updatedPhoto || photo);
-        } else {
-          console.log(`No EXIF data found for photo: ${photo.url}`);
-          res.status(201).json(photo);
+          if (Object.keys(exifData).length > 0) {
+            console.log(`Background EXIF data found for ${photo.id}:`, exifData);
+            
+            await storage.updatePhoto(photo.id, {
+              latitude: exifData.latitude,
+              longitude: exifData.longitude,
+              elevation: exifData.elevation,
+              timestamp: exifData.timestamp,
+              camera: exifData.camera,
+              lens: exifData.lens,
+              aperture: exifData.aperture,
+              shutterSpeed: exifData.shutterSpeed,
+              iso: exifData.iso,
+              focalLength: exifData.focalLength,
+              fileSize: exifData.fileSize
+            });
+            
+            console.log(`Background EXIF processing complete for photo: ${photo.id}`);
+          }
+        } catch (exifError) {
+          console.warn(`Background EXIF processing failed for photo ${photo.url}:`, exifError.message);
         }
-      } catch (exifError) {
-        console.error(`Error extracting EXIF data for photo ${photo.url}:`, exifError);
-        // Return the photo without EXIF data if extraction fails
-        res.status(201).json(photo);
-      }
+      });
     } catch (error) {
       console.error("Error creating photo:", error);
       res.status(500).json({ error: "Failed to create photo" });

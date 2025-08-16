@@ -18,10 +18,23 @@ export interface PhotoExifData {
 
 export async function extractExifFromBuffer(buffer: Buffer, filename: string): Promise<PhotoExifData> {
   try {
-    console.log(`Extracting EXIF data from ${filename}...`);
+    console.log(`Extracting EXIF data from ${filename} (${Math.round(buffer.length / 1024)} KB)...`);
     
-    // Extract EXIF data with comprehensive options
-    const exifData = await exifr.parse(buffer, true);
+    // Extract EXIF data with optimized options for large files
+    const exifData = await exifr.parse(buffer, {
+      // Only extract essential EXIF data to improve performance
+      pick: [
+        'latitude', 'longitude', 'GPSAltitude',
+        'DateTimeOriginal', 'DateTime', 'CreateDate', 'ModifyDate',
+        'Make', 'Model', 'LensModel', 'LensSpecification',
+        'FNumber', 'ApertureValue', 'ExposureTime', 'ShutterSpeedValue',
+        'ISO', 'ISOSpeedRatings', 'FocalLength'
+      ],
+      // Improve memory usage for large files
+      interop: false,
+      translateKeys: false,
+      translateValues: false
+    });
 
     if (!exifData) {
       console.log("No EXIF data found in image");
@@ -122,8 +135,18 @@ export async function extractExifData(photoUrl: string): Promise<PhotoExifData> 
     const objectStorageService = new ObjectStorageService();
     const objectFile = await objectStorageService.getObjectEntityFile(photoUrl);
     
-    // Download the file as a buffer
-    const [buffer] = await objectFile.download();
+    // For large files, only download the first portion that contains EXIF data
+    // Most EXIF data is in the first 64KB of a JPEG file
+    const fileSize = await objectFile.getMetadata().then(([metadata]) => Number(metadata.size) || 0);
+    const downloadSize = Math.min(fileSize, 64 * 1024); // Limit to 64KB for EXIF extraction
+    
+    console.log(`Downloading ${downloadSize} bytes of ${fileSize} bytes for EXIF extraction from ${photoUrl}`);
+    
+    // Download only the portion we need for EXIF
+    const [buffer] = await objectFile.download({
+      start: 0,
+      end: downloadSize - 1
+    });
     
     // Extract EXIF data from the buffer
     return await extractExifFromBuffer(buffer, objectFile.name);

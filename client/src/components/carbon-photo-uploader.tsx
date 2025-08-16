@@ -48,11 +48,18 @@ export function CarbonPhotoUploader({
       const formData = new FormData();
       formData.append('photo', file);
       
+      // Add timeout to prevent hanging uploads
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+      
       const exifResponse = await fetch('/api/photos/extract-exif', {
         method: 'POST',
         body: formData,
         credentials: 'include',
+        signal: controller.signal,
       });
+      
+      clearTimeout(timeoutId);
       
       if (!exifResponse.ok) {
         console.error('EXIF extraction failed:', exifResponse.statusText);
@@ -62,7 +69,11 @@ export function CarbonPhotoUploader({
       const exifData = await exifResponse.json();
       return exifData;
     } catch (error) {
-      console.error('Failed to extract EXIF data:', error);
+      if (error.name === 'AbortError') {
+        console.warn('EXIF extraction timed out for file:', file.name);
+      } else {
+        console.error('Failed to extract EXIF data:', error);
+      }
       return null;
     }
   };
@@ -97,17 +108,29 @@ export function CarbonPhotoUploader({
 
     setFiles(prev => [...prev, ...newFileStates]);
     
-    // Extract EXIF data from each new file using server-side extraction
-    for (let i = 0; i < validFiles.length; i++) {
-      const file = validFiles[i];
-      const exifData = await extractExifFromFile(file);
-      if (exifData) {
-        setFiles(prev => prev.map((f, idx) => 
-          idx === prev.length - validFiles.length + i 
-            ? { ...f, exifData }
-            : f
-        ));
-      }
+    // Extract EXIF data from new files in parallel with limits
+    const PARALLEL_LIMIT = 3; // Process max 3 files at once
+    const batches = [];
+    for (let i = 0; i < validFiles.length; i += PARALLEL_LIMIT) {
+      batches.push(validFiles.slice(i, i + PARALLEL_LIMIT));
+    }
+
+    for (const batch of batches) {
+      const exifPromises = batch.map(async (file, batchIndex) => {
+        const globalIndex = files.length + batches.flat().indexOf(file);
+        try {
+          const exifData = await extractExifFromFile(file);
+          if (exifData) {
+            setFiles(prev => prev.map((f, idx) => 
+              idx === globalIndex ? { ...f, exifData } : f
+            ));
+          }
+        } catch (error) {
+          console.warn(`EXIF extraction failed for ${file.name}:`, error);
+        }
+      });
+      
+      await Promise.all(exifPromises);
     }
   };
 
@@ -139,17 +162,29 @@ export function CarbonPhotoUploader({
 
     setFiles(prev => [...prev, ...newFileStates]);
     
-    // Extract EXIF data from each new file using server-side extraction
-    for (let i = 0; i < validFiles.length; i++) {
-      const file = validFiles[i];
-      const exifData = await extractExifFromFile(file);
-      if (exifData) {
-        setFiles(prev => prev.map((f, idx) => 
-          idx === prev.length - validFiles.length + i 
-            ? { ...f, exifData }
-            : f
-        ));
-      }
+    // Extract EXIF data from new files in parallel with limits
+    const PARALLEL_LIMIT = 3; // Process max 3 files at once
+    const batches = [];
+    for (let i = 0; i < validFiles.length; i += PARALLEL_LIMIT) {
+      batches.push(validFiles.slice(i, i + PARALLEL_LIMIT));
+    }
+
+    for (const batch of batches) {
+      const exifPromises = batch.map(async (file, batchIndex) => {
+        const globalIndex = files.length + batches.flat().indexOf(file);
+        try {
+          const exifData = await extractExifFromFile(file);
+          if (exifData) {
+            setFiles(prev => prev.map((f, idx) => 
+              idx === globalIndex ? { ...f, exifData } : f
+            ));
+          }
+        } catch (error) {
+          console.warn(`EXIF extraction failed for ${file.name}:`, error);
+        }
+      });
+      
+      await Promise.all(exifPromises);
     }
   };
 
@@ -183,14 +218,37 @@ export function CarbonPhotoUploader({
           idx === i ? { ...f, progress: 30, uploadUrl: uploadParams.url } : f
         ));
 
-        // Upload file with progress tracking
-        const response = await fetch(uploadParams.url, {
-          method: uploadParams.method,
-          body: fileState.file,
-          headers: {
-            'Content-Type': fileState.file.type,
-          },
-        });
+        // Upload file with progress tracking and retry logic
+        let uploadAttempts = 0;
+        const maxRetries = 3;
+        let response;
+        
+        while (uploadAttempts < maxRetries) {
+          try {
+            uploadAttempts++;
+            
+            response = await fetch(uploadParams.url, {
+              method: uploadParams.method,
+              body: fileState.file,
+              headers: {
+                'Content-Type': fileState.file.type,
+              },
+            });
+            
+            if (response.ok) {
+              break; // Success, exit retry loop
+            } else if (uploadAttempts < maxRetries) {
+              console.warn(`Upload attempt ${uploadAttempts} failed, retrying...`);
+              await new Promise(resolve => setTimeout(resolve, 1000 * uploadAttempts)); // Exponential backoff
+            }
+          } catch (uploadError) {
+            if (uploadAttempts >= maxRetries) {
+              throw uploadError;
+            }
+            console.warn(`Upload attempt ${uploadAttempts} failed with error, retrying...`, uploadError);
+            await new Promise(resolve => setTimeout(resolve, 1000 * uploadAttempts)); // Exponential backoff
+          }
+        }
 
         if (!response.ok) {
           const errorText = await response.text();
@@ -349,9 +407,19 @@ export function CarbonPhotoUploader({
           {/* Status Messages */}
           {anyErrors && (
             <div className="bg-red-50 border border-red-200 rounded p-3">
-              <p className="text-red-800 text-sm">
-                Some files failed to upload. Please try again.
+              <p className="text-red-800 text-sm font-medium">
+                Upload Issues Detected
               </p>
+              <p className="text-red-700 text-xs mt-1">
+                Some files failed to upload. Common issues: file too large, network timeout, or server overload. Try reducing file size or upload fewer files at once.
+              </p>
+              <div className="mt-2 space-y-1">
+                {files.filter(f => f.status === 'error').map((file, i) => (
+                  <div key={i} className="text-xs text-red-600">
+                    • {file.file.name}: {file.errorMessage}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
