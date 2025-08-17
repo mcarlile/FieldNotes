@@ -95,6 +95,10 @@ export default function MapboxMap({
     map.current.on('load', () => {
       if (!map.current) return;
 
+      // Debug logging for GPX data
+      console.log('MapboxMap - parsedGpxData:', parsedGpxData);
+      console.log('MapboxMap - coordinates length:', parsedGpxData?.coordinates?.length);
+
       // Add GPX track if available
       if (parsedGpxData && parsedGpxData.coordinates && parsedGpxData.coordinates.length > 0) {
         const geojsonData = {

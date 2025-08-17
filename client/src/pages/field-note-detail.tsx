@@ -58,20 +58,28 @@ export default function FieldNoteDetail() {
   // Parse GPX data to get elevation profile
   const parsedGpxData = useMemo(() => {
     if (!fieldNote?.gpxData) return null;
+    console.log('FieldNoteDetail - Field Note Title:', fieldNote?.title);
+    console.log('FieldNoteDetail - GPX Data Type:', typeof fieldNote.gpxData);
+    console.log('FieldNoteDetail - GPX Data:', fieldNote.gpxData);
+    
     try {
       if (typeof fieldNote.gpxData === 'string') {
         const parsed = parseGpxData(fieldNote.gpxData);
+        console.log('FieldNoteDetail - Parsed from string:', parsed);
         return parsed;
       } else if (typeof fieldNote.gpxData === 'object') {
         // Handle pre-parsed GPX data (coordinates array without elevation)
         const data = fieldNote.gpxData as any;
+        console.log('FieldNoteDetail - Object data.coordinates length:', data.coordinates?.length);
         if (data.coordinates && Array.isArray(data.coordinates)) {
-          return {
+          const result = {
             coordinates: data.coordinates,
             elevationProfile: data.elevationProfile || [], // Empty if no elevation data
             distance: fieldNote.distance || 0,
             elevationGain: fieldNote.elevationGain || 0
           };
+          console.log('FieldNoteDetail - Returning parsed object:', result);
+          return result;
         }
       }
     } catch (error) {
