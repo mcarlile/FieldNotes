@@ -198,21 +198,22 @@ export default function FieldNoteDetail() {
                 </div>
               </div>
               
-              <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="flex items-center gap-3 flex-shrink-0">
                 <Link href={`/field-notes/${fieldNote.id}/edit`}>
-                  <Button kind="tertiary" size="sm" renderIcon={Edit}>
-                    <span className="hidden sm:inline">Edit</span>
+                  <Button kind="primary" size="md" renderIcon={Edit}>
+                    Edit
                   </Button>
                 </Link>
                 
                 <Button
-                  kind="danger--tertiary"
-                  size="sm"
+                  kind="ghost"
+                  size="md"
                   renderIcon={TrashCan}
+                  iconDescription="Delete field note"
+                  hasIconOnly
                   onClick={() => setShowDeleteModal(true)}
-                >
-                  <span className="hidden sm:inline">Delete</span>
-                </Button>
+                  data-testid="button-delete"
+                />
               </div>
             </div>
 

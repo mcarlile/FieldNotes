@@ -318,6 +318,7 @@ export function AutoPhotoUploader({
                       value={fileState.progress}
                       max={100}
                       size="small"
+                      label=""
                       hideLabel
                     />
                   </div>
