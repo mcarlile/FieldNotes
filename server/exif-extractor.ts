@@ -43,13 +43,31 @@ export async function extractExifFromBuffer(buffer: Buffer, filename: string): P
 
     const result: PhotoExifData = {};
 
-    // GPS coordinates - try multiple field names
-    if (exifData.latitude && exifData.longitude) {
-      result.latitude = exifData.latitude;
-      result.longitude = exifData.longitude;
-    } else if (exifData.GPSLatitude && exifData.GPSLongitude) {
-      result.latitude = exifData.GPSLatitude;
-      result.longitude = exifData.GPSLongitude;
+    // GPS coordinates - always use manual conversion for maximum precision
+    if (exifData.GPSLatitude && exifData.GPSLongitude && Array.isArray(exifData.GPSLatitude) && Array.isArray(exifData.GPSLongitude)) {
+      // Convert degrees, minutes, seconds to decimal degrees with maximum precision
+      const [latDeg, latMin, latSec] = exifData.GPSLatitude;
+      const [lngDeg, lngMin, lngSec] = exifData.GPSLongitude;
+      
+      // Calculate with high precision (using 8 decimal places)
+      let latitude = Number((latDeg + (latMin / 60) + (latSec / 3600)).toFixed(8));
+      let longitude = Number((lngDeg + (lngMin / 60) + (lngSec / 3600)).toFixed(8));
+      
+      // Apply direction (N/S, E/W)
+      if (exifData.GPSLatitudeRef === 'S') latitude = -latitude;
+      if (exifData.GPSLongitudeRef === 'W') longitude = -longitude;
+      
+      result.latitude = latitude;
+      result.longitude = longitude;
+      
+      console.log(`Manual GPS conversion: ${latDeg}°${latMin}'${latSec}" ${exifData.GPSLatitudeRef} = ${latitude}`);
+      console.log(`Manual GPS conversion: ${lngDeg}°${lngMin}'${lngSec}" ${exifData.GPSLongitudeRef} = ${longitude}`);
+      
+    } else if (exifData.latitude && exifData.longitude) {
+      // Use already converted coordinates as fallback but with higher precision
+      result.latitude = Number(Number(exifData.latitude).toFixed(8));
+      result.longitude = Number(Number(exifData.longitude).toFixed(8));
+      console.log(`Using pre-converted GPS: lat=${result.latitude}, lng=${result.longitude}`);
     }
 
     // Elevation/altitude - try multiple field names
