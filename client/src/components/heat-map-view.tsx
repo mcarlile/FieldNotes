@@ -71,12 +71,12 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     });
     
     existingLayers.forEach(layerId => {
-      if (map.current.getLayer(layerId)) {
+      if (map.current && map.current.getLayer(layerId)) {
         map.current.removeLayer(layerId);
       }
     });
     
-    if (map.current.getSource("routes")) {
+    if (map.current && map.current.getSource("routes")) {
       map.current.removeSource("routes");
     }
 
@@ -173,7 +173,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       overlapCounts.set(gridKey, routeIds.size);
     });
 
-    const maxOverlap = Math.max(...overlapCounts.values(), 1);
+    const maxOverlap = Math.max(...Array.from(overlapCounts.values()), 1);
     console.log(`Grid analysis: ${routeSegments.size} cells, max overlap: ${maxOverlap} routes`);
     
     // Create GeoJSON features for each complete route
@@ -274,7 +274,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       source: "routes",
       filter: ["==", ["get", "overlapCount"], 1],
       paint: {
-        "line-color": "hsl(var(--primary))", // Theme-aware blue for single routes
+        "line-color": "#3b82f6", // Blue for single routes
         "line-width": [
           "interpolate",
           ["linear"],
@@ -294,7 +294,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       source: "routes",
       filter: ["all", [">=", ["get", "overlapCount"], 2], ["<=", ["get", "overlapCount"], 3]],
       paint: {
-        "line-color": "hsl(var(--warning))", // Theme-aware orange for medium overlap
+        "line-color": "#f59e0b", // Orange for medium overlap
         "line-width": [
           "interpolate",
           ["linear"],
@@ -314,7 +314,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       source: "routes",
       filter: [">=", ["get", "overlapCount"], 4],
       paint: {
-        "line-color": "hsl(var(--destructive))", // Theme-aware red for high overlap
+        "line-color": "#dc2626", // Red for high overlap
         "line-width": [
           "interpolate",
           ["linear"],
@@ -357,7 +357,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     // Add click and hover effects for route interaction
     let activePopup: mapboxgl.Popup | null = null;
 
-    const handleRouteInteraction = (e: mapboxgl.MapMouseEvent & mapboxgl.EventData) => {
+    const handleRouteInteraction = (e: mapboxgl.MapMouseEvent) => {
       if (!e.lngLat) return;
 
       // Query all route features at this point with a generous buffer
@@ -396,7 +396,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       // Find all routes that intersect at this point
       const intersectingNotes = routeIdArray.map((id: string) => fieldNotes.find(n => n.id === id)).filter(Boolean);
 
-      const popupContent = intersectingNotes.length === 1
+      const popupContent = intersectingNotes.length === 1 && intersectingNotes[0]
         ? // Single route
           `<div class="text-sm max-w-64">
              <a href="/field-notes/${intersectingNotes[0].id}" class="font-semibold underline" style="color: hsl(var(--primary)); text-decoration: underline;">
@@ -409,12 +409,12 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
         : // Multiple routes overlapping
           `<div class="text-sm max-w-64">
              <strong>${overlapCount} Routes Overlap Here:</strong><br/>
-             ${intersectingNotes.map(note => 
+             ${intersectingNotes.filter(note => note).map(note => 
                `<div class="mt-2 pl-2 border-l-2" style="border-color: hsl(var(--warning));">
-                  <a href="/field-notes/${note.id}" class="font-semibold underline" style="color: hsl(var(--primary)); text-decoration: underline;">
-                    ${note.title}
+                  <a href="/field-notes/${note!.id}" class="font-semibold underline" style="color: hsl(var(--primary)); text-decoration: underline;">
+                    ${note!.title}
                   </a><br/>
-                  <span class="text-xs" style="color: hsl(var(--muted-foreground));">${note.tripType} • ${note.distance}mi</span>
+                  <span class="text-xs" style="color: hsl(var(--muted-foreground));">${note!.tripType} • ${note!.distance}mi</span>
                 </div>`
              ).join('')}
              <div class="mt-2 text-xs" style="color: hsl(var(--primary));">Click any route to view details</div>
@@ -438,8 +438,10 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     const allLayerIds = [...visibleLayerIds, "route-touch-targets"];
     
     allLayerIds.forEach(layerId => {
-      map.current.on("mouseenter", layerId, (e) => {
-        map.current!.getCanvas().style.cursor = "pointer";
+      map.current!.on("mouseenter", layerId, (e) => {
+        if (map.current) {
+          map.current.getCanvas().style.cursor = "pointer";
+        }
         
         // Query features at hover point to get route information
         if (e.features && e.features.length > 0) {
@@ -496,8 +498,10 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
         }
       });
 
-      map.current.on("mouseleave", layerId, () => {
-        map.current!.getCanvas().style.cursor = "";
+      map.current!.on("mouseleave", layerId, () => {
+        if (map.current) {
+          map.current.getCanvas().style.cursor = "";
+        }
         
         // Reset all layers to original styling
         visibleLayerIds.forEach(visibleLayerId => {
