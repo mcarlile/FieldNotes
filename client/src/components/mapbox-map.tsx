@@ -170,6 +170,10 @@ export default function MapboxMap({
         }
       }
 
+      // Clear existing photo markers before adding new ones
+      photoMarkers.current.forEach(marker => marker.remove());
+      photoMarkers.current.clear();
+
       // Add photo markers with labels
       photos.forEach((photo, index) => {
         if (photo.latitude && photo.longitude && map.current) {
@@ -255,7 +259,10 @@ export default function MapboxMap({
     });
 
     return () => {
+      // Clean up all photo markers
+      photoMarkers.current.forEach(marker => marker.remove());
       photoMarkers.current.clear();
+      
       if (elevationMarker.current) {
         elevationMarker.current.remove();
         elevationMarker.current = null;
