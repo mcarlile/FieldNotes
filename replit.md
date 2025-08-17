@@ -10,6 +10,16 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+**August 17, 2025 - Left Sidebar Filtering System:**
+- ✓ Implemented Carbon Design System left navigation filtering pattern  
+- ✓ Added collapsible sidebar with multiple filter categories (Trip Type, Distance, Elevation)
+- ✓ Enabled multi-select filtering for trip types using checkboxes
+- ✓ Added distance and elevation range filters using radio buttons
+- ✓ Implemented active filter count badges and reset functionality
+- ✓ Enhanced responsive design with show/hide filter panel
+- ✓ Added result count display and improved empty state handling
+- ✓ Maintained search highlighting and existing functionality
+
 **August 16, 2025 - Production Photo Upload Performance Optimization:**
 - ✓ Implemented parallel EXIF processing with batching (max 3 files concurrently)
 - ✓ Added client-side upload timeout handling (15 seconds) with retry logic
