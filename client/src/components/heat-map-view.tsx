@@ -552,28 +552,102 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     <div className="relative w-full h-screen">
       <div ref={mapContainer} className="w-full h-full" />
       
-      {/* Heat Map Legend */}
+      {/* Animated Heat Map Legend */}
       {mapLoaded && fieldNotes.length > 0 && (
-        <div className="absolute bottom-4 right-4 bg-card/90 backdrop-blur-sm rounded-lg p-4 shadow-lg border border-border">
-          <h4 className="text-sm font-semibold text-foreground mb-3">Route Density</h4>
-          <div className="space-y-2">
-            <div className="flex items-center gap-3">
-              <div className="w-4 h-0.5" style={{ backgroundColor: getThemeColors().primary, opacity: 0.6 }}></div>
-              <span className="text-xs text-muted-foreground">Low traffic</span>
+        <div className="absolute bottom-4 right-4 bg-card/95 backdrop-blur-sm rounded-lg p-4 shadow-lg border border-border transition-all duration-300 hover:shadow-xl hover:scale-105 hover:bg-card">
+          <h4 className="text-sm font-semibold text-foreground mb-3 transition-colors duration-200">Route Density</h4>
+          <div className="space-y-3">
+            {/* Low Traffic */}
+            <div className="flex items-center gap-3 group cursor-pointer transition-all duration-200 hover:scale-105 hover:translate-x-1">
+              <div className="relative">
+                <div 
+                  className="w-4 h-0.5 rounded-full transition-all duration-300 group-hover:w-6 group-hover:h-1 group-hover:shadow-lg"
+                  style={{ 
+                    backgroundColor: getThemeColors().primary, 
+                    opacity: 0.6,
+                    boxShadow: `0 0 8px ${getThemeColors().primary}40`
+                  }}
+                ></div>
+                <div 
+                  className="absolute inset-0 w-4 h-0.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300 animate-pulse"
+                  style={{ 
+                    backgroundColor: getThemeColors().primary,
+                    filter: 'blur(2px)'
+                  }}
+                ></div>
+              </div>
+              <span className="text-xs text-muted-foreground transition-colors duration-200 group-hover:text-foreground">
+                Low traffic
+              </span>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="w-4 h-1" style={{ backgroundColor: getThemeColors().warning, opacity: 0.8 }}></div>
-              <span className="text-xs text-muted-foreground">Medium traffic</span>
+
+            {/* Medium Traffic */}
+            <div className="flex items-center gap-3 group cursor-pointer transition-all duration-200 hover:scale-105 hover:translate-x-1">
+              <div className="relative">
+                <div 
+                  className="w-4 h-1 rounded-full transition-all duration-300 group-hover:w-6 group-hover:h-1.5 group-hover:shadow-lg"
+                  style={{ 
+                    backgroundColor: getThemeColors().warning, 
+                    opacity: 0.8,
+                    boxShadow: `0 0 8px ${getThemeColors().warning}40`
+                  }}
+                ></div>
+                <div 
+                  className="absolute inset-0 w-4 h-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300 animate-pulse"
+                  style={{ 
+                    backgroundColor: getThemeColors().warning,
+                    filter: 'blur(2px)'
+                  }}
+                ></div>
+              </div>
+              <span className="text-xs text-muted-foreground transition-colors duration-200 group-hover:text-foreground">
+                Medium traffic
+              </span>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="w-4 h-1.5" style={{ backgroundColor: getThemeColors().destructive }}></div>
-              <span className="text-xs text-muted-foreground">High traffic</span>
+
+            {/* High Traffic */}
+            <div className="flex items-center gap-3 group cursor-pointer transition-all duration-200 hover:scale-105 hover:translate-x-1">
+              <div className="relative">
+                <div 
+                  className="w-4 h-1.5 rounded-full transition-all duration-300 group-hover:w-6 group-hover:h-2 group-hover:shadow-lg"
+                  style={{ 
+                    backgroundColor: getThemeColors().destructive,
+                    boxShadow: `0 0 8px ${getThemeColors().destructive}40`
+                  }}
+                ></div>
+                <div 
+                  className="absolute inset-0 w-4 h-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300 animate-pulse"
+                  style={{ 
+                    backgroundColor: getThemeColors().destructive,
+                    filter: 'blur(2px)'
+                  }}
+                ></div>
+              </div>
+              <span className="text-xs text-muted-foreground transition-colors duration-200 group-hover:text-foreground">
+                High traffic
+              </span>
             </div>
           </div>
-          <div className="mt-3 pt-2 border-t border-border">
-            <p className="text-xs text-muted-foreground">
+          
+          <div className="mt-4 pt-3 border-t border-border transition-colors duration-200">
+            <p className="text-xs text-muted-foreground transition-colors duration-200">
               {fieldNotes.length} route{fieldNotes.length === 1 ? '' : 's'} aggregated
             </p>
+            <div className="mt-2 flex gap-1">
+              {Array.from({ length: Math.min(fieldNotes.length, 5) }).map((_, i) => (
+                <div
+                  key={i}
+                  className="w-1 h-1 rounded-full bg-primary animate-pulse"
+                  style={{ 
+                    animationDelay: `${i * 200}ms`,
+                    animationDuration: '2s'
+                  }}
+                ></div>
+              ))}
+              {fieldNotes.length > 5 && (
+                <span className="text-xs text-muted-foreground ml-1">+{fieldNotes.length - 5}</span>
+              )}
+            </div>
           </div>
         </div>
       )}
