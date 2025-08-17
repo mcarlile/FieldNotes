@@ -219,47 +219,37 @@ export default function MapboxMap({
     };
   }, [gpxData, photos, onPhotoClick]);
 
-  // Handle elevation profile hover with smooth animations
+  // Handle elevation profile hover with immediate, responsive updates
   useEffect(() => {
     if (!map.current || !elevationMarker.current || !coordinatesRef.current.length) return;
 
     const markerEl = elevationMarker.current.getElement();
     const ringEl = markerEl.querySelector('.elevation-ring') as HTMLElement;
     
-    // Cancel any existing animation frame
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-    }
-    
     if (hoveredElevationPoint && hoveredElevationPoint.coordinates) {
       // Use the coordinates directly from the ElevationPoint
       const [longitude, latitude] = hoveredElevationPoint.coordinates;
       
-      // Smooth position transition with animation frame
-      animationFrameRef.current = requestAnimationFrame(() => {
-        if (!elevationMarker.current) return;
-        
-        // Smoothly animate to new position
-        elevationMarker.current.setLngLat([longitude, latitude]);
-        
-        // Show marker with smooth appearance
-        markerEl.style.opacity = '1';
-        markerEl.style.transform = 'scale(1.1)';
-        markerEl.style.boxShadow = '0 6px 16px rgba(255, 61, 61, 0.6), 0 0 0 8px rgba(255, 61, 61, 0.1)';
-        
-        // Animate the ring
-        if (ringEl) {
-          ringEl.style.opacity = '1';
-          ringEl.style.transform = 'scale(1)';
-        }
-      });
+      // Immediate position update for responsive sync
+      elevationMarker.current.setLngLat([longitude, latitude]);
+      
+      // Show marker with immediate appearance
+      markerEl.style.opacity = '1';
+      markerEl.style.transform = 'scale(1.1)';
+      markerEl.style.boxShadow = '0 6px 16px rgba(255, 61, 61, 0.6), 0 0 0 8px rgba(255, 61, 61, 0.1)';
+      
+      // Animate the ring
+      if (ringEl) {
+        ringEl.style.opacity = '1';
+        ringEl.style.transform = 'scale(1)';
+      }
     } else {
-      // Hide marker with smooth disappearance
+      // Hide marker immediately
       markerEl.style.opacity = '0';
       markerEl.style.transform = 'scale(0.5)';
       markerEl.style.boxShadow = '0 4px 12px rgba(255, 61, 61, 0.4), 0 0 0 0 rgba(255, 61, 61, 0.3)';
       
-      // Animate the ring
+      // Hide the ring
       if (ringEl) {
         ringEl.style.opacity = '0';
         ringEl.style.transform = 'scale(0.8)';
