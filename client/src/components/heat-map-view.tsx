@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import { initMapbox } from "@/lib/mapbox";
+import { useTheme } from "@/contexts/theme-context";
 import type { FieldNote } from "@shared/schema";
 import { parseGpxData } from "@shared/gpx-utils";
 
@@ -9,9 +10,25 @@ interface HeatMapViewProps {
 }
 
 export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
+  const { theme } = useTheme();
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
+
+  // Theme-aware colors
+  const getThemeColors = () => {
+    return theme === "dark" 
+      ? {
+          primary: "#60a5fa",    // Lighter blue for dark mode
+          warning: "#fbbf24",    // Lighter orange for dark mode  
+          destructive: "#f87171" // Lighter red for dark mode
+        }
+      : {
+          primary: "#3b82f6",    // Standard blue for light mode
+          warning: "#f59e0b",    // Standard orange for light mode
+          destructive: "#dc2626" // Standard red for light mode
+        };
+  };
 
   useEffect(() => {
     if (!mapContainer.current) return;
@@ -266,6 +283,8 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       lineMetrics: true,
     });
 
+    const colors = getThemeColors();
+
     // Add density-based heat map layers
     // Low density (single route) - neutral blue
     map.current.addLayer({
@@ -274,7 +293,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       source: "routes",
       filter: ["==", ["get", "overlapCount"], 1],
       paint: {
-        "line-color": "#3b82f6", // Blue for single routes
+        "line-color": colors.primary, // Theme-aware blue for single routes
         "line-width": [
           "interpolate",
           ["linear"],
@@ -294,7 +313,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       source: "routes",
       filter: ["all", [">=", ["get", "overlapCount"], 2], ["<=", ["get", "overlapCount"], 3]],
       paint: {
-        "line-color": "#f59e0b", // Orange for medium overlap
+        "line-color": colors.warning, // Theme-aware orange for medium overlap
         "line-width": [
           "interpolate",
           ["linear"],
@@ -314,7 +333,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       source: "routes",
       filter: [">=", ["get", "overlapCount"], 4],
       paint: {
-        "line-color": "#dc2626", // Red for high overlap
+        "line-color": colors.destructive, // Theme-aware red for high overlap
         "line-width": [
           "interpolate",
           ["linear"],
@@ -399,25 +418,25 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       const popupContent = intersectingNotes.length === 1 && intersectingNotes[0]
         ? // Single route
           `<div class="text-sm max-w-64">
-             <a href="/field-notes/${intersectingNotes[0].id}" class="font-semibold underline" style="color: hsl(var(--primary)); text-decoration: underline;">
+             <a href="/field-notes/${intersectingNotes[0].id}" class="font-semibold underline" style="color: ${colors.primary}; text-decoration: underline;">
                ${intersectingNotes[0].title}
              </a><br/>
-             <span style="color: hsl(var(--muted-foreground));">${intersectingNotes[0].tripType}</span><br/>
-             <span class="text-xs" style="color: hsl(var(--muted-foreground));">${intersectingNotes[0].distance}mi • ${intersectingNotes[0].elevationGain}ft gain</span><br/>
-             <span class="text-xs" style="color: hsl(var(--primary));">Click to view details</span>
+             <span style="color: #6b7280;">${intersectingNotes[0].tripType}</span><br/>
+             <span class="text-xs" style="color: #6b7280;">${intersectingNotes[0].distance}mi • ${intersectingNotes[0].elevationGain}ft gain</span><br/>
+             <span class="text-xs" style="color: ${colors.primary};">Click to view details</span>
            </div>`
         : // Multiple routes overlapping
           `<div class="text-sm max-w-64">
              <strong>${overlapCount} Routes Overlap Here:</strong><br/>
              ${intersectingNotes.filter(note => note).map(note => 
-               `<div class="mt-2 pl-2 border-l-2" style="border-color: hsl(var(--warning));">
-                  <a href="/field-notes/${note!.id}" class="font-semibold underline" style="color: hsl(var(--primary)); text-decoration: underline;">
+               `<div class="mt-2 pl-2 border-l-2" style="border-color: ${colors.warning};">
+                  <a href="/field-notes/${note!.id}" class="font-semibold underline" style="color: ${colors.primary}; text-decoration: underline;">
                     ${note!.title}
                   </a><br/>
-                  <span class="text-xs" style="color: hsl(var(--muted-foreground));">${note!.tripType} • ${note!.distance}mi</span>
+                  <span class="text-xs" style="color: #6b7280;">${note!.tripType} • ${note!.distance}mi</span>
                 </div>`
              ).join('')}
-             <div class="mt-2 text-xs" style="color: hsl(var(--primary));">Click any route to view details</div>
+             <div class="mt-2 text-xs" style="color: ${colors.primary};">Click any route to view details</div>
            </div>`;
 
       activePopup = new mapboxgl.Popup({ 
@@ -527,7 +546,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       });
     });
 
-  }, [fieldNotes, mapLoaded]);
+  }, [fieldNotes, mapLoaded, theme]);
 
   return (
     <div className="relative w-full h-screen">
@@ -539,15 +558,15 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
           <h4 className="text-sm font-semibold text-foreground mb-3">Route Density</h4>
           <div className="space-y-2">
             <div className="flex items-center gap-3">
-              <div className="w-4 h-0.5" style={{ backgroundColor: "hsl(var(--primary))", opacity: 0.6 }}></div>
+              <div className="w-4 h-0.5" style={{ backgroundColor: getThemeColors().primary, opacity: 0.6 }}></div>
               <span className="text-xs text-muted-foreground">Low traffic</span>
             </div>
             <div className="flex items-center gap-3">
-              <div className="w-4 h-1" style={{ backgroundColor: "hsl(var(--warning))", opacity: 0.8 }}></div>
+              <div className="w-4 h-1" style={{ backgroundColor: getThemeColors().warning, opacity: 0.8 }}></div>
               <span className="text-xs text-muted-foreground">Medium traffic</span>
             </div>
             <div className="flex items-center gap-3">
-              <div className="w-4 h-1.5" style={{ backgroundColor: "hsl(var(--destructive))" }}></div>
+              <div className="w-4 h-1.5" style={{ backgroundColor: getThemeColors().destructive }}></div>
               <span className="text-xs text-muted-foreground">High traffic</span>
             </div>
           </div>
