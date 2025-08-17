@@ -253,3 +253,50 @@
 .dark .bx--side-nav {
   background-color: hsl(var(--card));
 }
+
+/* Breadcrumb theming for both light and dark modes */
+.cds--breadcrumb-item {
+  color: hsl(var(--muted-foreground)) !important;
+}
+
+.cds--breadcrumb-item a {
+  color: hsl(var(--primary)) !important;
+  text-decoration: none !important;
+}
+
+.cds--breadcrumb-item a:hover,
+.cds--breadcrumb-item a:focus {
+  color: hsl(var(--primary)) !important;
+  text-decoration: underline !important;
+}
+
+.cds--breadcrumb-item span {
+  color: hsl(var(--foreground)) !important;
+  font-weight: 500 !important;
+}
+
+.cds--breadcrumb-item::after {
+  color: hsl(var(--muted-foreground)) !important;
+}
+
+/* Dark mode specific breadcrumb overrides */
+.dark .cds--breadcrumb-item {
+  color: hsl(var(--muted-foreground)) !important;
+}
+
+.dark .cds--breadcrumb-item a {
+  color: hsl(var(--primary)) !important;
+}
+
+.dark .cds--breadcrumb-item a:hover,
+.dark .cds--breadcrumb-item a:focus {
+  color: hsl(var(--primary)) !important;
+}
+
+.dark .cds--breadcrumb-item span {
+  color: hsl(var(--foreground)) !important;
+}
+
+.dark .cds--breadcrumb-item::after {
+  color: hsl(var(--muted-foreground)) !important;
+}
