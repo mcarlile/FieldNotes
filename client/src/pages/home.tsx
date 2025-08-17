@@ -35,26 +35,25 @@ export default function Home() {
   const [showHeatMap, setShowHeatMap] = useState(false);
   const [distanceFilter, setDistanceFilter] = useState("any");
   const [elevationFilter, setElevationFilter] = useState("any");
-  const [showFilters, setShowFilters] = useState(true); // Show by default, hide only on mobile
+  const [showFilters, setShowFilters] = useState(true); // Show by default, force visible for testing
 
-  // Hide filters on mobile screens by default
-  useEffect(() => {
-    const handleResize = () => {
-      const isMobile = window.innerWidth < 1024; // lg breakpoint
-      console.log('Resize check:', { isMobile, currentShowFilters: showFilters, windowWidth: window.innerWidth });
-      if (isMobile) {
-        setShowFilters(false);
-      } else {
-        setShowFilters(true);
-      }
-    };
+  // Comment out responsive logic for now to force sidebar visibility for testing
+  // useEffect(() => {
+  //   const handleResize = () => {
+  //     const isMobile = window.innerWidth < 1024; // lg breakpoint
+  //     if (isMobile) {
+  //       setShowFilters(false);
+  //     } else {
+  //       setShowFilters(true);
+  //     }
+  //   };
 
-    // Set initial state
-    handleResize();
+  //   // Set initial state
+  //   handleResize();
     
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  //   window.addEventListener('resize', handleResize);
+  //   return () => window.removeEventListener('resize', handleResize);
+  // }, []);
 
   const { data: allFieldNotes = [], isLoading } = useQuery<FieldNote[]>({
     queryKey: ["/api/field-notes", { search, sortOrder }],
@@ -197,7 +196,7 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 overflow-x-hidden flex">
+    <div className="min-h-screen bg-gray-50 overflow-x-hidden flex" data-layout="sidebar-layout">
       {/* Left Sidebar Filter Panel */}
       <div className={`
         w-[300px] 
