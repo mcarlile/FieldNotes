@@ -47,7 +47,7 @@ export default function FieldNoteCard({ fieldNote, searchTerm }: FieldNoteCardPr
       
       <div className="p-4">
         <div className="flex justify-between items-start gap-2 mb-2">
-          <h3 className="text-lg font-medium text-gray-900 break-words min-w-0 flex-1">
+          <h3 className="text-lg font-medium text-foreground break-words min-w-0 flex-1">
             {highlightText(fieldNote.title, searchTerm)}
           </h3>
           <Tag type="blue" size="sm" className="flex-shrink-0">
@@ -55,11 +55,11 @@ export default function FieldNoteCard({ fieldNote, searchTerm }: FieldNoteCardPr
           </Tag>
         </div>
         
-        <p className="text-sm text-gray-600 mb-3 line-clamp-2 break-words">
+        <p className="text-sm text-muted-foreground mb-3 line-clamp-2 break-words">
           {highlightText(fieldNote.description || "", searchTerm)}
         </p>
         
-        <div className="flex justify-between items-center text-xs text-gray-500">
+        <div className="flex justify-between items-center text-xs text-muted-foreground">
           <span className="flex-shrink-0">{formatDate(fieldNote.date.toString())}</span>
           <div className="text-right break-words">
             {fieldNote.distance && `${fieldNote.distance} miles`}

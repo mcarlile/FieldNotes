@@ -389,19 +389,19 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 overflow-x-hidden">
+    <div className="min-h-screen bg-background overflow-x-hidden">
       {/* Navigation */}
-      <div className="bg-white border-b border-gray-200">
+      <div className="bg-card border-b border-border">
         <Grid fullWidth>
           <Column sm={4} md={8} lg={16} className="py-4">
             <Breadcrumb>
               <BreadcrumbItem>
-                <Link href="/" className="text-blue-600 hover:text-blue-800">
+                <Link href="/" className="text-primary hover:text-primary/80">
                   Field Notes
                 </Link>
               </BreadcrumbItem>
               <BreadcrumbItem isCurrentPage>
-                <span className="text-gray-900 font-medium break-words">
+                <span className="text-foreground font-medium break-words">
                   {isEditing ? "Edit Field Note" : "Add Field Note"}
                 </span>
               </BreadcrumbItem>
@@ -416,7 +416,7 @@ export default function AdminPage() {
           <Column sm={4} md={6} lg={10} xlg={8}>
             <Tile className="p-6">
               <div className="flex items-center justify-between mb-6">
-                <h1 className="text-2xl font-semibold text-gray-900">
+                <h1 className="text-2xl font-semibold text-foreground">
                   {isEditing ? "Edit Field Note" : "Create New Field Note"}
                 </h1>
               </div>
@@ -449,7 +449,7 @@ export default function AdminPage() {
 
                 {/* Trip Type */}
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700">
+                  <label className="text-sm font-medium text-muted-foreground">
                     Trip Type
                   </label>
                   <Dropdown
@@ -471,21 +471,21 @@ export default function AdminPage() {
 
                 {/* GPX Upload */}
                 <div className="space-y-4">
-                  <label className="text-sm font-medium text-gray-700">
-                    GPX Track {!isEditing && <span className="text-red-500">*</span>}
+                  <label className="text-sm font-medium text-muted-foreground">
+                    GPX Track {!isEditing && <span className="text-destructive">*</span>}
                   </label>
                   
                   <input
                     type="file"
                     accept=".gpx"
                     onChange={handleGpxFileChange}
-                    className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                    className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-secondary file:text-secondary-foreground hover:file:bg-secondary/80"
                     data-testid="input-gpx-file"
                   />
 
                   {gpxStats && (
-                    <div className="p-4 bg-green-50 rounded-md">
-                      <h4 className="text-sm font-medium text-green-800 mb-2">GPX Statistics:</h4>
+                    <div className="p-4 bg-secondary rounded-md">
+                      <h4 className="text-sm font-medium text-secondary-foreground mb-2">GPX Statistics:</h4>
                       <div className="flex flex-wrap gap-2">
                         <Tag type="outline">Distance: {gpxStats.distance.toFixed(1)} miles</Tag>
                         <Tag type="outline">Elevation: {gpxStats.elevationGain.toFixed(0)} ft</Tag>
@@ -501,7 +501,7 @@ export default function AdminPage() {
                 {/* Photo Upload */}
                 <div className="space-y-4">
                   <div>
-                    <label className="text-sm font-medium text-gray-700 block mb-2">
+                    <label className="text-sm font-medium text-muted-foreground block mb-2">
                       Photos
                     </label>
                     <AutoPhotoUploader
@@ -518,7 +518,7 @@ export default function AdminPage() {
                   {/* Uploaded photos list */}
                   {uploadedPhotos.length > 0 && (
                     <div className="space-y-4">
-                      <h4 className="text-sm font-medium text-gray-700">
+                      <h4 className="text-sm font-medium text-muted-foreground">
                         Uploaded Photos ({uploadedPhotos.length})
                       </h4>
                       
@@ -528,7 +528,7 @@ export default function AdminPage() {
                             <div className="flex gap-4">
                               {/* Photo thumbnail */}
                               <div className="flex-shrink-0 relative">
-                                <div className="w-20 h-20 bg-gray-200 rounded overflow-hidden">
+                                <div className="w-20 h-20 bg-muted rounded overflow-hidden">
                                   <img
                                     src={photo.url}
                                     alt={`Upload ${index + 1}`}
@@ -551,11 +551,11 @@ export default function AdminPage() {
                               <div className="flex-grow space-y-3">
                                 <div className="flex items-center justify-between">
                                   <div className="flex flex-col">
-                                    <span className="text-sm font-medium text-gray-900">
+                                    <span className="text-sm font-medium text-foreground">
                                       {photo.filename}
                                     </span>
                                     {photo.id && (
-                                      <span className="text-xs text-gray-500">
+                                      <span className="text-xs text-muted-foreground">
                                         Previously uploaded
                                       </span>
                                     )}

@@ -139,7 +139,7 @@ export default function MapboxRoutePreview({ fieldNote, className = "" }: Mapbox
   // Show fallback when no valid GPX data
   if (!fieldNote.gpxData) {
     return (
-      <div className={`bg-carbon-gray-20 flex items-center justify-center text-carbon-gray-70 text-sm font-ibm ${className}`}>
+      <div className={`bg-muted flex items-center justify-center text-muted-foreground text-sm font-ibm ${className}`}>
         No Route Data
       </div>
     );
@@ -148,7 +148,7 @@ export default function MapboxRoutePreview({ fieldNote, className = "" }: Mapbox
   return (
     <div 
       ref={mapContainer}
-      className={`bg-carbon-gray-20 ${className}`}
+      className={`bg-muted ${className}`}
       data-testid="mapbox-route-preview"
     />
   );

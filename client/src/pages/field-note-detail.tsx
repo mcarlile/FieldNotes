@@ -136,8 +136,8 @@ export default function FieldNoteDetail() {
       <Grid fullWidth className="min-h-screen">
         <Column sm={4} md={8} lg={16} className="flex items-center justify-center py-12">
           <Tile className="text-center p-8">
-            <h1 className="text-2xl font-semibold text-gray-900 mb-4">Field Note Not Found</h1>
-            <p className="text-gray-600 mb-6">The requested field note could not be found.</p>
+            <h1 className="text-2xl font-semibold text-foreground mb-4">Field Note Not Found</h1>
+            <p className="text-muted-foreground mb-6">The requested field note could not be found.</p>
             <Link href="/">
               <Button>Return to Home</Button>
             </Link>
@@ -156,19 +156,19 @@ export default function FieldNoteDetail() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 overflow-x-hidden">
+    <div className="min-h-screen bg-background overflow-x-hidden">
       {/* Navigation */}
-      <div className="bg-white border-b border-gray-200">
+      <div className="bg-card border-b border-border">
         <Grid fullWidth>
           <Column sm={4} md={8} lg={16} className="py-4">
             <Breadcrumb>
               <BreadcrumbItem>
-                <Link href="/" className="text-blue-600 hover:text-blue-800">
+                <Link href="/" className="text-primary hover:text-primary/80">
                   Field Notes
                 </Link>
               </BreadcrumbItem>
               <BreadcrumbItem isCurrentPage>
-                <span className="text-gray-900 font-medium break-words">
+                <span className="text-foreground font-medium break-words">
                   {fieldNote.title}
                 </span>
               </BreadcrumbItem>
@@ -184,8 +184,8 @@ export default function FieldNoteDetail() {
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-6">
               <div className="min-w-0 flex-1">
-                <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-2 break-words">{fieldNote.title}</h1>
-                <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm text-gray-600 mb-4">
+                <h1 className="text-2xl sm:text-3xl font-semibold text-foreground mb-2 break-words">{fieldNote.title}</h1>
+                <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm text-muted-foreground mb-4">
                   <Tag type="blue" size="sm">{fieldNote.tripType}</Tag>
                   <span className="flex items-center gap-1 flex-shrink-0">
                     <Calendar size={16} />
@@ -225,7 +225,7 @@ export default function FieldNoteDetail() {
               </div>
             </div>
 
-            <p className="text-gray-700 mb-8 text-base sm:text-lg break-words">{fieldNote.description}</p>
+            <p className="text-foreground mb-8 text-base sm:text-lg break-words">{fieldNote.description}</p>
 
             {/* Main Content Grid */}
             <Grid className="gap-y-6">
@@ -255,8 +255,8 @@ export default function FieldNoteDetail() {
                         className="w-full"
                       />
                     ) : (
-                      <div className="flex items-center justify-center h-64 bg-gray-50 rounded">
-                        <p className="text-gray-500">No elevation data available</p>
+                      <div className="flex items-center justify-center h-64 bg-muted rounded">
+                        <p className="text-muted-foreground">No elevation data available</p>
                       </div>
                     )}
                   </Tile>
@@ -266,14 +266,14 @@ export default function FieldNoteDetail() {
               {/* Photos Column */}
               <Column sm={4} md={3} lg={6}>
                 <Tile className="p-4">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                  <h3 className="text-lg font-semibold text-foreground mb-4">
                     Photos ({photos.length})
                   </h3>
                   
                   {isLoadingFieldNote ? (
                     <div className="grid grid-cols-2 gap-2">
                       {Array.from({ length: 4 }).map((_, i) => (
-                        <div key={i} className="w-full h-24 bg-gray-200 animate-pulse rounded"></div>
+                        <div key={i} className="w-full h-24 bg-muted animate-pulse rounded"></div>
                       ))}
                     </div>
                   ) : (
@@ -284,7 +284,7 @@ export default function FieldNoteDetail() {
                           onClick={() => setSelectedPhotoId(photo.id)}
                           onMouseEnter={() => setHoveredPhotoId(photo.id)}
                           onMouseLeave={() => setHoveredPhotoId(null)}
-                          className="relative w-full h-24 bg-gray-200 rounded overflow-hidden hover:opacity-80 transition-all duration-200 hover:scale-105 hover:shadow-lg"
+                          className="relative w-full h-24 bg-muted rounded overflow-hidden hover:opacity-80 transition-all duration-200 hover:scale-105 hover:shadow-lg"
                           data-testid={`photo-thumbnail-${photo.id}`}
                         >
                           {/* Photo Label Overlay */}
@@ -303,7 +303,7 @@ export default function FieldNoteDetail() {
                               const parent = target.parentElement;
                               if (parent && !parent.querySelector('.error-message')) {
                                 const errorDiv = document.createElement('div');
-                                errorDiv.className = 'error-message flex items-center justify-center w-full h-full text-xs text-gray-500 bg-gray-100';
+                                errorDiv.className = 'error-message flex items-center justify-center w-full h-full text-xs text-muted-foreground bg-muted';
                                 errorDiv.textContent = 'Image not available';
                                 parent.appendChild(errorDiv);
                               }
@@ -315,7 +315,7 @@ export default function FieldNoteDetail() {
                   )}
 
                   {photos.length === 0 && !isLoadingFieldNote && (
-                    <p className="text-gray-500 text-sm">No photos available</p>
+                    <p className="text-muted-foreground text-sm">No photos available</p>
                   )}
                 </Tile>
               </Column>

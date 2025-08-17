@@ -16,6 +16,8 @@ Preferred communication style: Simple, everyday language.
 - ✓ Added automatic system preference detection and localStorage persistence
 - ✓ Enhanced all UI components with dark mode styling (backgrounds, borders, text)
 - ✓ Added Carbon Design System dark mode compatibility CSS overrides
+- ✓ Updated all typography to use proper tokens (text-foreground, text-muted-foreground)
+- ✓ Replaced hardcoded gray colors with theme-aware design tokens for accessibility
 - ✓ Maintained full accessibility and visual consistency across light/dark themes
 
 **August 17, 2025 - Mobile Stacked Filter Implementation:**

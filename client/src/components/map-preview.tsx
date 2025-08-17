@@ -16,10 +16,10 @@ interface FullScreenMapModalProps {
 
 function FullScreenMapModal({ gpxData, photos, onPhotoClick, onClose }: FullScreenMapModalProps) {
   return (
-    <div className="fixed inset-0 z-50 bg-white">
+    <div className="fixed inset-0 z-50 bg-background">
       {/* Header with close button */}
-      <div className="flex items-center justify-between p-4 border-b bg-white">
-        <h2 className="text-lg font-semibold text-gray-900">Interactive Map</h2>
+      <div className="flex items-center justify-between p-4 border-b bg-card border-border">
+        <h2 className="text-lg font-semibold text-foreground">Interactive Map</h2>
         <Button
           kind="ghost"
           size="sm"
@@ -35,10 +35,10 @@ function FullScreenMapModal({ gpxData, photos, onPhotoClick, onClose }: FullScre
       {/* Full-screen map */}
       <div className="h-[calc(100vh-5rem)]">
         <Suspense fallback={
-          <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+          <div className="w-full h-full bg-muted flex items-center justify-center">
             <div className="text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-              <p className="text-gray-600">Loading interactive map...</p>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+              <p className="text-muted-foreground">Loading interactive map...</p>
             </div>
           </div>
         }>
@@ -217,18 +217,18 @@ export default function MapPreview({ gpxData, photos, onPhotoClick, className = 
           />
         ) : hasValidTrack ? (
           // Fallback for when static map fails to load
-          <div className="w-full h-full bg-gradient-to-br from-green-100 to-blue-100 flex items-center justify-center">
+          <div className="w-full h-full bg-gradient-to-br from-secondary to-accent flex items-center justify-center">
             <div className="text-center p-6">
-              <View size={48} className="mx-auto mb-4 text-gray-600" />
-              <p className="text-gray-600 text-sm">Map preview unavailable</p>
+              <View size={48} className="mx-auto mb-4 text-muted-foreground" />
+              <p className="text-muted-foreground text-sm">Map preview unavailable</p>
             </div>
           </div>
         ) : (
           // No valid track data
-          <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+          <div className="w-full h-full bg-muted flex items-center justify-center">
             <div className="text-center p-6">
-              <View size={48} className="mx-auto mb-4 text-gray-400" />
-              <p className="text-gray-500 text-sm">No route data available</p>
+              <View size={48} className="mx-auto mb-4 text-muted-foreground" />
+              <p className="text-muted-foreground text-sm">No route data available</p>
             </div>
           </div>
         )}

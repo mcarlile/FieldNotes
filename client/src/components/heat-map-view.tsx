@@ -556,19 +556,19 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       )}
       
       {fieldNotes.length === 0 && (
-        <div className="absolute inset-0 bg-gray-50 flex items-center justify-center">
+        <div className="absolute inset-0 bg-background flex items-center justify-center">
           <div className="text-center">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No routes to display</h3>
-            <p className="text-gray-600">Add some field notes with GPX data to see the heat map</p>
+            <h3 className="text-lg font-semibold text-foreground mb-2">No routes to display</h3>
+            <p className="text-muted-foreground">Add some field notes with GPX data to see the heat map</p>
           </div>
         </div>
       )}
       
       {!mapLoaded && fieldNotes.length > 0 && (
-        <div className="absolute inset-0 bg-gray-50 flex items-center justify-center">
+        <div className="absolute inset-0 bg-background flex items-center justify-center">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading heat map...</p>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Loading heat map...</p>
           </div>
         </div>
       )}
