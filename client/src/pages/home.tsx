@@ -35,7 +35,7 @@ export default function Home() {
   const [showHeatMap, setShowHeatMap] = useState(false);
   const [distanceFilter, setDistanceFilter] = useState("any");
   const [elevationFilter, setElevationFilter] = useState("any");
-  const [showFilters, setShowFilters] = useState(true);
+  const [showFilters, setShowFilters] = useState(false); // Hidden by default on mobile
 
   const { data: allFieldNotes = [], isLoading } = useQuery<FieldNote[]>({
     queryKey: ["/api/field-notes", { search, sortOrder }],
@@ -180,100 +180,109 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gray-50 overflow-x-hidden flex">
       {/* Left Sidebar Filter Panel */}
-      {showFilters && (
-        <div className="w-80 bg-white border-r border-gray-200 flex-shrink-0">
-          <div className="p-6">
-            {/* Filter Header */}
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-2">
-                <Filter size={20} />
-                <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
-                {activeFilterCount > 0 && (
-                  <Tag type="blue" size="sm" className="ml-2">
-                    {activeFilterCount}
-                  </Tag>
-                )}
-              </div>
-              <CarbonButton
-                kind="ghost"
-                size="sm"
-                onClick={() => setShowFilters(false)}
-                renderIcon={Close}
-                iconDescription="Close filters"
-              />
+      <div className={`
+        ${showFilters ? 'block' : 'hidden'} 
+        lg:block 
+        w-[300px] 
+        bg-white 
+        border-r 
+        border-gray-200 
+        flex-shrink-0
+        ${showFilters ? 'absolute lg:relative z-10 h-full lg:h-auto' : ''}
+      `}>
+        <div className="p-6">
+          {/* Filter Header */}
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-2">
+              <Filter size={20} />
+              <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
+              {activeFilterCount > 0 && (
+                <Tag type="blue" size="sm" className="ml-2">
+                  {activeFilterCount}
+                </Tag>
+              )}
             </div>
+            {/* Close button only on mobile */}
+            <CarbonButton
+              kind="ghost"
+              size="sm"
+              onClick={() => setShowFilters(false)}
+              renderIcon={Close}
+              iconDescription="Close filters"
+              className="lg:hidden"
+            />
+          </div>
 
-            {/* Reset Filters */}
-            {activeFilterCount > 0 && (
-              <div className="mb-6">
-                <CarbonButton
-                  kind="tertiary"
-                  size="sm"
-                  onClick={resetFilters}
-                >
-                  Reset Filters
-                </CarbonButton>
+          {/* Reset Filters */}
+          {activeFilterCount > 0 && (
+            <div className="mb-6">
+              <CarbonButton
+                kind="tertiary"
+                size="sm"
+                onClick={resetFilters}
+              >
+                Reset Filters
+              </CarbonButton>
+            </div>
+          )}
+
+          {/* Trip Type Filter */}
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold text-gray-900 mb-3">Trip Type</h3>
+            {tripTypes.length > 0 && (
+              <div className="mb-3 flex items-center gap-1">
+                <Tag type="blue" size="sm">
+                  {tripTypes.length}
+                </Tag>
+                <span className="text-xs text-gray-500">selected</span>
               </div>
             )}
-
-            {/* Trip Type Filter */}
-            <div className="mb-6">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3">Trip Type</h3>
-              {tripTypes.length > 0 && (
-                <div className="mb-3 flex items-center gap-1">
-                  <Tag type="blue" size="sm">
-                    {tripTypes.length}
-                  </Tag>
-                  <span className="text-xs text-gray-500">selected</span>
-                </div>
-              )}
-              <div className="space-y-3">
-                {availableTripTypes.map(type => (
-                  <Checkbox
-                    key={type}
-                    id={`trip-type-${type}`}
-                    labelText={type}
-                    checked={tripTypes.includes(type)}
-                    onChange={(_, { checked }) => handleTripTypeChange(type, checked)}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {/* Distance Filter */}
-            <div className="mb-6">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3">Distance (miles)</h3>
-              <RadioButtonGroup
-                name="distance-filter"
-                valueSelected={distanceFilter}
-                onChange={setDistanceFilter}
-              >
-                <RadioButton labelText="Any" value="any" id="distance-any" />
-                <RadioButton labelText="0-5 miles" value="0-5" id="distance-0-5" />
-                <RadioButton labelText="5-15 miles" value="5-15" id="distance-5-15" />
-                <RadioButton labelText="15-30 miles" value="15-30" id="distance-15-30" />
-                <RadioButton labelText="30+ miles" value="30+" id="distance-30-plus" />
-              </RadioButtonGroup>
-            </div>
-
-            {/* Elevation Filter */}
-            <div className="mb-6">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3">Elevation Gain (ft)</h3>
-              <RadioButtonGroup
-                name="elevation-filter"
-                valueSelected={elevationFilter}
-                onChange={setElevationFilter}
-              >
-                <RadioButton labelText="Any" value="any" id="elevation-any" />
-                <RadioButton labelText="0-500 ft" value="0-500" id="elevation-0-500" />
-                <RadioButton labelText="500-1,500 ft" value="500-1500" id="elevation-500-1500" />
-                <RadioButton labelText="1,500-3,000 ft" value="1500-3000" id="elevation-1500-3000" />
-                <RadioButton labelText="3,000+ ft" value="3000+" id="elevation-3000-plus" />
-              </RadioButtonGroup>
+            <div className="space-y-3">
+              {availableTripTypes.map(type => (
+                <Checkbox
+                  key={type}
+                  id={`trip-type-${type}`}
+                  labelText={type}
+                  checked={tripTypes.includes(type)}
+                  onChange={(_, { checked }) => handleTripTypeChange(type, checked)}
+                />
+              ))}
             </div>
           </div>
+
+          {/* Distance Filter */}
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold text-gray-900 mb-3">Distance (miles)</h3>
+            <RadioButtonGroup
+              name="distance-filter"
+              valueSelected={distanceFilter}
+              onChange={(value) => setDistanceFilter(String(value) || "any")}
+            >
+              <RadioButton labelText="Any" value="any" id="distance-any" />
+              <RadioButton labelText="0-5 miles" value="0-5" id="distance-0-5" />
+              <RadioButton labelText="5-15 miles" value="5-15" id="distance-5-15" />
+              <RadioButton labelText="15-30 miles" value="15-30" id="distance-15-30" />
+              <RadioButton labelText="30+ miles" value="30+" id="distance-30-plus" />
+            </RadioButtonGroup>
+          </div>
+
+          {/* Elevation Filter */}
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold text-gray-900 mb-3">Elevation Gain (ft)</h3>
+            <RadioButtonGroup
+              name="elevation-filter"
+              valueSelected={elevationFilter}
+              onChange={(value) => setElevationFilter(String(value) || "any")}
+            >
+              <RadioButton labelText="Any" value="any" id="elevation-any" />
+              <RadioButton labelText="0-500 ft" value="0-500" id="elevation-0-500" />
+              <RadioButton labelText="500-1,500 ft" value="500-1500" id="elevation-500-1500" />
+              <RadioButton labelText="1,500-3,000 ft" value="1500-3000" id="elevation-1500-3000" />
+              <RadioButton labelText="3,000+ ft" value="3000+" id="elevation-3000-plus" />
+            </RadioButtonGroup>
+          </div>
         </div>
-      )}
+      </div>
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col">
@@ -282,27 +291,22 @@ export default function Home() {
           <div className="px-6 py-6">
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
               <div className="flex items-center gap-4">
-                {!showFilters && (
-                  <CarbonButton
-                    kind="ghost"
-                    size="sm"
-                    onClick={() => setShowFilters(true)}
-                    renderIcon={Filter}
-                  >
-                    Show Filters
-                    {activeFilterCount > 0 && (
-                      <Tag type="blue" size="sm" className="ml-2">
-                        {activeFilterCount}
-                      </Tag>
-                    )}
-                  </CarbonButton>
-                )}
+                {/* Show Filters button only on mobile when filters are hidden */}
+                <CarbonButton
+                  kind="ghost"
+                  size="sm"
+                  onClick={() => setShowFilters(true)}
+                  renderIcon={Filter}
+                  className="lg:hidden"
+                >
+                  Filters
+                  {activeFilterCount > 0 && (
+                    <Tag type="blue" size="sm" className="ml-2">
+                      {activeFilterCount}
+                    </Tag>
+                  )}
+                </CarbonButton>
                 <h1 className="text-2xl font-semibold text-gray-900">Field Notes</h1>
-                {fieldNotes.length > 0 && (
-                  <span className="text-sm text-gray-500">
-                    {fieldNotes.length} {fieldNotes.length === 1 ? 'result' : 'results'}
-                  </span>
-                )}
               </div>
               <div className="flex items-center gap-4">
                 <label htmlFor="heat-map-toggle" className="text-sm text-gray-600 cursor-pointer">
@@ -330,7 +334,7 @@ export default function Home() {
 
         {/* Search and Sort */}
         <div className="bg-white border-b border-gray-200 px-6 py-4">
-          <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
             <div className="flex-1">
               <CarbonSearch
                 size="lg"
@@ -344,7 +348,7 @@ export default function Home() {
             <div className="w-48">
               <Dropdown
                 id="sort-order"
-                titleText="Sort By"  
+                titleText=""
                 label={sortOrderItems.find(item => item.id === sortOrder)?.text || "Most Recent"}
                 items={sortOrderItems}
                 itemToString={(item) => item ? item.text : ""}
@@ -356,8 +360,17 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Results Count */}
+        {!isLoading && (
+          <div className="bg-gray-50 px-6 py-2">
+            <span className="text-sm text-gray-600">
+              {fieldNotes.length} {fieldNotes.length === 1 ? 'result' : 'results'}
+            </span>
+          </div>
+        )}
+
         {/* Field Notes Grid */}
-        <div className="flex-1 p-6">
+        <div className="flex-1 p-6 bg-gray-50">
           {isLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {Array.from({ length: 8 }).map((_, i) => (
