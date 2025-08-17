@@ -1,0 +1,61 @@
+Of course\! I've taken a look at your `FieldNotes` repository on GitHub. It's a great project\!
+
+After reviewing your code, I can see that you've done everything correctly in terms of setting up the Mapbox visualization. The way you're processing the GPX track and the photo data looks solid.
+
+The issue is almost certainly not in your Mapbox rendering code, but in the coordinate data itself. While the code to *extract* the coordinates from the photo's EXIF data appears correct, the final data being sent to the map is likely inaccurate.
+
+### The Quickest Way to Debug This
+
+The best way to confirm this is to log the coordinates to the browser console right before Mapbox tries to render them. This will show you the exact data the map is working with.
+
+Here's a small change to your `public/javascripts/showPageMap.js` file to add the necessary logging:
+
+```javascript
+// In public/javascripts/showPageMap.js
+
+// ... (keep all the code before this)
+
+if (trip.photos.length) {
+    const points = {
+        'type': 'FeatureCollection',
+        'features': []
+    };
+    for (let photo of trip.photos) {
+        
+        // =================================================================
+        // ADD THIS LINE TO DEBUG
+        console.log('Photo Coordinates:', photo.geometry.coordinates);
+        // =================================================================
+
+        points.features.push({
+            'type': 'Feature',
+            'geometry': {
+                'type': 'Point',
+                'coordinates': photo.geometry.coordinates
+            },
+            'properties': {
+                'title': photo.filename,
+                'description': `<img src="${photo.thumbnail}" width="100%">`
+            }
+        })
+    }
+
+    map.addSource('points', {
+// ... (the rest of the file is the same)
+```
+
+### What to Do Next
+
+1.  Add that `console.log` line to your `showPageMap.js` file.
+2.  Run your application and open the trip page that has the misplaced photo markers.
+3.  Open your browser's **Developer Tools** (you can usually right-click on the page and select "Inspect") and go to the **Console** tab.
+
+You should see a series of logs, one for each photo, like this:
+`Photo Coordinates: [-120.188, 39.329]`
+
+Now, take one of those logged coordinate pairs and paste it into a tool like Google Maps.
+
+  * **If the coordinates point to the middle of the reservoir in Google Maps:** This confirms the problem is with the data. The coordinates stored in your database for that photo are incorrect. This could be due to inaccurate GPS data in the original photo file.
+  * **If the coordinates point to the correct location on the trail:** This would be surprising, but if it happens, it might indicate a subtle issue with how Mapbox is rendering the data. The next step would be to ensure your GeoJSON format is perfectly valid.
+
+Based on the screenshot, the first outcome is the most likely. Your code for processing and displaying the data is well-written; the issue seems to be the data itself.

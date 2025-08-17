@@ -177,6 +177,9 @@ export default function MapboxMap({
       // Add photo markers with labels
       photos.forEach((photo, index) => {
         if (photo.latitude && photo.longitude && map.current) {
+          // Debug logging as suggested by Gemini - verify coordinates in Google Maps
+          console.log(`Photo ${photo.filename} Coordinates:`, [photo.longitude, photo.latitude]);
+          console.log(`Verify location: https://www.google.com/maps?q=${photo.latitude},${photo.longitude}`);
           
           // Create marker container
           const markerContainer = document.createElement('div');
