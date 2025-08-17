@@ -196,39 +196,70 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 overflow-x-hidden flex" data-layout="sidebar-layout">
-      {/* Left Sidebar Filter Panel */}
-      <div className={`
-        w-[300px] 
-        bg-white 
-        border-r 
-        border-gray-200 
-        flex-shrink-0
-        ${showFilters ? 'block' : 'hidden lg:block'}
-        ${showFilters ? 'absolute lg:relative z-10 h-full lg:h-auto' : 'relative'}
-      `}>
-        <div className="p-6">
-          {/* Filter Header */}
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-2">
-              <Filter size={20} />
-              <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
-              {activeFilterCount > 0 && (
-                <Tag type="blue" size="sm" className="ml-2">
-                  {activeFilterCount}
-                </Tag>
-              )}
+    <div className="min-h-screen bg-gray-50 flex flex-col" data-layout="sidebar-layout">
+      {/* App Header */}
+      <div className="bg-white border-b border-gray-200 flex-shrink-0">
+        <div className="px-6 py-6">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+            <h1 className="text-2xl font-semibold text-gray-900">Field Notes</h1>
+            <div className="flex items-center gap-4">
+              <label htmlFor="heat-map-toggle" className="text-sm text-gray-600 cursor-pointer">
+                Heat Map
+              </label>
+              <Toggle
+                id="heat-map-toggle"
+                labelText=""
+                hideLabel
+                aria-label="Toggle heat map view"
+                toggled={showHeatMap}
+                onToggle={setShowHeatMap}
+                data-testid="toggle-heat-map"
+              />
+
+              <Link href="/admin">
+                <CarbonButton size="sm" data-testid="link-admin" renderIcon={Add}>
+                  Add New
+                </CarbonButton>
+              </Link>
             </div>
-            {/* Close button only on mobile */}
-            <CarbonButton
-              kind="ghost"
-              size="sm"
-              onClick={() => setShowFilters(false)}
-              renderIcon={Close}
-              iconDescription="Close filters"
-              className="lg:hidden"
-            />
           </div>
+        </div>
+      </div>
+
+      {/* Main Content Area with Sidebar */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left Sidebar Filter Panel */}
+        <div className={`
+          w-[300px] 
+          bg-white 
+          border-r 
+          border-gray-200 
+          flex-shrink-0
+          ${showFilters ? 'block' : 'hidden lg:block'}
+          ${showFilters ? 'absolute lg:relative z-10 h-full lg:h-auto' : 'relative'}
+        `}>
+          <div className="p-6">
+            {/* Filter Header */}
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-2">
+                <Filter size={20} />
+                <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
+                {activeFilterCount > 0 && (
+                  <Tag type="blue" size="sm" className="ml-2">
+                    {activeFilterCount}
+                  </Tag>
+                )}
+              </div>
+              {/* Close button only on mobile */}
+              <CarbonButton
+                kind="ghost"
+                size="sm"
+                onClick={() => setShowFilters(false)}
+                renderIcon={Close}
+                iconDescription="Close filters"
+                className="lg:hidden"
+              />
+            </div>
 
           {/* Reset Filters */}
           {activeFilterCount > 0 && (
@@ -301,13 +332,12 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col">
-        {/* Header */}
-        <div className="bg-white border-b border-gray-200">
-          <div className="px-6 py-6">
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
-              <div className="flex items-center gap-4">
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col">
+          {/* Search and Controls */}
+          <div className="bg-white border-b border-gray-200">
+            <div className="px-6 py-4">
+              <div className="flex items-center gap-4 mb-4">
                 {/* Show Filters button only on mobile when filters are hidden */}
                 {!showFilters && (
                   <CarbonButton
@@ -325,115 +355,91 @@ export default function Home() {
                     )}
                   </CarbonButton>
                 )}
-                <h1 className="text-2xl font-semibold text-gray-900">Field Notes</h1>
               </div>
-              <div className="flex items-center gap-4">
-                <label htmlFor="heat-map-toggle" className="text-sm text-gray-600 cursor-pointer">
-                  Heat Map
-                </label>
-                <Toggle
-                  id="heat-map-toggle"
-                  labelText=""
-                  hideLabel
-                  aria-label="Toggle heat map view"
-                  toggled={showHeatMap}
-                  onToggle={setShowHeatMap}
-                  data-testid="toggle-heat-map"
-                />
 
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                <div className="flex-1">
+                  <CarbonSearch
+                    size="lg"
+                    placeholder="Search field notes..."
+                    labelText="Search field notes"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    data-testid="input-search"
+                  />
+                </div>
+                <div className="w-48">
+                  <Dropdown
+                    id="sort-order"
+                    titleText=""
+                    label={sortOrderItems.find(item => item.id === sortOrder)?.text || "Most Recent"}
+                    items={sortOrderItems}
+                    itemToString={(item) => item ? item.text : ""}
+                    selectedItem={sortOrderItems.find(item => item.id === sortOrder)}
+                    onChange={({ selectedItem }) => setSortOrder(selectedItem?.id || "recent")}
+                    data-testid="select-sort-order"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Results Count */}
+          {!isLoading && (
+            <div className="bg-gray-50 px-6 py-2">
+              <span className="text-sm text-gray-600">
+                {fieldNotes.length} {fieldNotes.length === 1 ? 'result' : 'results'}
+              </span>
+            </div>
+          )}
+
+          {/* Field Notes Grid */}
+          <div className="flex-1 p-6 bg-gray-50 overflow-auto">
+            {isLoading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <Tile key={i}>
+                    <SkeletonPlaceholder className="w-full h-32 mb-4" />
+                    <SkeletonText heading />
+                    <SkeletonText />
+                    <SkeletonText width="60%" />
+                  </Tile>
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {fieldNotes.map((note) => (
+                  <FieldNoteCard key={note.id} fieldNote={note} searchTerm={search} />
+                ))}
+              </div>
+            )}
+            
+            {!isLoading && fieldNotes.length === 0 && (
+              <Tile className="text-center py-12">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">No field notes found</h3>
+                <p className="text-gray-600 mb-4">
+                  {search || activeFilterCount > 0
+                    ? "Try adjusting your search or filters" 
+                    : "Get started by adding your first field note"}
+                </p>
+                {activeFilterCount > 0 && (
+                  <CarbonButton
+                    kind="tertiary"
+                    size="sm"
+                    onClick={resetFilters}
+                    className="mr-3"
+                  >
+                    Clear Filters
+                  </CarbonButton>
+                )}
                 <Link href="/admin">
-                  <CarbonButton size="sm" data-testid="link-admin" renderIcon={Add}>
-                    Add New
+                  <CarbonButton renderIcon={Add}>
+                    Add Your First Field Note
                   </CarbonButton>
                 </Link>
-              </div>
-            </div>
+              </Tile>
+            )}
           </div>
-        </div>
-
-        {/* Search and Sort */}
-        <div className="bg-white border-b border-gray-200 px-6 py-4">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-            <div className="flex-1">
-              <CarbonSearch
-                size="lg"
-                placeholder="Search field notes..."
-                labelText="Search field notes"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                data-testid="input-search"
-              />
-            </div>
-            <div className="w-48">
-              <Dropdown
-                id="sort-order"
-                titleText=""
-                label={sortOrderItems.find(item => item.id === sortOrder)?.text || "Most Recent"}
-                items={sortOrderItems}
-                itemToString={(item) => item ? item.text : ""}
-                selectedItem={sortOrderItems.find(item => item.id === sortOrder)}
-                onChange={({ selectedItem }) => setSortOrder(selectedItem?.id || "recent")}
-                data-testid="select-sort-order"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Results Count */}
-        {!isLoading && (
-          <div className="bg-gray-50 px-6 py-2">
-            <span className="text-sm text-gray-600">
-              {fieldNotes.length} {fieldNotes.length === 1 ? 'result' : 'results'}
-            </span>
-          </div>
-        )}
-
-        {/* Field Notes Grid */}
-        <div className="flex-1 p-6 bg-gray-50">
-          {isLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <Tile key={i}>
-                  <SkeletonPlaceholder className="w-full h-32 mb-4" />
-                  <SkeletonText heading />
-                  <SkeletonText />
-                  <SkeletonText width="60%" />
-                </Tile>
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {fieldNotes.map((note) => (
-                <FieldNoteCard key={note.id} fieldNote={note} searchTerm={search} />
-              ))}
-            </div>
-          )}
-          
-          {!isLoading && fieldNotes.length === 0 && (
-            <Tile className="text-center py-12">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">No field notes found</h3>
-              <p className="text-gray-600 mb-4">
-                {search || activeFilterCount > 0
-                  ? "Try adjusting your search or filters" 
-                  : "Get started by adding your first field note"}
-              </p>
-              {activeFilterCount > 0 && (
-                <CarbonButton
-                  kind="tertiary"
-                  size="sm"
-                  onClick={resetFilters}
-                  className="mr-3"
-                >
-                  Clear Filters
-                </CarbonButton>
-              )}
-              <Link href="/admin">
-                <CarbonButton renderIcon={Add}>
-                  Add Your First Field Note
-                </CarbonButton>
-              </Link>
-            </Tile>
-          )}
         </div>
       </div>
     </div>
