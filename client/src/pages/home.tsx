@@ -235,10 +235,11 @@ export default function Home() {
           border-r 
           border-gray-200 
           flex-shrink-0
+          overflow-y-auto
           ${showFilters ? 'block' : 'hidden lg:block'}
           ${showFilters ? 'absolute lg:relative z-10 h-full lg:h-auto' : 'relative'}
         `}>
-          <div className="p-6">
+          <div className="p-6 min-h-0">
             {/* Filter Header */}
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-2">
@@ -285,7 +286,7 @@ export default function Home() {
                 <span className="text-xs text-gray-500">selected</span>
               </div>
             )}
-            <div className="space-y-3">
+            <div className="space-y-2 max-h-48 overflow-y-auto">
               {availableTripTypes.map(type => (
                 <Checkbox
                   key={type}
@@ -301,33 +302,39 @@ export default function Home() {
           {/* Distance Filter */}
           <div className="mb-6">
             <h3 className="text-sm font-semibold text-gray-900 mb-3">Distance (miles)</h3>
-            <RadioButtonGroup
-              name="distance-filter"
-              valueSelected={distanceFilter}
-              onChange={(value) => setDistanceFilter(String(value) || "any")}
-            >
-              <RadioButton labelText="Any" value="any" id="distance-any" />
-              <RadioButton labelText="0-5 miles" value="0-5" id="distance-0-5" />
-              <RadioButton labelText="5-15 miles" value="5-15" id="distance-5-15" />
-              <RadioButton labelText="15-30 miles" value="15-30" id="distance-15-30" />
-              <RadioButton labelText="30+ miles" value="30+" id="distance-30-plus" />
-            </RadioButtonGroup>
+            <div className="space-y-2">
+              <RadioButtonGroup
+                name="distance-filter"
+                valueSelected={distanceFilter}
+                onChange={(value) => setDistanceFilter(String(value) || "any")}
+                orientation="vertical"
+              >
+                <RadioButton labelText="Any" value="any" id="distance-any" />
+                <RadioButton labelText="0-5" value="0-5" id="distance-0-5" />
+                <RadioButton labelText="5-15" value="5-15" id="distance-5-15" />
+                <RadioButton labelText="15-30" value="15-30" id="distance-15-30" />
+                <RadioButton labelText="30+" value="30+" id="distance-30-plus" />
+              </RadioButtonGroup>
+            </div>
           </div>
 
           {/* Elevation Filter */}
           <div className="mb-6">
             <h3 className="text-sm font-semibold text-gray-900 mb-3">Elevation Gain (ft)</h3>
-            <RadioButtonGroup
-              name="elevation-filter"
-              valueSelected={elevationFilter}
-              onChange={(value) => setElevationFilter(String(value) || "any")}
-            >
-              <RadioButton labelText="Any" value="any" id="elevation-any" />
-              <RadioButton labelText="0-500 ft" value="0-500" id="elevation-0-500" />
-              <RadioButton labelText="500-1,500 ft" value="500-1500" id="elevation-500-1500" />
-              <RadioButton labelText="1,500-3,000 ft" value="1500-3000" id="elevation-1500-3000" />
-              <RadioButton labelText="3,000+ ft" value="3000+" id="elevation-3000-plus" />
-            </RadioButtonGroup>
+            <div className="space-y-2">
+              <RadioButtonGroup
+                name="elevation-filter"
+                valueSelected={elevationFilter}
+                onChange={(value) => setElevationFilter(String(value) || "any")}
+                orientation="vertical"
+              >
+                <RadioButton labelText="Any" value="any" id="elevation-any" />
+                <RadioButton labelText="0-500" value="0-500" id="elevation-0-500" />
+                <RadioButton labelText="500-1,500" value="500-1500" id="elevation-500-1500" />
+                <RadioButton labelText="1,500-3,000" value="1500-3000" id="elevation-1500-3000" />
+                <RadioButton labelText="3,000+" value="3000+" id="elevation-3000-plus" />
+              </RadioButtonGroup>
+            </div>
           </div>
         </div>
       </div>
