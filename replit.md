@@ -10,10 +10,10 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
-**August 17, 2025 - GPS Photo Marker Fix & UI Improvements:**
-- ✓ Fixed GPS coordinate extraction from iPhone photos for accurate map positioning
+**August 17, 2025 - Photo Marker Removal & GPS Fixes:**
+- ✓ Removed photo marker indicators from map as requested by user
+- ✓ Fixed GPS coordinate extraction from iPhone photos for accurate positioning  
 - ✓ Updated EXIF extraction to properly parse GPS latitude/longitude with field translation
-- ✓ Corrected photo marker positioning on maps using real GPS coordinates from EXIF data
 - ✓ Enhanced field note detail page with primary Edit button and secondary delete icon
 - ✓ Improved auto-upload photo experience with better progress indicators
 - ✓ Fixed ProgressBar label warning in photo uploader component

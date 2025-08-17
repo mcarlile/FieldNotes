@@ -155,12 +155,7 @@ export default function MapboxMap({
           bounds.extend(coord);
         });
         
-        // Add photo coordinates to bounds
-        photos.forEach(photo => {
-          if (photo.latitude && photo.longitude) {
-            bounds.extend([photo.longitude, photo.latitude]);
-          }
-        });
+        // Photo coordinates no longer added to bounds since markers are removed
         
         if (!bounds.isEmpty()) {
           map.current.fitBounds(bounds, { 
@@ -170,95 +165,11 @@ export default function MapboxMap({
         }
       }
 
-      // Clear existing photo markers before adding new ones
+      // Clear existing photo markers - removing photo indicators as requested
       photoMarkers.current.forEach(marker => marker.remove());
       photoMarkers.current.clear();
 
-      // Add photo markers with labels
-      photos.forEach((photo, index) => {
-        if (photo.latitude && photo.longitude && map.current) {
-          // Debug logging as suggested by Gemini - verify coordinates in Google Maps
-          console.log(`Photo ${photo.filename} Coordinates:`, [photo.longitude, photo.latitude]);
-          console.log(`Verify location: https://www.google.com/maps?q=${photo.latitude},${photo.longitude}`);
-          
-          // Create marker container
-          const markerContainer = document.createElement('div');
-          markerContainer.className = 'photo-marker-container';
-          markerContainer.style.cssText = `
-            position: relative;
-            cursor: pointer;
-          `;
-
-          // Create the photo marker
-          const markerEl = document.createElement('div');
-          markerEl.className = 'photo-marker';
-          markerEl.style.cssText = `
-            width: 20px;
-            height: 20px;
-            background: #ff6900;
-            border: 3px solid white;
-            border-radius: 50%;
-            transition: all 0.2s ease;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-            position: relative;
-            z-index: 2;
-          `;
-
-          // Create the photo label positioned exactly at marker center
-          const labelEl = document.createElement('div');
-          labelEl.className = 'photo-label';
-          labelEl.textContent = `Photo ${index + 1}`;
-          labelEl.style.cssText = `
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -100%) translateY(-10px);
-            background: rgba(0, 0, 0, 0.8);
-            color: white;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 11px;
-            font-weight: 500;
-            white-space: nowrap;
-            opacity: 0;
-            transition: opacity 0.2s ease;
-            pointer-events: none;
-            z-index: 3;
-          `;
-
-          markerContainer.appendChild(markerEl);
-          markerContainer.appendChild(labelEl);
-
-          // Hover effects
-          markerContainer.addEventListener('mouseenter', () => {
-            markerEl.style.transform = 'scale(1.3)';
-            markerEl.style.background = '#ff4500';
-            markerEl.style.boxShadow = '0 4px 8px rgba(0,0,0,0.4)';
-            labelEl.style.opacity = '1';
-          });
-          
-          markerContainer.addEventListener('mouseleave', () => {
-            markerEl.style.transform = 'scale(1)';
-            markerEl.style.background = '#ff6900';
-            markerEl.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
-            labelEl.style.opacity = '0';
-          });
-          
-          markerContainer.addEventListener('click', () => {
-            onPhotoClick(photo.id);
-          });
-
-          // Create marker with precise center positioning
-          const marker = new mapboxgl.Marker({
-            element: markerContainer,
-            anchor: 'center' // This ensures the marker is centered exactly on the coordinate
-          })
-            .setLngLat([photo.longitude, photo.latitude])
-            .addTo(map.current);
-
-          photoMarkers.current.set(photo.id, marker);
-        }
-      });
+      // Photo markers removed - no longer displaying photo location indicators on map
     });
 
     return () => {
