@@ -41,9 +41,10 @@ export default function Home() {
   useEffect(() => {
     const handleResize = () => {
       const isMobile = window.innerWidth < 1024; // lg breakpoint
-      if (isMobile && showFilters) {
+      console.log('Resize check:', { isMobile, currentShowFilters: showFilters, windowWidth: window.innerWidth });
+      if (isMobile) {
         setShowFilters(false);
-      } else if (!isMobile && !showFilters) {
+      } else {
         setShowFilters(true);
       }
     };
