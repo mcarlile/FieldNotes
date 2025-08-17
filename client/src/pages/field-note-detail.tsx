@@ -14,8 +14,9 @@ import {
   Loading,
   InlineNotification,
   SkeletonText,
+  Toggle,
 } from "@carbon/react";
-import { ArrowLeft, Edit, TrashCan, Calendar, Location, ChartLineSmooth, Time, Maximize } from "@carbon/icons-react";
+import { ArrowLeft, Edit, TrashCan, Calendar, Location, ChartLineSmooth, Time, Maximize, Light, Asleep } from "@carbon/icons-react";
 import MapboxRoutePreview from "@/components/mapbox-route-preview";
 import PhotoLightbox from "@/components/photo-lightbox";
 import MapboxMap from "@/components/mapbox-map";
@@ -25,6 +26,7 @@ import { parseGpxData } from "@shared/gpx-utils";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { queryClient } from "@/lib/queryClient";
+import { useTheme } from "@/contexts/theme-context";
 import type { FieldNote, Photo } from "@shared/schema";
 
 type FieldNoteWithPhotos = FieldNote & { photos: Photo[] };
@@ -38,6 +40,7 @@ export default function FieldNoteDetail() {
   const [hoveredPhotoId, setHoveredPhotoId] = useState<string | null>(null);
 
   const { toast } = useToast();
+  const { theme, toggleTheme } = useTheme();
 
   // Single query that fetches field note with photos included
   const { data: fieldNoteData, isLoading: isLoadingFieldNote } = useQuery({
@@ -157,22 +160,44 @@ export default function FieldNoteDetail() {
 
   return (
     <div className="min-h-screen bg-background overflow-x-hidden">
-      {/* Navigation */}
-      <div className="bg-card border-b border-border">
+      {/* Header */}
+      <div className="bg-card border-b border-border sticky top-0 z-50">
         <Grid fullWidth>
           <Column sm={4} md={8} lg={16} className="py-4">
-            <Breadcrumb>
-              <BreadcrumbItem>
-                <Link href="/" className="text-primary hover:text-primary/80">
-                  Field Notes
-                </Link>
-              </BreadcrumbItem>
-              <BreadcrumbItem isCurrentPage>
-                <span className="text-foreground font-medium break-words">
-                  {fieldNote.title}
+            <div className="flex items-center justify-between">
+              {/* Breadcrumb Navigation */}
+              <div className="flex items-center min-w-0 flex-1">
+                <Breadcrumb>
+                  <BreadcrumbItem>
+                    <Link href="/" className="text-primary hover:text-primary/80">
+                      Field Notes
+                    </Link>
+                  </BreadcrumbItem>
+                  <BreadcrumbItem isCurrentPage>
+                    <span className="text-foreground font-medium break-words">
+                      {fieldNote.title}
+                    </span>
+                  </BreadcrumbItem>
+                </Breadcrumb>
+              </div>
+
+              {/* Theme Toggle */}
+              <div className="flex items-center gap-4 ml-4">
+                <Toggle
+                  id="theme-toggle"
+                  aria-label="Toggle theme"
+                  toggled={theme === "dark"}
+                  onToggle={toggleTheme}
+                  labelA=""
+                  labelB=""
+                  hideLabel
+                  data-testid="toggle-theme"
+                />
+                <span className="text-sm text-muted-foreground flex items-center gap-2">
+                  {theme === "dark" ? <Asleep size={16} /> : <Light size={16} />}
                 </span>
-              </BreadcrumbItem>
-            </Breadcrumb>
+              </div>
+            </div>
           </Column>
         </Grid>
       </div>

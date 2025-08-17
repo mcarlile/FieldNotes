@@ -10,6 +10,15 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+**August 17, 2025 - Unified Header System with Theme Controls:**
+- ✓ Implemented consistent header design across all detail pages (field-note-detail, admin)
+- ✓ Added breadcrumb navigation with proper hierarchy on all pages
+- ✓ Integrated theme toggle controls in detail page headers for consistent experience
+- ✓ Made headers sticky with proper z-index for improved navigation
+- ✓ Enhanced elevation marker with smooth animations, pulsing ring effects, and requestAnimationFrame optimization
+- ✓ Improved elevation profile chart with better active dots, debouncing, and enhanced visual effects
+- ✓ Fixed search highlighting color tokens to properly support both light and dark modes
+
 **August 17, 2025 - Animated Route Density Legend:**
 - ✓ Implemented animated legend with smooth hover effects and scaling animations
 - ✓ Added interactive click functionality to highlight specific density levels on map
