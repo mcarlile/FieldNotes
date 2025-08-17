@@ -274,7 +274,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       source: "routes",
       filter: ["==", ["get", "overlapCount"], 1],
       paint: {
-        "line-color": "#3b82f6", // Neutral blue for single routes
+        "line-color": "hsl(var(--primary))", // Theme-aware blue for single routes
         "line-width": [
           "interpolate",
           ["linear"],
@@ -294,7 +294,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       source: "routes",
       filter: ["all", [">=", ["get", "overlapCount"], 2], ["<=", ["get", "overlapCount"], 3]],
       paint: {
-        "line-color": "#f59e0b", // Orange for medium overlap
+        "line-color": "hsl(var(--warning))", // Theme-aware orange for medium overlap
         "line-width": [
           "interpolate",
           ["linear"],
@@ -314,7 +314,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       source: "routes",
       filter: [">=", ["get", "overlapCount"], 4],
       paint: {
-        "line-color": "#dc2626", // Red for high overlap
+        "line-color": "hsl(var(--destructive))", // Theme-aware red for high overlap
         "line-width": [
           "interpolate",
           ["linear"],
@@ -399,25 +399,25 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       const popupContent = intersectingNotes.length === 1
         ? // Single route
           `<div class="text-sm max-w-64">
-             <a href="/field-notes/${intersectingNotes[0].id}" class="text-blue-600 hover:text-blue-800 font-semibold underline" style="color: #2563eb; text-decoration: underline;">
+             <a href="/field-notes/${intersectingNotes[0].id}" class="font-semibold underline" style="color: hsl(var(--primary)); text-decoration: underline;">
                ${intersectingNotes[0].title}
              </a><br/>
-             <span class="text-gray-600">${intersectingNotes[0].tripType}</span><br/>
-             <span class="text-xs text-gray-500">${intersectingNotes[0].distance}mi • ${intersectingNotes[0].elevationGain}ft gain</span><br/>
-             <span class="text-xs text-blue-600" style="color: #2563eb;">Click to view details</span>
+             <span style="color: hsl(var(--muted-foreground));">${intersectingNotes[0].tripType}</span><br/>
+             <span class="text-xs" style="color: hsl(var(--muted-foreground));">${intersectingNotes[0].distance}mi • ${intersectingNotes[0].elevationGain}ft gain</span><br/>
+             <span class="text-xs" style="color: hsl(var(--primary));">Click to view details</span>
            </div>`
         : // Multiple routes overlapping
           `<div class="text-sm max-w-64">
              <strong>${overlapCount} Routes Overlap Here:</strong><br/>
              ${intersectingNotes.map(note => 
-               `<div class="mt-2 pl-2 border-l-2 border-orange-300">
-                  <a href="/field-notes/${note.id}" class="text-blue-600 hover:text-blue-800 font-semibold underline" style="color: #2563eb; text-decoration: underline;">
+               `<div class="mt-2 pl-2 border-l-2" style="border-color: hsl(var(--warning));">
+                  <a href="/field-notes/${note.id}" class="font-semibold underline" style="color: hsl(var(--primary)); text-decoration: underline;">
                     ${note.title}
                   </a><br/>
-                  <span class="text-gray-600 text-xs">${note.tripType} • ${note.distance}mi</span>
+                  <span class="text-xs" style="color: hsl(var(--muted-foreground));">${note.tripType} • ${note.distance}mi</span>
                 </div>`
              ).join('')}
-             <div class="mt-2 text-xs text-blue-600" style="color: #2563eb;">Click any route to view details</div>
+             <div class="mt-2 text-xs" style="color: hsl(var(--primary));">Click any route to view details</div>
            </div>`;
 
       activePopup = new mapboxgl.Popup({ 
@@ -531,24 +531,24 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       
       {/* Heat Map Legend */}
       {mapLoaded && fieldNotes.length > 0 && (
-        <div className="absolute bottom-4 right-4 bg-white/90 backdrop-blur-sm rounded-lg p-4 shadow-lg border border-gray-200">
-          <h4 className="text-sm font-semibold text-gray-900 mb-3">Route Density</h4>
+        <div className="absolute bottom-4 right-4 bg-card/90 backdrop-blur-sm rounded-lg p-4 shadow-lg border border-border">
+          <h4 className="text-sm font-semibold text-foreground mb-3">Route Density</h4>
           <div className="space-y-2">
             <div className="flex items-center gap-3">
-              <div className="w-4 h-0.5 bg-blue-500" style={{ opacity: 0.6 }}></div>
-              <span className="text-xs text-gray-700">Low traffic</span>
+              <div className="w-4 h-0.5" style={{ backgroundColor: "hsl(var(--primary))", opacity: 0.6 }}></div>
+              <span className="text-xs text-muted-foreground">Low traffic</span>
             </div>
             <div className="flex items-center gap-3">
-              <div className="w-4 h-1 bg-orange-500" style={{ opacity: 0.8 }}></div>
-              <span className="text-xs text-gray-700">Medium traffic</span>
+              <div className="w-4 h-1" style={{ backgroundColor: "hsl(var(--warning))", opacity: 0.8 }}></div>
+              <span className="text-xs text-muted-foreground">Medium traffic</span>
             </div>
             <div className="flex items-center gap-3">
-              <div className="w-4 h-1.5 bg-red-600"></div>
-              <span className="text-xs text-gray-700">High traffic</span>
+              <div className="w-4 h-1.5" style={{ backgroundColor: "hsl(var(--destructive))" }}></div>
+              <span className="text-xs text-muted-foreground">High traffic</span>
             </div>
           </div>
-          <div className="mt-3 pt-2 border-t border-gray-200">
-            <p className="text-xs text-gray-500">
+          <div className="mt-3 pt-2 border-t border-border">
+            <p className="text-xs text-muted-foreground">
               {fieldNotes.length} route{fieldNotes.length === 1 ? '' : 's'} aggregated
             </p>
           </div>
