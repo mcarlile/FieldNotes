@@ -157,36 +157,47 @@ export default function Home() {
   // If heat map is enabled, show full-screen heat map
   if (showHeatMap) {
     return (
-      <div className="h-screen bg-gray-50 flex flex-col">
-        {/* Header */}
-        <div className="bg-white border-b border-gray-200 flex-shrink-0">
-          <Grid fullWidth>
-            <Column sm={4} md={8} lg={16}>
-              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 py-6">
-                <h1 className="text-2xl font-semibold text-gray-900">Field Notes</h1>
-                <div className="flex items-center gap-4">
-                  <label htmlFor="heat-map-toggle" className="text-sm text-gray-600 cursor-pointer">
-                    Heat Map
-                  </label>
-                  <Toggle
-                    id="heat-map-toggle"
-                    labelText=""
-                    hideLabel
-                    aria-label="Toggle heat map view"
-                    toggled={showHeatMap}
-                    onToggle={setShowHeatMap}
-                    data-testid="toggle-heat-map"
-                  />
+      <div className="h-screen bg-background flex flex-col">
+        {/* Header - Same as list view */}
+        <div className="bg-card border-b border-border flex-shrink-0">
+          <div className="px-6 py-6">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+              <h1 className="text-2xl font-semibold text-foreground">Field Notes</h1>
+              <div className="flex items-center gap-4">
+                <label htmlFor="heat-map-toggle" className="text-sm text-muted-foreground cursor-pointer">
+                  Heat Map
+                </label>
+                <Toggle
+                  id="heat-map-toggle"
+                  labelText=""
+                  hideLabel
+                  aria-label="Toggle heat map view"
+                  toggled={showHeatMap}
+                  onToggle={setShowHeatMap}
+                  data-testid="toggle-heat-map"
+                />
 
-                  <Link href="/admin">
-                    <CarbonButton size="sm" data-testid="link-admin" renderIcon={Add}>
-                      Add New
-                    </CarbonButton>
-                  </Link>
-                </div>
+                <label htmlFor="dark-mode-toggle" className="text-sm text-muted-foreground cursor-pointer">
+                  Dark Mode
+                </label>
+                <Toggle
+                  id="dark-mode-toggle"
+                  labelText=""
+                  hideLabel
+                  aria-label="Toggle dark mode"
+                  toggled={theme === "dark"}
+                  onToggle={toggleTheme}
+                  data-testid="toggle-dark-mode"
+                />
+
+                <Link href="/admin">
+                  <CarbonButton size="sm" data-testid="link-admin" renderIcon={Add}>
+                    Add New
+                  </CarbonButton>
+                </Link>
               </div>
-            </Column>
-          </Grid>
+            </div>
+          </div>
         </div>
         
         {/* Full-screen Heat Map */}
@@ -200,12 +211,12 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col" data-layout="sidebar-layout">
       {/* App Header */}
-      <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+      <div className="bg-card border-b border-border flex-shrink-0">
         <div className="px-6 py-6">
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
-            <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">Field Notes</h1>
+            <h1 className="text-2xl font-semibold text-foreground">Field Notes</h1>
             <div className="flex items-center gap-4">
-              <label htmlFor="heat-map-toggle" className="text-sm text-gray-600 dark:text-gray-300 cursor-pointer">
+              <label htmlFor="heat-map-toggle" className="text-sm text-muted-foreground cursor-pointer">
                 Heat Map
               </label>
               <Toggle
@@ -218,7 +229,7 @@ export default function Home() {
                 data-testid="toggle-heat-map"
               />
 
-              <label htmlFor="dark-mode-toggle" className="text-sm text-gray-600 dark:text-gray-300 cursor-pointer">
+              <label htmlFor="dark-mode-toggle" className="text-sm text-muted-foreground cursor-pointer">
                 Dark Mode
               </label>
               <Toggle
