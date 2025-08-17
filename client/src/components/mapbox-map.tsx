@@ -26,7 +26,6 @@ export default function MapboxMap({
   const map = useRef<mapboxgl.Map | null>(null);
   const elevationMarker = useRef<mapboxgl.Marker | null>(null);
   const photoMarkers = useRef<Map<string, mapboxgl.Marker>>(new Map());
-  const centerMarker = useRef<mapboxgl.Marker | null>(null);
   const coordinatesRef = useRef<[number, number][]>([]);
   const [mapFocus, setMapFocus] = useState<'all' | 'track' | 'photos'>('all');
 
@@ -171,32 +170,6 @@ export default function MapboxMap({
       photoMarkers.current.clear();
 
       // Photo markers removed - no longer displaying photo location indicators on map
-
-      // Add center marker dot
-      const centerEl = document.createElement('div');
-      centerEl.style.cssText = `
-        width: 8px;
-        height: 8px;
-        background: #ff0000;
-        border: 2px solid white;
-        border-radius: 50%;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        z-index: 1000;
-      `;
-
-      centerMarker.current = new mapboxgl.Marker({
-        element: centerEl,
-        anchor: 'center'
-      })
-        .setLngLat(map.current.getCenter())
-        .addTo(map.current);
-
-      // Update center marker position when map moves
-      map.current.on('move', () => {
-        if (centerMarker.current && map.current) {
-          centerMarker.current.setLngLat(map.current.getCenter());
-        }
-      });
     });
 
     return () => {
@@ -207,10 +180,6 @@ export default function MapboxMap({
       if (elevationMarker.current) {
         elevationMarker.current.remove();
         elevationMarker.current = null;
-      }
-      if (centerMarker.current) {
-        centerMarker.current.remove();
-        centerMarker.current = null;
       }
       if (map.current) {
         map.current.remove();
