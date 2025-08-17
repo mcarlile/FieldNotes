@@ -20,20 +20,18 @@ export async function extractExifFromBuffer(buffer: Buffer, filename: string): P
   try {
     console.log(`Extracting EXIF data from ${filename} (${Math.round(buffer.length / 1024)} KB)...`);
     
-    // Extract EXIF data with optimized options for large files
+    // Extract EXIF data with proper GPS handling
     const exifData = await exifr.parse(buffer, {
-      // Only extract essential EXIF data to improve performance
-      pick: [
-        'latitude', 'longitude', 'GPSAltitude',
-        'DateTimeOriginal', 'DateTime', 'CreateDate', 'ModifyDate',
-        'Make', 'Model', 'LensModel', 'LensSpecification',
-        'FNumber', 'ApertureValue', 'ExposureTime', 'ShutterSpeedValue',
-        'ISO', 'ISOSpeedRatings', 'FocalLength'
-      ],
-      // Improve memory usage for large files
-      interop: false,
-      translateKeys: false,
-      translateValues: false
+      // Extract GPS and other essential data
+      gps: true,
+      exif: true,
+      iptc: false,
+      icc: false,
+      xmp: false,
+      // Enable proper GPS coordinate translation
+      translateKeys: true,
+      translateValues: true,
+      mergeOutput: true
     });
 
     if (!exifData) {
@@ -45,15 +43,20 @@ export async function extractExifFromBuffer(buffer: Buffer, filename: string): P
 
     const result: PhotoExifData = {};
 
-    // GPS coordinates
+    // GPS coordinates - try multiple field names
     if (exifData.latitude && exifData.longitude) {
       result.latitude = exifData.latitude;
       result.longitude = exifData.longitude;
+    } else if (exifData.GPSLatitude && exifData.GPSLongitude) {
+      result.latitude = exifData.GPSLatitude;
+      result.longitude = exifData.GPSLongitude;
     }
 
-    // Elevation/altitude
+    // Elevation/altitude - try multiple field names
     if (exifData.GPSAltitude) {
       result.elevation = exifData.GPSAltitude;
+    } else if (exifData.elevation) {
+      result.elevation = exifData.elevation;
     }
 
     // Timestamp - try multiple fields
