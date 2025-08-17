@@ -197,15 +197,15 @@ export default function MapboxMap({
             z-index: 2;
           `;
 
-          // Create the photo label
+          // Create the photo label positioned exactly at marker center
           const labelEl = document.createElement('div');
           labelEl.className = 'photo-label';
           labelEl.textContent = `Photo ${index + 1}`;
           labelEl.style.cssText = `
             position: absolute;
-            bottom: 28px;
+            top: 50%;
             left: 50%;
-            transform: translateX(-50%);
+            transform: translate(-50%, -100%) translateY(-10px);
             background: rgba(0, 0, 0, 0.8);
             color: white;
             padding: 4px 8px;
@@ -241,7 +241,11 @@ export default function MapboxMap({
             onPhotoClick(photo.id);
           });
 
-          const marker = new mapboxgl.Marker(markerContainer)
+          // Create marker with precise center positioning
+          const marker = new mapboxgl.Marker({
+            element: markerContainer,
+            anchor: 'center' // This ensures the marker is centered exactly on the coordinate
+          })
             .setLngLat([photo.longitude, photo.latitude])
             .addTo(map.current);
 
