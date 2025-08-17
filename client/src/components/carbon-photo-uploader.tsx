@@ -334,6 +334,7 @@ export function CarbonPhotoUploader({
           <FileUploaderDropContainer
             accept={['image/*']}
             multiple={maxNumberOfFiles > 1}
+            labelText="Drag and drop images here or click to browse"
             onAddFiles={(_, { addedFiles }) => {
               handleFilesFromDropContainer(addedFiles);
             }}
