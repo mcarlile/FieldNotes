@@ -14,6 +14,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [highlightedDensity, setHighlightedDensity] = useState<string | null>(null);
 
   // Theme-aware colors
   const getThemeColors = () => {
@@ -548,6 +549,46 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
 
   }, [fieldNotes, mapLoaded, theme]);
 
+  // Handle density highlighting functionality
+  const handleDensityHighlight = (density: string) => {
+    if (!map.current) return;
+    
+    if (highlightedDensity === density) {
+      // Toggle off if already selected
+      setHighlightedDensity(null);
+      // Reset all layer opacities
+      const allLayers = ["route-heat-single", "route-heat-medium", "route-heat-high"];
+      allLayers.forEach(layerId => {
+        if (map.current && map.current.getLayer(layerId)) {
+          map.current.setPaintProperty(layerId, "line-opacity", 
+            layerId === "route-heat-single" ? 0.7 : layerId === "route-heat-medium" ? 0.8 : 0.9
+          );
+        }
+      });
+    } else {
+      // Highlight selected density
+      setHighlightedDensity(density);
+      
+      // Dim all layers first
+      const allLayers = ["route-heat-single", "route-heat-medium", "route-heat-high"];
+      allLayers.forEach(layerId => {
+        if (map.current && map.current.getLayer(layerId)) {
+          map.current.setPaintProperty(layerId, "line-opacity", 0.2);
+        }
+      });
+      
+      // Highlight the selected density layer
+      const targetLayer = 
+        density === 'low' ? "route-heat-single" :
+        density === 'medium' ? "route-heat-medium" : 
+        "route-heat-high";
+        
+      if (map.current.getLayer(targetLayer)) {
+        map.current.setPaintProperty(targetLayer, "line-opacity", 1);
+      }
+    }
+  };
+
   return (
     <div className="relative w-full h-screen">
       <div ref={mapContainer} className="w-full h-full" />
@@ -558,72 +599,82 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
           <h4 className="text-sm font-semibold text-foreground mb-3 transition-colors duration-200">Route Density</h4>
           <div className="space-y-3">
             {/* Low Traffic */}
-            <div className="flex items-center gap-3 group cursor-pointer transition-all duration-200 hover:scale-105 hover:translate-x-1">
+            <div 
+              className={`flex items-center gap-3 group cursor-pointer transition-all duration-200 hover:scale-105 hover:translate-x-1 p-2 rounded-md ${highlightedDensity === 'low' ? 'bg-primary/10 ring-2 ring-primary/30' : 'hover:bg-muted/50'}`}
+              onClick={() => handleDensityHighlight('low')}
+            >
               <div className="relative">
                 <div 
-                  className="w-4 h-0.5 rounded-full transition-all duration-300 group-hover:w-6 group-hover:h-1 group-hover:shadow-lg"
+                  className={`w-4 h-0.5 rounded-full transition-all duration-300 group-hover:w-6 group-hover:h-1 group-hover:shadow-lg ${highlightedDensity === 'low' ? 'w-6 h-1 shadow-lg' : ''}`}
                   style={{ 
                     backgroundColor: getThemeColors().primary, 
-                    opacity: 0.6,
-                    boxShadow: `0 0 8px ${getThemeColors().primary}40`
+                    opacity: highlightedDensity === 'low' ? 1 : 0.6,
+                    boxShadow: highlightedDensity === 'low' ? `0 0 12px ${getThemeColors().primary}60` : `0 0 8px ${getThemeColors().primary}40`
                   }}
                 ></div>
                 <div 
-                  className="absolute inset-0 w-4 h-0.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300 animate-pulse"
+                  className={`absolute inset-0 w-4 h-0.5 rounded-full transition-opacity duration-300 ${highlightedDensity === 'low' ? 'opacity-100 animate-pulse' : 'opacity-0 group-hover:opacity-100 animate-pulse'}`}
                   style={{ 
                     backgroundColor: getThemeColors().primary,
                     filter: 'blur(2px)'
                   }}
                 ></div>
               </div>
-              <span className="text-xs text-muted-foreground transition-colors duration-200 group-hover:text-foreground">
+              <span className={`text-xs transition-colors duration-200 ${highlightedDensity === 'low' ? 'text-foreground font-medium' : 'text-muted-foreground group-hover:text-foreground'}`}>
                 Low traffic
               </span>
             </div>
 
             {/* Medium Traffic */}
-            <div className="flex items-center gap-3 group cursor-pointer transition-all duration-200 hover:scale-105 hover:translate-x-1">
+            <div 
+              className={`flex items-center gap-3 group cursor-pointer transition-all duration-200 hover:scale-105 hover:translate-x-1 p-2 rounded-md ${highlightedDensity === 'medium' ? 'bg-warning/10 ring-2 ring-warning/30' : 'hover:bg-muted/50'}`}
+              onClick={() => handleDensityHighlight('medium')}
+            >
               <div className="relative">
                 <div 
-                  className="w-4 h-1 rounded-full transition-all duration-300 group-hover:w-6 group-hover:h-1.5 group-hover:shadow-lg"
+                  className={`w-4 h-1 rounded-full transition-all duration-300 group-hover:w-6 group-hover:h-1.5 group-hover:shadow-lg ${highlightedDensity === 'medium' ? 'w-6 h-1.5 shadow-lg' : ''}`}
                   style={{ 
                     backgroundColor: getThemeColors().warning, 
-                    opacity: 0.8,
-                    boxShadow: `0 0 8px ${getThemeColors().warning}40`
+                    opacity: highlightedDensity === 'medium' ? 1 : 0.8,
+                    boxShadow: highlightedDensity === 'medium' ? `0 0 12px ${getThemeColors().warning}60` : `0 0 8px ${getThemeColors().warning}40`
                   }}
                 ></div>
                 <div 
-                  className="absolute inset-0 w-4 h-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300 animate-pulse"
+                  className={`absolute inset-0 w-4 h-1 rounded-full transition-opacity duration-300 ${highlightedDensity === 'medium' ? 'opacity-100 animate-pulse' : 'opacity-0 group-hover:opacity-100 animate-pulse'}`}
                   style={{ 
                     backgroundColor: getThemeColors().warning,
                     filter: 'blur(2px)'
                   }}
                 ></div>
               </div>
-              <span className="text-xs text-muted-foreground transition-colors duration-200 group-hover:text-foreground">
+              <span className={`text-xs transition-colors duration-200 ${highlightedDensity === 'medium' ? 'text-foreground font-medium' : 'text-muted-foreground group-hover:text-foreground'}`}>
                 Medium traffic
               </span>
             </div>
 
             {/* High Traffic */}
-            <div className="flex items-center gap-3 group cursor-pointer transition-all duration-200 hover:scale-105 hover:translate-x-1">
+            <div 
+              className={`flex items-center gap-3 group cursor-pointer transition-all duration-200 hover:scale-105 hover:translate-x-1 p-2 rounded-md ${highlightedDensity === 'high' ? 'bg-destructive/10 ring-2 ring-destructive/30' : 'hover:bg-muted/50'}`}
+              onClick={() => handleDensityHighlight('high')}
+            >
               <div className="relative">
                 <div 
-                  className="w-4 h-1.5 rounded-full transition-all duration-300 group-hover:w-6 group-hover:h-2 group-hover:shadow-lg"
+                  className={`w-4 h-1.5 rounded-full transition-all duration-300 group-hover:w-6 group-hover:h-2 group-hover:shadow-lg ${highlightedDensity === 'high' ? 'w-6 h-2 shadow-lg' : ''}`}
                   style={{ 
                     backgroundColor: getThemeColors().destructive,
-                    boxShadow: `0 0 8px ${getThemeColors().destructive}40`
+                    opacity: highlightedDensity === 'high' ? 1 : 0.9,
+                    boxShadow: highlightedDensity === 'high' ? `0 0 12px ${getThemeColors().destructive}60` : `0 0 8px ${getThemeColors().destructive}40`
                   }}
                 ></div>
                 <div 
-                  className="absolute inset-0 w-4 h-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300 animate-pulse"
+                  className={`absolute inset-0 w-4 h-1.5 rounded-full transition-opacity duration-300 ${highlightedDensity === 'high' ? 'opacity-100 animate-pulse' : 'opacity-0 group-hover:opacity-100 animate-pulse'}`}
                   style={{ 
                     backgroundColor: getThemeColors().destructive,
                     filter: 'blur(2px)'
                   }}
                 ></div>
               </div>
-              <span className="text-xs text-muted-foreground transition-colors duration-200 group-hover:text-foreground">
+              <span className={`text-xs transition-colors duration-200 ${highlightedDensity === 'high' ? 'text-foreground font-medium' : 'text-muted-foreground group-hover:text-foreground'}`}>
                 High traffic
               </span>
             </div>
@@ -633,7 +684,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
             <p className="text-xs text-muted-foreground transition-colors duration-200">
               {fieldNotes.length} route{fieldNotes.length === 1 ? '' : 's'} aggregated
             </p>
-            <div className="mt-2 flex gap-1">
+            <div className="mt-2 flex gap-1 items-center">
               {Array.from({ length: Math.min(fieldNotes.length, 5) }).map((_, i) => (
                 <div
                   key={i}
@@ -646,6 +697,14 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
               ))}
               {fieldNotes.length > 5 && (
                 <span className="text-xs text-muted-foreground ml-1">+{fieldNotes.length - 5}</span>
+              )}
+              {highlightedDensity && (
+                <button
+                  onClick={() => setHighlightedDensity(null)}
+                  className="ml-auto text-xs text-primary hover:text-foreground transition-colors duration-200 underline"
+                >
+                  Show all
+                </button>
               )}
             </div>
           </div>
