@@ -23,12 +23,14 @@ import {
   SideNavItems,
   SideNavLink,
 } from "@carbon/react";
-import { Add, Search, Filter, Map, Close } from "@carbon/icons-react";
+import { Add, Search, Filter, Map, Close, Light, Asleep } from "@carbon/icons-react";
 import FieldNoteCard from "@/components/field-note-card";
 import HeatMapView from "@/components/heat-map-view";
+import { useTheme } from "@/contexts/theme-context";
 import type { FieldNote } from "@shared/schema";
 
 export default function Home() {
+  const { theme, toggleTheme } = useTheme();
   const [search, setSearch] = useState("");
   const [tripTypes, setTripTypes] = useState<string[]>([]);
   const [sortOrder, setSortOrder] = useState("recent");
@@ -196,14 +198,14 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col" data-layout="sidebar-layout">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col" data-layout="sidebar-layout">
       {/* App Header */}
-      <div className="bg-white border-b border-gray-200 flex-shrink-0">
+      <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
         <div className="px-6 py-6">
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
-            <h1 className="text-2xl font-semibold text-gray-900">Field Notes</h1>
+            <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">Field Notes</h1>
             <div className="flex items-center gap-4">
-              <label htmlFor="heat-map-toggle" className="text-sm text-gray-600 cursor-pointer">
+              <label htmlFor="heat-map-toggle" className="text-sm text-gray-600 dark:text-gray-300 cursor-pointer">
                 Heat Map
               </label>
               <Toggle
@@ -214,6 +216,19 @@ export default function Home() {
                 toggled={showHeatMap}
                 onToggle={setShowHeatMap}
                 data-testid="toggle-heat-map"
+              />
+
+              <label htmlFor="dark-mode-toggle" className="text-sm text-gray-600 dark:text-gray-300 cursor-pointer">
+                Dark Mode
+              </label>
+              <Toggle
+                id="dark-mode-toggle"
+                labelText=""
+                hideLabel
+                aria-label="Toggle dark mode"
+                toggled={theme === "dark"}
+                onToggle={toggleTheme}
+                data-testid="toggle-dark-mode"
               />
 
               <Link href="/admin">
@@ -232,9 +247,9 @@ export default function Home() {
         <div className="hidden lg:flex flex-1 overflow-hidden">
           <div className={`
             w-[280px]
-            bg-white 
+            bg-white dark:bg-gray-900
             border-r 
-            border-gray-200 
+            border-gray-200 dark:border-gray-700
             flex-shrink-0
             overflow-y-auto
           `}>
@@ -331,7 +346,7 @@ export default function Home() {
           {/* Desktop Main Content */}
           <div className="flex-1 flex flex-col">
             {/* Search and Controls */}
-            <div className="bg-white border-b border-gray-200">
+            <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
               <div className="px-6 py-4">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
                   <div className="flex-1">
@@ -362,15 +377,15 @@ export default function Home() {
 
             {/* Results Count */}
             {!isLoading && (
-              <div className="bg-gray-50 px-6 py-2">
-                <span className="text-sm text-gray-600">
+              <div className="bg-gray-50 dark:bg-gray-800 px-6 py-2">
+                <span className="text-sm text-gray-600 dark:text-gray-300">
                   {fieldNotes.length} {fieldNotes.length === 1 ? 'result' : 'results'}
                 </span>
               </div>
             )}
 
             {/* Field Notes Grid */}
-            <div className="flex-1 p-6 bg-gray-50 overflow-auto">
+            <div className="flex-1 p-6 bg-gray-50 dark:bg-gray-800 overflow-auto">
               {isLoading ? (
                 <Grid fullWidth>
                   {[...Array(6)].map((_, i) => (
@@ -385,7 +400,7 @@ export default function Home() {
                 </Grid>
               ) : fieldNotes.length === 0 ? (
                 <div className="text-center py-12">
-                  <p className="text-gray-500 text-lg mb-4">No field notes found</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-lg mb-4">No field notes found</p>
                   <Link href="/admin">
                     <CarbonButton renderIcon={Add}>
                       Add your first field note
@@ -412,7 +427,7 @@ export default function Home() {
         {/* Mobile Stacked Filter Panel */}
         <div className="lg:hidden">
           {/* Mobile Filter Toggle and Stacked Filters */}
-          <div className="bg-white border-b border-gray-200">
+          <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
             <div className="px-6 py-4">
               <div className="flex items-center gap-4 mb-4">
                 <CarbonButton
@@ -467,7 +482,7 @@ export default function Home() {
 
             {/* Mobile Stacked Filters */}
             {showFilters && (
-              <div className="px-6 pb-4 border-t border-gray-100">
+              <div className="px-6 pb-4 border-t border-gray-100 dark:border-gray-600">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-4">
                   {/* Trip Type Filter */}
                   <div>
@@ -537,15 +552,15 @@ export default function Home() {
 
           {/* Mobile Results Count */}
           {!isLoading && (
-            <div className="bg-gray-50 px-6 py-2">
-              <span className="text-sm text-gray-600">
+            <div className="bg-gray-50 dark:bg-gray-800 px-6 py-2">
+              <span className="text-sm text-gray-600 dark:text-gray-300">
                 {fieldNotes.length} {fieldNotes.length === 1 ? 'result' : 'results'}
               </span>
             </div>
           )}
 
           {/* Mobile Field Notes Grid */}
-          <div className="flex-1 p-6 bg-gray-50 overflow-auto">
+          <div className="flex-1 p-6 bg-gray-50 dark:bg-gray-800 overflow-auto">
             {isLoading ? (
               <Grid fullWidth>
                 {[...Array(6)].map((_, i) => (
@@ -560,7 +575,7 @@ export default function Home() {
               </Grid>
             ) : fieldNotes.length === 0 ? (
               <div className="text-center py-12">
-                <p className="text-gray-500 text-lg mb-4">No field notes found</p>
+                <p className="text-gray-500 dark:text-gray-400 text-lg mb-4">No field notes found</p>
                 <Link href="/admin">
                   <CarbonButton renderIcon={Add}>
                     Add your first field note

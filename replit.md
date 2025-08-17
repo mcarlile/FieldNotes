@@ -10,6 +10,14 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+**August 17, 2025 - Dark Mode Implementation:**
+- ✓ Added comprehensive dark mode support with ThemeProvider context
+- ✓ Implemented theme toggle switch in application header 
+- ✓ Added automatic system preference detection and localStorage persistence
+- ✓ Enhanced all UI components with dark mode styling (backgrounds, borders, text)
+- ✓ Added Carbon Design System dark mode compatibility CSS overrides
+- ✓ Maintained full accessibility and visual consistency across light/dark themes
+
 **August 17, 2025 - Mobile Stacked Filter Implementation:**
 - ✓ Implemented dual layout system: sidebar for desktop (lg+), stacked for mobile
 - ✓ Created mobile-first stacked filter component with 3-column grid layout

@@ -178,3 +178,62 @@
     transform: translateX(100%);
   }
 }
+
+/* Dark mode overrides for Carbon components */
+.dark .cds--tile,
+.dark .bx--tile {
+  background-color: hsl(var(--card));
+  color: hsl(var(--card-foreground));
+  border-color: hsl(var(--border));
+}
+
+.dark .cds--search-input,
+.dark .bx--search-input {
+  background-color: hsl(var(--input));
+  color: hsl(var(--foreground));
+  border-color: hsl(var(--border));
+}
+
+.dark .cds--dropdown,
+.dark .bx--dropdown {
+  background-color: hsl(var(--popover));
+}
+
+.dark .cds--list-box__field,
+.dark .bx--list-box__field {
+  background-color: hsl(var(--input));
+  color: hsl(var(--foreground));
+  border-color: hsl(var(--border));
+}
+
+.dark .cds--checkbox-label::before,
+.dark .bx--checkbox-label::before {
+  border-color: hsl(var(--border));
+}
+
+.dark .cds--radio-button__label::before,
+.dark .bx--radio-button__label::before {
+  border-color: hsl(var(--border));
+}
+
+.dark .cds--btn--ghost,
+.dark .bx--btn--ghost {
+  color: hsl(var(--foreground));
+}
+
+.dark .cds--btn--tertiary,
+.dark .bx--btn--tertiary {
+  color: hsl(var(--foreground));
+  border-color: hsl(var(--border));
+}
+
+.dark .cds--tag,
+.dark .bx--tag {
+  background-color: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+}
+
+.dark .cds--side-nav,
+.dark .bx--side-nav {
+  background-color: hsl(var(--card));
+}
