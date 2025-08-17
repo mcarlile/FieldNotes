@@ -226,23 +226,21 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Main Content Area with Sidebar */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left Sidebar Filter Panel */}
-        <div className={`
-          w-[280px] sm:w-[320px] lg:w-[280px]
-          bg-white 
-          border-r 
-          border-gray-200 
-          flex-shrink-0
-          overflow-y-auto
-          ${showFilters ? 'block' : 'hidden lg:block'}
-          ${showFilters ? 'absolute lg:relative z-10 h-full lg:h-auto' : 'relative'}
-        `}>
-          <div className="p-4 sm:p-6 lg:p-4 min-h-0">
-            {/* Filter Header */}
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col">
+        {/* Desktop Sidebar Filter Panel */}
+        <div className="hidden lg:flex flex-1 overflow-hidden">
+          <div className={`
+            w-[280px]
+            bg-white 
+            border-r 
+            border-gray-200 
+            flex-shrink-0
+            overflow-y-auto
+          `}>
+            <div className="p-4 min-h-0">
+              {/* Filter Header */}
+              <div className="flex items-center gap-2 mb-4">
                 <Filter size={18} />
                 <h2 className="text-base font-semibold text-gray-900">Filters</h2>
                 {activeFilterCount > 0 && (
@@ -251,116 +249,192 @@ export default function Home() {
                   </Tag>
                 )}
               </div>
-              {/* Close button only on mobile */}
-              <CarbonButton
-                kind="ghost"
-                size="sm"
-                onClick={() => setShowFilters(false)}
-                renderIcon={Close}
-                iconDescription="Close filters"
-                className="lg:hidden p-1"
-              />
+
+              {/* Reset Filters */}
+              {activeFilterCount > 0 && (
+                <div className="mb-4">
+                  <CarbonButton
+                    kind="tertiary"
+                    size="sm"
+                    onClick={resetFilters}
+                    className="text-xs"
+                  >
+                    Reset All
+                  </CarbonButton>
+                </div>
+              )}
+
+              {/* Trip Type Filter */}
+              <div className="mb-4">
+                <h3 className="text-sm font-medium text-gray-900 mb-2">Trip Type</h3>
+                {tripTypes.length > 0 && (
+                  <div className="mb-2 flex items-center gap-1">
+                    <Tag type="blue" size="sm">
+                      {tripTypes.length}
+                    </Tag>
+                    <span className="text-xs text-gray-500">selected</span>
+                  </div>
+                )}
+                <div className="space-y-1 max-h-40 overflow-y-auto">
+                  {availableTripTypes.map(type => (
+                    <Checkbox
+                      key={type}
+                      id={`trip-type-${type}`}
+                      labelText={type}
+                      checked={tripTypes.includes(type)}
+                      onChange={(_, { checked }) => handleTripTypeChange(type, checked)}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Distance Filter */}
+              <div className="mb-4">
+                <h3 className="text-sm font-medium text-gray-900 mb-2">Distance (miles)</h3>
+                <div className="space-y-1">
+                  <RadioButtonGroup
+                    name="distance-filter"
+                    valueSelected={distanceFilter}
+                    onChange={(value) => setDistanceFilter(String(value) || "any")}
+                    orientation="vertical"
+                  >
+                    <RadioButton labelText="Any" value="any" id="distance-any" />
+                    <RadioButton labelText="0-5" value="0-5" id="distance-0-5" />
+                    <RadioButton labelText="5-15" value="5-15" id="distance-5-15" />
+                    <RadioButton labelText="15-30" value="15-30" id="distance-15-30" />
+                    <RadioButton labelText="30+" value="30+" id="distance-30-plus" />
+                  </RadioButtonGroup>
+                </div>
+              </div>
+
+              {/* Elevation Filter */}
+              <div className="mb-4">
+                <h3 className="text-sm font-medium text-gray-900 mb-2">Elevation Gain (ft)</h3>
+                <div className="space-y-1">
+                  <RadioButtonGroup
+                    name="elevation-filter"
+                    valueSelected={elevationFilter}
+                    onChange={(value) => setElevationFilter(String(value) || "any")}
+                    orientation="vertical"
+                  >
+                    <RadioButton labelText="Any" value="any" id="elevation-any" />
+                    <RadioButton labelText="0-500" value="0-500" id="elevation-0-500" />
+                    <RadioButton labelText="500-1,500" value="500-1500" id="elevation-500-1500" />
+                    <RadioButton labelText="1,500-3,000" value="1500-3000" id="elevation-1500-3000" />
+                    <RadioButton labelText="3,000+" value="3000+" id="elevation-3000-plus" />
+                  </RadioButtonGroup>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Desktop Main Content */}
+          <div className="flex-1 flex flex-col">
+            {/* Search and Controls */}
+            <div className="bg-white border-b border-gray-200">
+              <div className="px-6 py-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                  <div className="flex-1">
+                    <CarbonSearch
+                      size="lg"
+                      placeholder="Search field notes..."
+                      labelText="Search field notes"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      data-testid="input-search"
+                    />
+                  </div>
+                  <div className="w-48">
+                    <Dropdown
+                      id="sort-order"
+                      titleText=""
+                      label={sortOrderItems.find(item => item.id === sortOrder)?.text || "Most Recent"}
+                      items={sortOrderItems}
+                      itemToString={(item) => item ? item.text : ""}
+                      selectedItem={sortOrderItems.find(item => item.id === sortOrder)}
+                      onChange={({ selectedItem }) => setSortOrder(selectedItem?.id || "recent")}
+                      data-testid="select-sort-order"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
 
-          {/* Reset Filters */}
-          {activeFilterCount > 0 && (
-            <div className="mb-4">
-              <CarbonButton
-                kind="tertiary"
-                size="sm"
-                onClick={resetFilters}
-                className="text-xs"
-              >
-                Reset All
-              </CarbonButton>
-            </div>
-          )}
-
-          {/* Trip Type Filter */}
-          <div className="mb-4">
-            <h3 className="text-sm font-medium text-gray-900 mb-2">Trip Type</h3>
-            {tripTypes.length > 0 && (
-              <div className="mb-2 flex items-center gap-1">
-                <Tag type="blue" size="sm">
-                  {tripTypes.length}
-                </Tag>
-                <span className="text-xs text-gray-500">selected</span>
+            {/* Results Count */}
+            {!isLoading && (
+              <div className="bg-gray-50 px-6 py-2">
+                <span className="text-sm text-gray-600">
+                  {fieldNotes.length} {fieldNotes.length === 1 ? 'result' : 'results'}
+                </span>
               </div>
             )}
-            <div className="space-y-1 max-h-40 overflow-y-auto">
-              {availableTripTypes.map(type => (
-                <Checkbox
-                  key={type}
-                  id={`trip-type-${type}`}
-                  labelText={type}
-                  checked={tripTypes.includes(type)}
-                  onChange={(_, { checked }) => handleTripTypeChange(type, checked)}
-                />
-              ))}
-            </div>
-          </div>
 
-          {/* Distance Filter */}
-          <div className="mb-4">
-            <h3 className="text-sm font-medium text-gray-900 mb-2">Distance (miles)</h3>
-            <div className="space-y-1">
-              <RadioButtonGroup
-                name="distance-filter"
-                valueSelected={distanceFilter}
-                onChange={(value) => setDistanceFilter(String(value) || "any")}
-                orientation="vertical"
-              >
-                <RadioButton labelText="Any" value="any" id="distance-any" />
-                <RadioButton labelText="0-5" value="0-5" id="distance-0-5" />
-                <RadioButton labelText="5-15" value="5-15" id="distance-5-15" />
-                <RadioButton labelText="15-30" value="15-30" id="distance-15-30" />
-                <RadioButton labelText="30+" value="30+" id="distance-30-plus" />
-              </RadioButtonGroup>
-            </div>
-          </div>
-
-          {/* Elevation Filter */}
-          <div className="mb-4">
-            <h3 className="text-sm font-medium text-gray-900 mb-2">Elevation Gain (ft)</h3>
-            <div className="space-y-1">
-              <RadioButtonGroup
-                name="elevation-filter"
-                valueSelected={elevationFilter}
-                onChange={(value) => setElevationFilter(String(value) || "any")}
-                orientation="vertical"
-              >
-                <RadioButton labelText="Any" value="any" id="elevation-any" />
-                <RadioButton labelText="0-500" value="0-500" id="elevation-0-500" />
-                <RadioButton labelText="500-1,500" value="500-1500" id="elevation-500-1500" />
-                <RadioButton labelText="1,500-3,000" value="1500-3000" id="elevation-1500-3000" />
-                <RadioButton labelText="3,000+" value="3000+" id="elevation-3000-plus" />
-              </RadioButtonGroup>
+            {/* Field Notes Grid */}
+            <div className="flex-1 p-6 bg-gray-50 overflow-auto">
+              {isLoading ? (
+                <Grid fullWidth>
+                  {[...Array(6)].map((_, i) => (
+                    <Column key={i} sm={4} md={4} lg={4}>
+                      <Tile className="mb-6">
+                        <SkeletonPlaceholder className="h-48 mb-4" />
+                        <SkeletonText heading />
+                        <SkeletonText paragraph lineCount={2} />
+                      </Tile>
+                    </Column>
+                  ))}
+                </Grid>
+              ) : fieldNotes.length === 0 ? (
+                <div className="text-center py-12">
+                  <p className="text-gray-500 text-lg mb-4">No field notes found</p>
+                  <Link href="/admin">
+                    <CarbonButton renderIcon={Add}>
+                      Add your first field note
+                    </CarbonButton>
+                  </Link>
+                </div>
+              ) : (
+                <Grid fullWidth className="mb-6">
+                  {fieldNotes.map((note) => (
+                    <Column key={note.id} sm={4} md={4} lg={4}>
+                      <FieldNoteCard
+                        fieldNote={note}
+                        searchTerm={search}
+                        data-testid={`card-field-note-${note.id}`}
+                      />
+                    </Column>
+                  ))}
+                </Grid>
+              )}
             </div>
           </div>
         </div>
-      </div>
 
-        {/* Main Content Area */}
-        <div className="flex-1 flex flex-col">
-          {/* Search and Controls */}
+        {/* Mobile Stacked Filter Panel */}
+        <div className="lg:hidden">
+          {/* Mobile Filter Toggle and Stacked Filters */}
           <div className="bg-white border-b border-gray-200">
             <div className="px-6 py-4">
               <div className="flex items-center gap-4 mb-4">
-                {/* Show Filters button only on mobile when filters are hidden */}
-                {!showFilters && (
+                <CarbonButton
+                  kind="ghost"
+                  size="sm"
+                  onClick={() => setShowFilters(!showFilters)}
+                  renderIcon={Filter}
+                >
+                  Filters
+                  {activeFilterCount > 0 && (
+                    <Tag type="blue" size="sm" className="ml-2">
+                      {activeFilterCount}
+                    </Tag>
+                  )}
+                </CarbonButton>
+                {activeFilterCount > 0 && (
                   <CarbonButton
-                    kind="ghost"
+                    kind="tertiary"
                     size="sm"
-                    onClick={() => setShowFilters(true)}
-                    renderIcon={Filter}
-                    className="lg:hidden"
+                    onClick={resetFilters}
                   >
-                    Filters
-                    {activeFilterCount > 0 && (
-                      <Tag type="blue" size="sm" className="ml-2">
-                        {activeFilterCount}
-                      </Tag>
-                    )}
+                    Reset All
                   </CarbonButton>
                 )}
               </div>
@@ -378,7 +452,7 @@ export default function Home() {
                 </div>
                 <div className="w-48">
                   <Dropdown
-                    id="sort-order"
+                    id="sort-order-mobile"
                     titleText=""
                     label={sortOrderItems.find(item => item.id === sortOrder)?.text || "Most Recent"}
                     items={sortOrderItems}
@@ -390,9 +464,78 @@ export default function Home() {
                 </div>
               </div>
             </div>
+
+            {/* Mobile Stacked Filters */}
+            {showFilters && (
+              <div className="px-6 pb-4 border-t border-gray-100">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-4">
+                  {/* Trip Type Filter */}
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-900 mb-3">Trip Type</h3>
+                    {tripTypes.length > 0 && (
+                      <div className="mb-2 flex items-center gap-1">
+                        <Tag type="blue" size="sm">
+                          {tripTypes.length}
+                        </Tag>
+                        <span className="text-xs text-gray-500">selected</span>
+                      </div>
+                    )}
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {availableTripTypes.map(type => (
+                        <Checkbox
+                          key={type}
+                          id={`mobile-trip-type-${type}`}
+                          labelText={type}
+                          checked={tripTypes.includes(type)}
+                          onChange={(_, { checked }) => handleTripTypeChange(type, checked)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Distance Filter */}
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-900 mb-3">Distance (miles)</h3>
+                    <div className="space-y-2">
+                      <RadioButtonGroup
+                        name="mobile-distance-filter"
+                        valueSelected={distanceFilter}
+                        onChange={(value) => setDistanceFilter(String(value) || "any")}
+                        orientation="vertical"
+                      >
+                        <RadioButton labelText="Any" value="any" id="mobile-distance-any" />
+                        <RadioButton labelText="0-5" value="0-5" id="mobile-distance-0-5" />
+                        <RadioButton labelText="5-15" value="5-15" id="mobile-distance-5-15" />
+                        <RadioButton labelText="15-30" value="15-30" id="mobile-distance-15-30" />
+                        <RadioButton labelText="30+" value="30+" id="mobile-distance-30-plus" />
+                      </RadioButtonGroup>
+                    </div>
+                  </div>
+
+                  {/* Elevation Filter */}
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-900 mb-3">Elevation Gain (ft)</h3>
+                    <div className="space-y-2">
+                      <RadioButtonGroup
+                        name="mobile-elevation-filter"
+                        valueSelected={elevationFilter}
+                        onChange={(value) => setElevationFilter(String(value) || "any")}
+                        orientation="vertical"
+                      >
+                        <RadioButton labelText="Any" value="any" id="mobile-elevation-any" />
+                        <RadioButton labelText="0-500" value="0-500" id="mobile-elevation-0-500" />
+                        <RadioButton labelText="500-1,500" value="500-1500" id="mobile-elevation-500-1500" />
+                        <RadioButton labelText="1,500-3,000" value="1500-3000" id="mobile-elevation-1500-3000" />
+                        <RadioButton labelText="3,000+" value="3000+" id="mobile-elevation-3000-plus" />
+                      </RadioButtonGroup>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Results Count */}
+          {/* Mobile Results Count */}
           {!isLoading && (
             <div className="bg-gray-50 px-6 py-2">
               <span className="text-sm text-gray-600">
@@ -401,51 +544,41 @@ export default function Home() {
             </div>
           )}
 
-          {/* Field Notes Grid */}
+          {/* Mobile Field Notes Grid */}
           <div className="flex-1 p-6 bg-gray-50 overflow-auto">
             {isLoading ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {Array.from({ length: 8 }).map((_, i) => (
-                  <Tile key={i}>
-                    <SkeletonPlaceholder className="w-full h-32 mb-4" />
-                    <SkeletonText heading />
-                    <SkeletonText />
-                    <SkeletonText width="60%" />
-                  </Tile>
+              <Grid fullWidth>
+                {[...Array(6)].map((_, i) => (
+                  <Column key={i} sm={4} md={4} lg={4}>
+                    <Tile className="mb-6">
+                      <SkeletonPlaceholder className="h-48 mb-4" />
+                      <SkeletonText heading />
+                      <SkeletonText paragraph lineCount={2} />
+                    </Tile>
+                  </Column>
                 ))}
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {fieldNotes.map((note) => (
-                  <FieldNoteCard key={note.id} fieldNote={note} searchTerm={search} />
-                ))}
-              </div>
-            )}
-            
-            {!isLoading && fieldNotes.length === 0 && (
-              <Tile className="text-center py-12">
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">No field notes found</h3>
-                <p className="text-gray-600 mb-4">
-                  {search || activeFilterCount > 0
-                    ? "Try adjusting your search or filters" 
-                    : "Get started by adding your first field note"}
-                </p>
-                {activeFilterCount > 0 && (
-                  <CarbonButton
-                    kind="tertiary"
-                    size="sm"
-                    onClick={resetFilters}
-                    className="mr-3"
-                  >
-                    Clear Filters
-                  </CarbonButton>
-                )}
+              </Grid>
+            ) : fieldNotes.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-gray-500 text-lg mb-4">No field notes found</p>
                 <Link href="/admin">
                   <CarbonButton renderIcon={Add}>
-                    Add Your First Field Note
+                    Add your first field note
                   </CarbonButton>
                 </Link>
-              </Tile>
+              </div>
+            ) : (
+              <Grid fullWidth className="mb-6">
+                {fieldNotes.map((note) => (
+                  <Column key={note.id} sm={4} md={4} lg={4}>
+                    <FieldNoteCard
+                      fieldNote={note}
+                      searchTerm={search}
+                      data-testid={`card-field-note-${note.id}`}
+                    />
+                  </Column>
+                ))}
+              </Grid>
             )}
           </div>
         </div>
