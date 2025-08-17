@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { 
@@ -35,7 +35,25 @@ export default function Home() {
   const [showHeatMap, setShowHeatMap] = useState(false);
   const [distanceFilter, setDistanceFilter] = useState("any");
   const [elevationFilter, setElevationFilter] = useState("any");
-  const [showFilters, setShowFilters] = useState(false); // Hidden by default on mobile
+  const [showFilters, setShowFilters] = useState(true); // Show by default, hide only on mobile
+
+  // Hide filters on mobile screens by default
+  useEffect(() => {
+    const handleResize = () => {
+      const isMobile = window.innerWidth < 1024; // lg breakpoint
+      if (isMobile && showFilters) {
+        setShowFilters(false);
+      } else if (!isMobile && !showFilters) {
+        setShowFilters(true);
+      }
+    };
+
+    // Set initial state
+    handleResize();
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const { data: allFieldNotes = [], isLoading } = useQuery<FieldNote[]>({
     queryKey: ["/api/field-notes", { search, sortOrder }],
@@ -181,14 +199,13 @@ export default function Home() {
     <div className="min-h-screen bg-gray-50 overflow-x-hidden flex">
       {/* Left Sidebar Filter Panel */}
       <div className={`
-        ${showFilters ? 'block' : 'hidden'} 
-        lg:block 
         w-[300px] 
         bg-white 
         border-r 
         border-gray-200 
         flex-shrink-0
-        ${showFilters ? 'absolute lg:relative z-10 h-full lg:h-auto' : ''}
+        ${showFilters ? 'block' : 'hidden lg:block'}
+        ${showFilters ? 'absolute lg:relative z-10 h-full lg:h-auto' : 'relative'}
       `}>
         <div className="p-6">
           {/* Filter Header */}
@@ -292,20 +309,22 @@ export default function Home() {
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
               <div className="flex items-center gap-4">
                 {/* Show Filters button only on mobile when filters are hidden */}
-                <CarbonButton
-                  kind="ghost"
-                  size="sm"
-                  onClick={() => setShowFilters(true)}
-                  renderIcon={Filter}
-                  className="lg:hidden"
-                >
-                  Filters
-                  {activeFilterCount > 0 && (
-                    <Tag type="blue" size="sm" className="ml-2">
-                      {activeFilterCount}
-                    </Tag>
-                  )}
-                </CarbonButton>
+                {!showFilters && (
+                  <CarbonButton
+                    kind="ghost"
+                    size="sm"
+                    onClick={() => setShowFilters(true)}
+                    renderIcon={Filter}
+                    className="lg:hidden"
+                  >
+                    Filters
+                    {activeFilterCount > 0 && (
+                      <Tag type="blue" size="sm" className="ml-2">
+                        {activeFilterCount}
+                      </Tag>
+                    )}
+                  </CarbonButton>
+                )}
                 <h1 className="text-2xl font-semibold text-gray-900">Field Notes</h1>
               </div>
               <div className="flex items-center gap-4">
