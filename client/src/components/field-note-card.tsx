@@ -16,7 +16,7 @@ const highlightText = (text: string, searchTerm?: string): React.ReactNode => {
   
   return parts.map((part, index) => 
     regex.test(part) ? (
-      <span key={index} style={{backgroundColor: 'var(--support-warning)', opacity: 0.3}} className="px-0.5 rounded">
+      <span key={index} className="px-0.5 rounded bg-yellow-200 dark:bg-yellow-900 text-yellow-900 dark:text-yellow-200">
         {part}
       </span>
     ) : part

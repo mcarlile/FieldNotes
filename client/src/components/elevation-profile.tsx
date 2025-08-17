@@ -38,31 +38,37 @@ export default function ElevationProfile({ elevationProfile, onHoverPoint, class
     return null;
   };
 
-  // Handle mouse events separately to avoid React warnings
+  // Handle mouse events with debouncing for smoother performance
   const handleMouseMove = (data: any) => {
     if (data && data.activePayload && data.activePayload.length && onHoverPoint) {
       const pointIndex = data.activePayload[0].payload.index;
       const point = elevationProfile[pointIndex];
       if (point) {
-        onHoverPoint(point);
+        // Use requestAnimationFrame for smooth updates
+        requestAnimationFrame(() => {
+          onHoverPoint(point);
+        });
       }
     }
   };
 
   const handleMouseLeave = () => {
     if (onHoverPoint) {
-      onHoverPoint(null);
+      // Delay hiding to prevent flickering when moving between nearby points
+      setTimeout(() => {
+        onHoverPoint(null);
+      }, 50);
     }
   };
 
   return (
     <div className={className}>
       <div className="mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">Elevation Profile</h3>
-        <div className="flex gap-4 text-sm text-gray-600">
-          <span>Max Elevation: {Math.max(...chartData.map(d => d.elevation))} ft</span>
-          <span>Min Elevation: {Math.min(...chartData.map(d => d.elevation))} ft</span>
-          <span>Total Distance: {Math.max(...chartData.map(d => d.distance))} miles</span>
+        <h3 className="text-lg font-semibold text-foreground mb-2">Elevation Profile</h3>
+        <div className="flex gap-4 text-sm text-muted-foreground">
+          <span className="transition-colors duration-200 hover:text-foreground">Max Elevation: {Math.max(...chartData.map(d => d.elevation))} ft</span>
+          <span className="transition-colors duration-200 hover:text-foreground">Min Elevation: {Math.min(...chartData.map(d => d.elevation))} ft</span>
+          <span className="transition-colors duration-200 hover:text-foreground">Total Distance: {Math.max(...chartData.map(d => d.distance))} miles</span>
         </div>
       </div>
       
@@ -98,7 +104,13 @@ export default function ElevationProfile({ elevationProfile, onHoverPoint, class
               stroke="#0f62fe" 
               strokeWidth={2}
               dot={false}
-              activeDot={{ r: 4, stroke: '#0f62fe', strokeWidth: 2, fill: '#fff' }}
+              activeDot={{ 
+                r: 6, 
+                stroke: '#0f62fe', 
+                strokeWidth: 3, 
+                fill: '#fff',
+                filter: 'drop-shadow(0 2px 4px rgba(15, 98, 254, 0.3))'
+              }}
             />
           </LineChart>
         </ResponsiveContainer>

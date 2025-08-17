@@ -25,6 +25,7 @@ export default function MapboxMap({
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const elevationMarker = useRef<mapboxgl.Marker | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
   const photoMarkers = useRef<Map<string, mapboxgl.Marker>>(new Map());
   const coordinatesRef = useRef<[number, number][]>([]);
   const [mapFocus, setMapFocus] = useState<'all' | 'track' | 'photos'>('all');
@@ -132,20 +133,41 @@ export default function MapboxMap({
           },
         });
 
-        // Create elevation position marker (initially hidden)
+        // Create elevation position marker with smooth animations
         const elevationEl = document.createElement('div');
         elevationEl.className = 'elevation-marker';
         elevationEl.style.cssText = `
-          width: 12px;
-          height: 12px;
-          background: #ff3d3d;
+          width: 16px;
+          height: 16px;
+          background: radial-gradient(circle, #ff3d3d 0%, #ff6b6b 100%);
           border: 3px solid white;
           border-radius: 50%;
-          box-shadow: 0 2px 8px rgba(255, 61, 61, 0.4);
-          transition: all 0.2s ease;
-          display: none;
+          box-shadow: 0 4px 12px rgba(255, 61, 61, 0.4), 0 0 0 0 rgba(255, 61, 61, 0.3);
+          opacity: 0;
+          transform: scale(0.5);
+          transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
           z-index: 1000;
+          position: relative;
         `;
+        
+        // Add a pulsing ring animation
+        const ringEl = document.createElement('div');
+        ringEl.className = 'elevation-ring';
+        ringEl.style.cssText = `
+          position: absolute;
+          top: -6px;
+          left: -6px;
+          width: 28px;
+          height: 28px;
+          border: 2px solid rgba(255, 61, 61, 0.4);
+          border-radius: 50%;
+          opacity: 0;
+          transform: scale(0.8);
+          transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+          animation: pulse-ring 2s infinite;
+        `;
+        
+        elevationEl.appendChild(ringEl);
 
         elevationMarker.current = new mapboxgl.Marker(elevationEl)
           .setLngLat(parsedGpxData.coordinates[0])
@@ -177,6 +199,11 @@ export default function MapboxMap({
     });
 
     return () => {
+      // Clean up animation frames
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      
       // Clean up all photo markers
       photoMarkers.current.forEach(marker => marker.remove());
       photoMarkers.current.clear();
@@ -192,24 +219,51 @@ export default function MapboxMap({
     };
   }, [gpxData, photos, onPhotoClick]);
 
-  // Handle elevation profile hover
+  // Handle elevation profile hover with smooth animations
   useEffect(() => {
     if (!map.current || !elevationMarker.current || !coordinatesRef.current.length) return;
 
     const markerEl = elevationMarker.current.getElement();
+    const ringEl = markerEl.querySelector('.elevation-ring') as HTMLElement;
+    
+    // Cancel any existing animation frame
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
     
     if (hoveredElevationPoint && hoveredElevationPoint.coordinates) {
       // Use the coordinates directly from the ElevationPoint
       const [longitude, latitude] = hoveredElevationPoint.coordinates;
       
-      // Show marker at the exact coordinates from the elevation point
-      markerEl.style.display = 'block';
-      markerEl.style.transform = 'scale(1.2)';
-      
-      elevationMarker.current.setLngLat([longitude, latitude]);
+      // Smooth position transition with animation frame
+      animationFrameRef.current = requestAnimationFrame(() => {
+        if (!elevationMarker.current) return;
+        
+        // Smoothly animate to new position
+        elevationMarker.current.setLngLat([longitude, latitude]);
+        
+        // Show marker with smooth appearance
+        markerEl.style.opacity = '1';
+        markerEl.style.transform = 'scale(1.1)';
+        markerEl.style.boxShadow = '0 6px 16px rgba(255, 61, 61, 0.6), 0 0 0 8px rgba(255, 61, 61, 0.1)';
+        
+        // Animate the ring
+        if (ringEl) {
+          ringEl.style.opacity = '1';
+          ringEl.style.transform = 'scale(1)';
+        }
+      });
     } else {
-      // Hide marker when not hovering
-      markerEl.style.display = 'none';
+      // Hide marker with smooth disappearance
+      markerEl.style.opacity = '0';
+      markerEl.style.transform = 'scale(0.5)';
+      markerEl.style.boxShadow = '0 4px 12px rgba(255, 61, 61, 0.4), 0 0 0 0 rgba(255, 61, 61, 0.3)';
+      
+      // Animate the ring
+      if (ringEl) {
+        ringEl.style.opacity = '0';
+        ringEl.style.transform = 'scale(0.8)';
+      }
     }
   }, [hoveredElevationPoint]);
 
