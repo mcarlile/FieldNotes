@@ -10,6 +10,14 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+**August 17, 2025 - Mobile-First Filter Optimization:**
+- ✓ Reduced filter sidebar width from 300px to 280px for mobile efficiency
+- ✓ Implemented responsive padding (16px mobile, 24px desktop) for compact design
+- ✓ Reduced vertical spacing between filter sections by 33% for better mobile fit
+- ✓ Made filter panel mobile-first with hidden default state on mobile devices
+- ✓ Optimized filter typography and icon sizes for smaller screens
+- ✓ Enhanced close button styling and positioning for mobile usability
+
 **August 17, 2025 - Photo Marker Removal & GPS Fixes:**
 - ✓ Removed photo marker indicators from map as requested by user
 - ✓ Fixed GPS coordinate extraction from iPhone photos for accurate positioning  

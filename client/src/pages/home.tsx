@@ -35,25 +35,25 @@ export default function Home() {
   const [showHeatMap, setShowHeatMap] = useState(false);
   const [distanceFilter, setDistanceFilter] = useState("any");
   const [elevationFilter, setElevationFilter] = useState("any");
-  const [showFilters, setShowFilters] = useState(true); // Show by default, force visible for testing
+  const [showFilters, setShowFilters] = useState(false); // Start hidden on mobile
 
-  // Comment out responsive logic for now to force sidebar visibility for testing
-  // useEffect(() => {
-  //   const handleResize = () => {
-  //     const isMobile = window.innerWidth < 1024; // lg breakpoint
-  //     if (isMobile) {
-  //       setShowFilters(false);
-  //     } else {
-  //       setShowFilters(true);
-  //     }
-  //   };
+  // Enable responsive logic for mobile-first design
+  useEffect(() => {
+    const handleResize = () => {
+      const isMobile = window.innerWidth < 1024; // lg breakpoint
+      if (isMobile) {
+        setShowFilters(false); // Hide on mobile by default
+      } else {
+        setShowFilters(true); // Show on desktop
+      }
+    };
 
-  //   // Set initial state
-  //   handleResize();
+    // Set initial state
+    handleResize();
     
-  //   window.addEventListener('resize', handleResize);
-  //   return () => window.removeEventListener('resize', handleResize);
-  // }, []);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const { data: allFieldNotes = [], isLoading } = useQuery<FieldNote[]>({
     queryKey: ["/api/field-notes", { search, sortOrder }],
@@ -230,7 +230,7 @@ export default function Home() {
       <div className="flex flex-1 overflow-hidden">
         {/* Left Sidebar Filter Panel */}
         <div className={`
-          w-[300px] 
+          w-[280px] sm:w-[320px] lg:w-[280px]
           bg-white 
           border-r 
           border-gray-200 
@@ -239,14 +239,14 @@ export default function Home() {
           ${showFilters ? 'block' : 'hidden lg:block'}
           ${showFilters ? 'absolute lg:relative z-10 h-full lg:h-auto' : 'relative'}
         `}>
-          <div className="p-6 min-h-0">
+          <div className="p-4 sm:p-6 lg:p-4 min-h-0">
             {/* Filter Header */}
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <Filter size={20} />
-                <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
+                <Filter size={18} />
+                <h2 className="text-base font-semibold text-gray-900">Filters</h2>
                 {activeFilterCount > 0 && (
-                  <Tag type="blue" size="sm" className="ml-2">
+                  <Tag type="blue" size="sm" className="ml-1">
                     {activeFilterCount}
                   </Tag>
                 )}
@@ -258,35 +258,36 @@ export default function Home() {
                 onClick={() => setShowFilters(false)}
                 renderIcon={Close}
                 iconDescription="Close filters"
-                className="lg:hidden"
+                className="lg:hidden p-1"
               />
             </div>
 
           {/* Reset Filters */}
           {activeFilterCount > 0 && (
-            <div className="mb-6">
+            <div className="mb-4">
               <CarbonButton
                 kind="tertiary"
                 size="sm"
                 onClick={resetFilters}
+                className="text-xs"
               >
-                Reset Filters
+                Reset All
               </CarbonButton>
             </div>
           )}
 
           {/* Trip Type Filter */}
-          <div className="mb-6">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">Trip Type</h3>
+          <div className="mb-4">
+            <h3 className="text-sm font-medium text-gray-900 mb-2">Trip Type</h3>
             {tripTypes.length > 0 && (
-              <div className="mb-3 flex items-center gap-1">
+              <div className="mb-2 flex items-center gap-1">
                 <Tag type="blue" size="sm">
                   {tripTypes.length}
                 </Tag>
                 <span className="text-xs text-gray-500">selected</span>
               </div>
             )}
-            <div className="space-y-2 max-h-48 overflow-y-auto">
+            <div className="space-y-1 max-h-40 overflow-y-auto">
               {availableTripTypes.map(type => (
                 <Checkbox
                   key={type}
@@ -300,9 +301,9 @@ export default function Home() {
           </div>
 
           {/* Distance Filter */}
-          <div className="mb-6">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">Distance (miles)</h3>
-            <div className="space-y-2">
+          <div className="mb-4">
+            <h3 className="text-sm font-medium text-gray-900 mb-2">Distance (miles)</h3>
+            <div className="space-y-1">
               <RadioButtonGroup
                 name="distance-filter"
                 valueSelected={distanceFilter}
@@ -319,9 +320,9 @@ export default function Home() {
           </div>
 
           {/* Elevation Filter */}
-          <div className="mb-6">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">Elevation Gain (ft)</h3>
-            <div className="space-y-2">
+          <div className="mb-4">
+            <h3 className="text-sm font-medium text-gray-900 mb-2">Elevation Gain (ft)</h3>
+            <div className="space-y-1">
               <RadioButtonGroup
                 name="elevation-filter"
                 valueSelected={elevationFilter}
