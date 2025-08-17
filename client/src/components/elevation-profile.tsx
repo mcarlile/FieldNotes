@@ -38,26 +38,22 @@ export default function ElevationProfile({ elevationProfile, onHoverPoint, class
     return null;
   };
 
-  // Handle mouse events with debouncing for smoother performance
+  // Handle mouse events for immediate, smooth updates
   const handleMouseMove = (data: any) => {
     if (data && data.activePayload && data.activePayload.length && onHoverPoint) {
       const pointIndex = data.activePayload[0].payload.index;
       const point = elevationProfile[pointIndex];
       if (point) {
-        // Use requestAnimationFrame for smooth updates
-        requestAnimationFrame(() => {
-          onHoverPoint(point);
-        });
+        // Immediate update for responsive sync
+        onHoverPoint(point);
       }
     }
   };
 
   const handleMouseLeave = () => {
     if (onHoverPoint) {
-      // Delay hiding to prevent flickering when moving between nearby points
-      setTimeout(() => {
-        onHoverPoint(null);
-      }, 50);
+      // Immediate clear for responsive sync
+      onHoverPoint(null);
     }
   };
 
