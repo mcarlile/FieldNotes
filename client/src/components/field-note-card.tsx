@@ -46,11 +46,12 @@ export default function FieldNoteCard({ fieldNote, searchTerm }: FieldNoteCardPr
       </div>
       
       <div className="p-4">
-        <div className="flex justify-between items-start gap-2 mb-2">
-          <h3 className="text-lg font-medium text-foreground break-words min-w-0 flex-1">
+        {/* iPad horizontal: stack badge below title, desktop: side by side */}
+        <div className="flex justify-between items-start gap-2 mb-2 md:landscape:flex-col md:landscape:gap-1 lg:flex-row lg:gap-2">
+          <h3 className="text-lg font-medium text-foreground break-words min-w-0 flex-1 md:landscape:flex-none lg:flex-1">
             {highlightText(fieldNote.title, searchTerm)}
           </h3>
-          <Tag type="blue" size="sm" className="flex-shrink-0">
+          <Tag type="blue" size="sm" className="flex-shrink-0 md:landscape:self-start lg:flex-shrink-0">
             {highlightText(fieldNote.tripType.charAt(0).toUpperCase() + fieldNote.tripType.slice(1), searchTerm)}
           </Tag>
         </div>

@@ -400,7 +400,7 @@ export default function Home() {
               {isLoading ? (
                 <Grid fullWidth>
                   {[...Array(6)].map((_, i) => (
-                    <Column key={i} sm={4} md={4} lg={4}>
+                    <Column key={i} sm={4} md={6} lg={4}>
                       <Tile className="mb-6">
                         <SkeletonPlaceholder className="h-48 mb-4" />
                         <SkeletonText heading />
@@ -421,7 +421,7 @@ export default function Home() {
               ) : (
                 <Grid fullWidth className="mb-6">
                   {fieldNotes.map((note) => (
-                    <Column key={note.id} sm={4} md={4} lg={4}>
+                    <Column key={note.id} sm={4} md={6} lg={4}>
                       <FieldNoteCard
                         fieldNote={note}
                         searchTerm={search}
