@@ -222,6 +222,33 @@
   border-color: hsl(var(--border));
 }
 
+.dark .cds--list-box__menu-item,
+.dark .bx--list-box__menu-item {
+  color: hsl(var(--foreground));
+}
+
+.dark .cds--list-box__menu-item__option,
+.dark .bx--list-box__menu-item__option {
+  color: hsl(var(--foreground));
+}
+
+.dark .cds--list-box__menu-item:hover,
+.dark .bx--list-box__menu-item:hover {
+  background-color: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+}
+
+.dark .cds--list-box__menu-item--highlighted,
+.dark .bx--list-box__menu-item--highlighted {
+  background-color: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+}
+
+.dark .cds--dropdown-text,
+.dark .bx--dropdown-text {
+  color: hsl(var(--foreground));
+}
+
 .dark .cds--checkbox-label::before,
 .dark .bx--checkbox-label::before {
   border-color: hsl(var(--border));
