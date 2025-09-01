@@ -15,6 +15,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
   const map = useRef<mapboxgl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [highlightedDensity, setHighlightedDensity] = useState<string | null>(null);
+  const [is3DMode, setIs3DMode] = useState(false);
 
   // Theme-aware colors
   const getThemeColors = () => {
@@ -47,9 +48,20 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       style: "mapbox://styles/mapbox/outdoors-v11",
       center: [-120.2, 39.3], // Default center (Tahoe area)
       zoom: 10,
+      pitch: 0, // Start flat, will be adjusted for 3D mode
+      bearing: 0,
     });
 
     map.current.on("load", () => {
+      // Add terrain source for 3D mode
+      if (map.current) {
+        map.current.addSource('mapbox-dem', {
+          type: 'raster-dem',
+          url: 'mapbox://mapbox.mapbox-terrain-dem-v1',
+          tileSize: 512,
+          maxzoom: 14
+        });
+      }
       setMapLoaded(true);
     });
 
@@ -60,6 +72,48 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       }
     };
   }, []);
+
+  // Handle 3D mode toggle
+  const toggle3DMode = () => {
+    if (!map.current) return;
+    
+    const newIs3DMode = !is3DMode;
+    setIs3DMode(newIs3DMode);
+    
+    if (newIs3DMode) {
+      // Enable 3D mode
+      map.current.setTerrain({ source: 'mapbox-dem', exaggeration: 1.5 });
+      map.current.addLayer({
+        id: 'sky',
+        type: 'sky',
+        paint: {
+          'sky-type': 'atmosphere',
+          'sky-atmosphere-sun': [0.0, 0.0],
+          'sky-atmosphere-sun-intensity': 15
+        }
+      });
+      
+      // Animate to 3D perspective
+      map.current.easeTo({
+        pitch: 60,
+        bearing: -17.6,
+        duration: 1000
+      });
+    } else {
+      // Disable 3D mode
+      map.current.setTerrain(null);
+      if (map.current.getLayer('sky')) {
+        map.current.removeLayer('sky');
+      }
+      
+      // Animate back to 2D view
+      map.current.easeTo({
+        pitch: 0,
+        bearing: 0,
+        duration: 1000
+      });
+    }
+  };
 
   useEffect(() => {
     if (!map.current || !mapLoaded || fieldNotes.length === 0) return;
@@ -591,6 +645,26 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
 
   return (
     <div className="relative w-full h-screen">
+      {/* 3D Mode Toggle */}
+      <div className="absolute top-4 right-4 z-10 bg-card border border-border rounded-lg p-3 shadow-lg">
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-medium text-foreground">3D View</span>
+          <button
+            onClick={toggle3DMode}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              is3DMode ? 'bg-primary' : 'bg-muted'
+            }`}
+            aria-label="Toggle 3D mode"
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                is3DMode ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+      
       <div ref={mapContainer} className="w-full h-full" />
       
       {/* Animated Heat Map Legend */}
