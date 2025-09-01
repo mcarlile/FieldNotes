@@ -112,37 +112,96 @@ export default function AdminPage() {
   // GPX file handler
   const handleGpxFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file && file.name.toLowerCase().endsWith('.gpx')) {
-      setGpxFile(file);
-      
-      // Read and parse GPX file
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const content = e.target?.result as string;
+    
+    if (!file) {
+      console.log('No file selected');
+      return;
+    }
+    
+    console.log('GPX file selected:', file.name, 'Size:', file.size, 'Type:', file.type);
+    
+    if (!file.name.toLowerCase().endsWith('.gpx')) {
+      toast({
+        title: "Invalid File",
+        description: "Please select a .gpx file",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    setGpxFile(file);
+    
+    // Enhanced FileReader with better error handling for mobile
+    const reader = new FileReader();
+    
+    reader.onerror = (error) => {
+      console.error('FileReader error:', error);
+      toast({
+        title: "File Read Error",
+        description: "Unable to read the GPX file. Please try again.",
+        variant: "destructive"
+      });
+    };
+    
+    reader.onabort = () => {
+      console.warn('FileReader aborted');
+      toast({
+        title: "File Read Aborted",
+        description: "File reading was interrupted. Please try again.",
+        variant: "destructive"
+      });
+    };
+    
+    reader.onload = (e) => {
+      try {
+        const content = e.target?.result;
+        
+        if (typeof content !== 'string') {
+          throw new Error('Invalid file content format');
+        }
+        
+        if (!content || content.trim().length === 0) {
+          throw new Error('File appears to be empty');
+        }
+        
+        console.log('GPX file read successfully, content length:', content.length);
         setGpxContent(content);
         
-        try {
-          const parsed = parseGpxData(content);
-          setGpxStats(parsed);
-          
-          if (parsed.date) {
-            // Auto-populate form fields from GPX metadata
-            const currentValues = form.getValues();
-            if (!currentValues.title) {
-              form.setValue('title', `Field Note - ${parsed.date.toLocaleDateString()}`);
-            }
+        // Parse GPX data
+        const parsed = parseGpxData(content);
+        setGpxStats(parsed);
+        console.log('GPX parsed successfully:', parsed);
+        
+        // Auto-populate form fields from GPX metadata
+        if (parsed.date) {
+          const currentValues = form.getValues();
+          if (!currentValues.title) {
+            form.setValue('title', `Field Note - ${parsed.date.toLocaleDateString()}`);
           }
-        } catch (error) {
-          console.error('Error parsing GPX:', error);
-          toast({
-            title: "GPX Parse Error",
-            description: "Unable to parse GPX file. Please check the file format.",
-            variant: "destructive"
-          });
         }
-      };
-      reader.readAsText(file);
-    }
+        
+        toast({
+          title: "GPX Loaded",
+          description: `Successfully loaded GPX with ${parsed.coordinates.length} points`,
+          variant: "success"
+        });
+        
+      } catch (error) {
+        console.error('Error processing GPX:', error);
+        setGpxContent('');
+        setGpxStats(null);
+        setGpxFile(null);
+        
+        toast({
+          title: "GPX Parse Error",
+          description: error instanceof Error ? error.message : "Unable to parse GPX file. Please check the file format.",
+          variant: "destructive"
+        });
+      }
+    };
+    
+    // Use readAsText with explicit encoding for better mobile compatibility
+    reader.readAsText(file, 'UTF-8');
   };
 
   // Photo upload handlers
@@ -218,7 +277,7 @@ export default function AdminPage() {
       }));
       setUploadedPhotos(prev => [...prev, ...newPhotos]);
       
-      const photosWithGps = newPhotos.filter(photo => photo.exifData?.latitude && photo.exifData?.longitude);
+      const photosWithGps = newPhotos.filter((photo: any) => photo.exifData?.latitude && photo.exifData?.longitude);
       
       toast({
         title: "Upload Complete",
@@ -500,13 +559,20 @@ export default function AdminPage() {
                     GPX Track {!isEditing && <span className="text-destructive">*</span>}
                   </label>
                   
-                  <input
-                    type="file"
-                    accept=".gpx"
-                    onChange={handleGpxFileChange}
-                    className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-secondary file:text-secondary-foreground hover:file:bg-secondary/80"
-                    data-testid="input-gpx-file"
-                  />
+                  {/* Mobile-optimized file input */}
+                  <div className="relative">
+                    <input
+                      type="file"
+                      accept=".gpx,application/gpx+xml,text/xml"
+                      onChange={handleGpxFileChange}
+                      className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-secondary file:text-secondary-foreground hover:file:bg-secondary/80 md:text-base md:file:py-3 md:file:px-6"
+                      data-testid="input-gpx-file"
+                      style={{ fontSize: '16px' }} // Prevents zoom on iOS
+                    />
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      Select a .gpx file from your device
+                    </div>
+                  </div>
 
                   {gpxStats && (
                     <div className="p-4 bg-secondary rounded-md">
