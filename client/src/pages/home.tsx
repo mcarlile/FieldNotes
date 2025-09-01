@@ -209,7 +209,7 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col" data-layout="sidebar-layout">
+    <div className="min-h-screen bg-gray-50 dark:bg-background flex flex-col" data-layout="sidebar-layout">
       {/* App Header */}
       <div className="bg-card border-b border-border flex-shrink-0">
         <div className="px-6 py-6">
@@ -258,9 +258,9 @@ export default function Home() {
         <div className="hidden lg:flex flex-1 overflow-hidden">
           <div className={`
             w-[280px]
-            bg-white dark:bg-gray-900
+            bg-white dark:bg-background
             border-r 
-            border-gray-200 dark:border-gray-700
+            border-gray-200 dark:border-border
             flex-shrink-0
             overflow-y-auto
           `}>
@@ -357,7 +357,7 @@ export default function Home() {
           {/* Desktop Main Content */}
           <div className="flex-1 flex flex-col">
             {/* Search and Controls */}
-            <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+            <div className="bg-white dark:bg-background border-b border-gray-200 dark:border-border">
               <div className="px-6 py-4">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
                   <div className="flex-1">
@@ -388,15 +388,15 @@ export default function Home() {
 
             {/* Results Count */}
             {!isLoading && (
-              <div className="bg-gray-50 dark:bg-gray-800 px-6 py-2">
-                <span className="text-sm text-gray-600 dark:text-gray-300">
+              <div className="bg-gray-50 dark:bg-muted px-6 py-2">
+                <span className="text-sm text-gray-600 dark:text-muted-foreground">
                   {fieldNotes.length} {fieldNotes.length === 1 ? 'result' : 'results'}
                 </span>
               </div>
             )}
 
             {/* Field Notes Grid */}
-            <div className="flex-1 p-6 bg-gray-50 dark:bg-gray-800 overflow-auto">
+            <div className="flex-1 p-6 bg-gray-50 dark:bg-muted overflow-auto">
               {isLoading ? (
                 <Grid fullWidth>
                   {[...Array(6)].map((_, i) => (
@@ -411,7 +411,7 @@ export default function Home() {
                 </Grid>
               ) : fieldNotes.length === 0 ? (
                 <div className="text-center py-12">
-                  <p className="text-gray-500 dark:text-gray-400 text-lg mb-4">No field notes found</p>
+                  <p className="text-gray-500 dark:text-muted-foreground text-lg mb-4">No field notes found</p>
                   <Link href="/admin">
                     <CarbonButton renderIcon={Add}>
                       Add your first field note
@@ -438,7 +438,7 @@ export default function Home() {
         {/* Mobile Stacked Filter Panel */}
         <div className="lg:hidden">
           {/* Mobile Filter Toggle and Stacked Filters */}
-          <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+          <div className="bg-white dark:bg-background border-b border-gray-200 dark:border-border">
             <div className="px-6 py-4">
               <div className="flex items-center gap-4 mb-4">
                 <CarbonButton
@@ -563,7 +563,7 @@ export default function Home() {
 
           {/* Mobile Results Count */}
           {!isLoading && (
-            <div className="bg-gray-50 dark:bg-gray-800 px-6 py-2">
+            <div className="bg-gray-50 dark:bg-muted px-6 py-2">
               <span className="text-sm text-gray-600 dark:text-gray-300">
                 {fieldNotes.length} {fieldNotes.length === 1 ? 'result' : 'results'}
               </span>
@@ -571,7 +571,7 @@ export default function Home() {
           )}
 
           {/* Mobile Field Notes Grid */}
-          <div className="flex-1 p-6 bg-gray-50 dark:bg-gray-800 overflow-auto">
+          <div className="flex-1 p-6 bg-gray-50 dark:bg-muted overflow-auto">
             {isLoading ? (
               <Grid fullWidth>
                 {[...Array(6)].map((_, i) => (
