@@ -83,13 +83,26 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     if (newIs3DMode) {
       // Enable 3D mode
       map.current.setTerrain({ source: 'mapbox-dem', exaggeration: 1.5 });
-      map.current.addLayer({
-        id: 'sky',
-        type: 'sky',
-        paint: {
-          'sky-type': 'atmosphere',
-          'sky-atmosphere-sun': [0.0, 0.0],
-          'sky-atmosphere-sun-intensity': 15
+      
+      // Add sky layer first (background)
+      if (!map.current.getLayer('sky')) {
+        map.current.addLayer({
+          id: 'sky',
+          type: 'sky',
+          paint: {
+            'sky-type': 'atmosphere',
+            'sky-atmosphere-sun': [0.0, 0.0],
+            'sky-atmosphere-sun-intensity': 15
+          }
+        }, 'water'); // Insert before water layer to keep it in background
+      }
+      
+      // Ensure route layers are above terrain by moving them to top
+      const routeLayers = ['route-heat-single', 'route-heat-medium', 'route-heat-high', 'route-heat'];
+      routeLayers.forEach(layerId => {
+        if (map.current && map.current.getLayer(layerId)) {
+          // Move route layers to top to ensure they render above terrain
+          map.current.moveLayer(layerId);
         }
       });
       
@@ -400,6 +413,16 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
         "line-opacity": 0.9,
       },
     });
+
+    // If 3D mode is active, move all route layers to top to ensure visibility above terrain
+    if (is3DMode) {
+      const routeLayers = ['route-heat-single', 'route-heat-medium', 'route-heat-high'];
+      routeLayers.forEach(layerId => {
+        if (map.current && map.current.getLayer(layerId)) {
+          map.current.moveLayer(layerId);
+        }
+      });
+    }
 
     // Add invisible wider touch targets for better interaction
     map.current.addLayer({
