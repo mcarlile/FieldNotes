@@ -50,6 +50,12 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
   const changeMapStyle = (styleId: string) => {
     if (!map.current) return;
     
+    // Store current camera position before changing style
+    const currentCenter = map.current.getCenter();
+    const currentZoom = map.current.getZoom();
+    const currentPitch = map.current.getPitch();
+    const currentBearing = map.current.getBearing();
+    
     setSelectedMapStyle(styleId);
     // Temporarily set mapLoaded to false to force re-render
     setMapLoaded(false);
@@ -58,6 +64,16 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     
     // Re-apply 3D mode and heat map layers after style loads
     map.current.once('style.load', () => {
+      if (!map.current) return;
+      
+      // Restore exact camera position without animation
+      map.current.jumpTo({
+        center: currentCenter,
+        zoom: currentZoom,
+        pitch: currentPitch,
+        bearing: currentBearing
+      });
+      
       if (is3DMode && map.current) {
         map.current.addSource("mapbox-dem", {
           type: "raster-dem",
@@ -66,8 +82,6 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
           maxzoom: 14,
         });
         map.current.setTerrain({ source: "mapbox-dem", exaggeration: 4.0 });
-        map.current.setPitch(55);
-        map.current.setBearing(-15);
       }
       
       // Force heat map re-rendering by setting mapLoaded back to true
