@@ -51,6 +51,9 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     if (!map.current) return;
     
     setSelectedMapStyle(styleId);
+    // Temporarily set mapLoaded to false to force re-render
+    setMapLoaded(false);
+    
     map.current.setStyle(`mapbox://styles/mapbox/${styleId}`);
     
     // Re-apply 3D mode and heat map layers after style loads
@@ -67,8 +70,10 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
         map.current.setBearing(-15);
       }
       
-      // Trigger heat map re-rendering by updating map loaded state
-      setMapLoaded(true);
+      // Force heat map re-rendering by setting mapLoaded back to true
+      setTimeout(() => {
+        setMapLoaded(true);
+      }, 100); // Small delay to ensure style is fully loaded
     });
   };
 
@@ -456,11 +461,11 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
           "interpolate",
           ["linear"],
           ["zoom"],
-          8, 3,
-          14, 6,
-          18, 12,
+          8, 4,
+          14, 7,
+          18, 14,
         ],
-        "line-opacity": 0.7,
+        "line-opacity": 0.9,
       },
     });
 
@@ -476,11 +481,11 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
           "interpolate",
           ["linear"],
           ["zoom"],
-          8, 4,
-          14, 8,
-          18, 16,
+          8, 5,
+          14, 9,
+          18, 18,
         ],
-        "line-opacity": 0.8,
+        "line-opacity": 0.95,
       },
     });
 
@@ -496,11 +501,11 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
           "interpolate",
           ["linear"],
           ["zoom"],
-          8, 5,
-          14, 10,
-          18, 20,
+          8, 6,
+          14, 12,
+          18, 24,
         ],
-        "line-opacity": 0.9,
+        "line-opacity": 1.0,
       },
     });
 
@@ -525,8 +530,8 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
           "interpolate",
           ["linear"],
           ["zoom"],
-          8, 20,
-          14, 30,
+          8, 25,
+          14, 35,
           18, 40,
         ],
         "line-opacity": 0,
@@ -721,7 +726,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       });
     });
 
-  }, [filteredFieldNotes, mapLoaded, theme]);
+  }, [filteredFieldNotes, mapLoaded, theme, selectedMapStyle]);
 
   // Handle density highlighting functionality
   const handleDensityHighlight = (density: string) => {
