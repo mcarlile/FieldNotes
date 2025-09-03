@@ -81,8 +81,15 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
                 }
               }, 'water');
             }
+
+            // Ensure the 3D camera angle is applied after terrain loads
+            map.current.easeTo({
+              pitch: 35,
+              bearing: -12,
+              duration: 1500
+            });
           }
-        }, 100);
+        }, 500);
       }
       setMapLoaded(true);
     });
