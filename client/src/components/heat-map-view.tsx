@@ -91,6 +91,8 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       // Force heat map re-rendering by setting mapLoaded back to true
       setTimeout(() => {
         setMapLoaded(true);
+        // Additional safety: render heat map directly after style change
+        setTimeout(() => renderHeatMap(), 100);
       }, 150); // Slightly longer delay to ensure everything is ready
     });
   };
@@ -256,13 +258,16 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     }
   };
 
-  useEffect(() => {
+  // Robust heat map rendering function
+  const renderHeatMap = () => {
     if (!map.current || !mapLoaded || filteredFieldNotes.length === 0) return;
     
     // Add style loading check to prevent errors
     if (!map.current.isStyleLoaded()) return;
+    
+    console.log('Rendering heat map with', filteredFieldNotes.length, 'field notes');
 
-    // Remove existing layers and sources
+    // Remove existing layers and sources more safely
     const existingLayers = [
       "route-heat-single", "route-heat-medium", "route-heat-high", 
       "route-touch-targets", "route-heat-low", "route-heat"
@@ -274,14 +279,26 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     });
     
     existingLayers.forEach(layerId => {
-      if (map.current && map.current.getLayer(layerId)) {
-        map.current.removeLayer(layerId);
+      try {
+        if (map.current && map.current.getLayer(layerId)) {
+          map.current.removeLayer(layerId);
+        }
+      } catch (e) {
+        console.warn(`Failed to remove layer ${layerId}:`, e);
       }
     });
     
-    if (map.current && map.current.getSource("routes")) {
-      map.current.removeSource("routes");
-    }
+    // Remove existing sources more safely
+    const existingSources = ["routes"];
+    existingSources.forEach(sourceId => {
+      try {
+        if (map.current && map.current.getSource(sourceId)) {
+          map.current.removeSource(sourceId);
+        }
+      } catch (e) {
+        console.warn(`Failed to remove source ${sourceId}:`, e);
+      }
+    });
 
     // Collect all route coordinates and debug info
     const allCoordinates: number[][] = [];
@@ -746,8 +763,51 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
         });
       });
     });
+  };
 
+  // Use useEffect to trigger heat map rendering
+  useEffect(() => {
+    renderHeatMap();
   }, [filteredFieldNotes, mapLoaded, theme, selectedMapStyle]);
+
+  // Also render when map style finishes loading
+  useEffect(() => {
+    if (!map.current) return;
+    
+    const handleStyleLoad = () => {
+      console.log('Style loaded, re-rendering heat map');
+      setTimeout(() => renderHeatMap(), 200); // Give time for terrain to settle
+    };
+    
+    map.current.on('style.load', handleStyleLoad);
+    
+    return () => {
+      if (map.current) {
+        map.current.off('style.load', handleStyleLoad);
+      }
+    };
+  }, []);
+
+  // Retry mechanism for robustness
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+    
+    const checkAndRetryHeatMap = () => {
+      // Check if heat map layers exist, if not, try to re-render
+      const heatMapLayers = ['route-heat-single', 'route-heat-medium', 'route-heat-high'];
+      const missingLayers = heatMapLayers.filter(layerId => !map.current?.getLayer(layerId));
+      
+      if (missingLayers.length > 0 && filteredFieldNotes.length > 0) {
+        console.log('Missing heat map layers detected, re-rendering:', missingLayers);
+        renderHeatMap();
+      }
+    };
+    
+    // Check periodically for missing layers
+    const intervalId = setInterval(checkAndRetryHeatMap, 2000);
+    
+    return () => clearInterval(intervalId);
+  }, [mapLoaded, filteredFieldNotes.length]);
 
   // Handle density highlighting functionality
   const handleDensityHighlight = (density: string) => {
