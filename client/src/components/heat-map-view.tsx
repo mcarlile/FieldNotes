@@ -48,8 +48,8 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       style: "mapbox://styles/mapbox/outdoors-v11",
       center: [-120.2, 39.3], // Default center (Tahoe area)
       zoom: 10,
-      pitch: 35, // Start with subtle 3D tilt
-      bearing: -12, // Slight rotation for dynamic view
+      pitch: 55, // Strong 3D tilt for dramatic perspective
+      bearing: -15, // More rotation for dynamic view
     });
 
     map.current.on("load", () => {
@@ -88,11 +88,9 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     map.current.on("styledata", () => {
       setTimeout(() => {
         if (map.current && is3DMode) {
-          map.current.easeTo({
-            pitch: 35,
-            bearing: -12,
-            duration: 1500
-          });
+          // Set camera directly without animation
+          map.current.setPitch(55);
+          map.current.setBearing(-15);
         }
       }, 1000);
       setMapLoaded(true);
@@ -139,12 +137,9 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
         }
       });
       
-      // Animate to subtle 3D perspective
-      map.current.easeTo({
-        pitch: 35,
-        bearing: -12,
-        duration: 1000
-      });
+      // Set dramatic 3D perspective instantly
+      map.current.setPitch(55);
+      map.current.setBearing(-15);
     } else {
       // Disable 3D mode
       map.current.setTerrain(null);
