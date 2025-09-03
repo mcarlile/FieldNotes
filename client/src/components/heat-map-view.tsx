@@ -33,22 +33,41 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
         };
   };
 
-  // Get activity type options sorted by count
+  // Get activity type options sorted by count with formatted labels
   const getActivityTypeOptions = () => {
     const activityCounts = fieldNotes.reduce((acc, note) => {
-      const type = note.tripType;
+      const type = note.tripType.toLowerCase(); // Normalize casing
       acc[type] = (acc[type] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
 
     return Object.entries(activityCounts)
       .sort((a, b) => b[1] - a[1]) // Sort by count descending
-      .map(([type, count]) => ({ type, count }));
+      .map(([type, count]) => ({ 
+        type, 
+        count,
+        label: formatActivityLabel(type, count)
+      }));
+  };
+
+  // Format activity labels with proper capitalization and pluralization
+  const formatActivityLabel = (type: string, count: number) => {
+    const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1);
+    const pluralize = (str: string, count: number) => {
+      if (count === 1) return str;
+      // Simple pluralization - add 's' for most cases
+      if (str.endsWith('y')) return str.slice(0, -1) + 'ies';
+      if (str.endsWith('s') || str.endsWith('x') || str.endsWith('ch')) return str + 'es';
+      return str + 's';
+    };
+
+    const formatted = pluralize(capitalize(type), count);
+    return `${formatted} (${count})`;
   };
 
   // Filter field notes based on selected activity type
   const filteredFieldNotes = selectedActivityType 
-    ? fieldNotes.filter(note => note.tripType === selectedActivityType)
+    ? fieldNotes.filter(note => note.tripType.toLowerCase() === selectedActivityType)
     : fieldNotes;
 
   useEffect(() => {
@@ -717,9 +736,9 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
             className="w-full p-2 text-sm bg-background border border-border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
           >
             <option value="">All Activities ({fieldNotes.length})</option>
-            {getActivityTypeOptions().map(({ type, count }) => (
+            {getActivityTypeOptions().map(({ type, count, label }) => (
               <option key={type} value={type}>
-                {type} ({count})
+                {label}
               </option>
             ))}
           </select>
