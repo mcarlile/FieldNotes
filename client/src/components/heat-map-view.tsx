@@ -129,34 +129,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
   };
 
   useEffect(() => {
-    console.log('Heat map useEffect triggered:', { 
-      hasMap: !!map.current, 
-      mapLoaded, 
-      fieldNotesCount: fieldNotes.length, 
-      styleLoaded: map.current?.isStyleLoaded() 
-    });
-    
-    if (!map.current || !mapLoaded || fieldNotes.length === 0) {
-      console.log('Bailing early from useEffect - missing requirements');
-      return;
-    }
-    
-    // Ensure map style is fully loaded before adding layers
-    if (!map.current.isStyleLoaded()) {
-      console.log('Map style not loaded yet - waiting for styledata event');
-      const checkStyleLoaded = () => {
-        if (map.current && map.current.isStyleLoaded()) {
-          console.log('Style loaded - retrying layer creation');
-          map.current.off('styledata', checkStyleLoaded);
-          // Retry the layer creation
-          setTimeout(() => setMapLoaded(true), 100);
-        }
-      };
-      map.current.on('styledata', checkStyleLoaded);
-      return;
-    }
-    
-    console.log('Starting route layer creation...');
+    if (!map.current || !mapLoaded || fieldNotes.length === 0) return;
 
     // Remove existing layers and sources
     const existingLayers = [
@@ -351,59 +324,40 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       }
     });
 
-    console.log(`Created ${features.length} route features from ${totalRoutes} valid routes`);
-    console.log('Sample features:', features.slice(0, 2));
-
-    if (features.length === 0) {
-      console.log('No features created - returning early');
-      return;
-    }
+    if (features.length === 0) return;
 
     // Add source
-    try {
-      console.log('Adding source with', features.length, 'features');
-      map.current.addSource("routes", {
-        type: "geojson",
-        data: {
-          type: "FeatureCollection",
-          features: features,
-        },
-        lineMetrics: true,
-      });
-      console.log('Source added successfully');
-    } catch (error) {
-      console.error('Error adding source:', error);
-      return;
-    }
+    map.current.addSource("routes", {
+      type: "geojson",
+      data: {
+        type: "FeatureCollection",
+        features: features,
+      },
+      lineMetrics: true,
+    });
 
     const colors = getThemeColors();
 
     // Add density-based heat map layers
-    try {
-      // Low density (single route) - neutral blue
-      console.log('Adding route-heat-single layer with color:', colors.primary);
-      map.current.addLayer({
-        id: "route-heat-single",
-        type: "line",
-        source: "routes",
-        filter: ["==", ["get", "overlapCount"], 1],
-        paint: {
-          "line-color": colors.primary, // Theme-aware blue for single routes
-          "line-width": [
-            "interpolate",
-            ["linear"],
-            ["zoom"],
-            8, 3,
-            14, 6,
-            18, 12,
-          ],
-          "line-opacity": 0.7,
-        },
-      });
-      console.log('route-heat-single layer added successfully');
-    } catch (error) {
-      console.error('Error adding route-heat-single layer:', error);
-    }
+    // Low density (single route) - neutral blue
+    map.current.addLayer({
+      id: "route-heat-single",
+      type: "line",
+      source: "routes",
+      filter: ["==", ["get", "overlapCount"], 1],
+      paint: {
+        "line-color": colors.primary, // Theme-aware blue for single routes
+        "line-width": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          8, 3,
+          14, 6,
+          18, 12,
+        ],
+        "line-opacity": 0.7,
+      },
+    });
 
     // Medium overlap (2-3 routes) - orange
     map.current.addLayer({
