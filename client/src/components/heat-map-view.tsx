@@ -15,7 +15,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
   const map = useRef<mapboxgl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [highlightedDensity, setHighlightedDensity] = useState<string | null>(null);
-  const [is3DMode, setIs3DMode] = useState(false);
+  const [is3DMode, setIs3DMode] = useState(true);
 
   // Theme-aware colors
   const getThemeColors = () => {
@@ -42,25 +42,47 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       return;
     }
 
-    // Initialize map
+    // Initialize map with subtle 3D perspective by default
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
       style: "mapbox://styles/mapbox/outdoors-v11",
       center: [-120.2, 39.3], // Default center (Tahoe area)
       zoom: 10,
-      pitch: 0, // Start flat, will be adjusted for 3D mode
-      bearing: 0,
+      pitch: 35, // Start with subtle 3D tilt
+      bearing: -12, // Slight rotation for dynamic view
     });
 
     map.current.on("load", () => {
-      // Add terrain source for 3D mode
+      // Enable 3D terrain by default since is3DMode starts as true
       if (map.current) {
+        // Add terrain source for 3D mode
         map.current.addSource('mapbox-dem', {
           type: 'raster-dem',
           url: 'mapbox://mapbox.mapbox-terrain-dem-v1',
           tileSize: 512,
           maxzoom: 14
         });
+
+        // Use a small delay to ensure style is fully loaded
+        setTimeout(() => {
+          if (map.current && map.current.isStyleLoaded()) {
+            // Set terrain with subtle elevation (default 3D mode)
+            map.current.setTerrain({ source: 'mapbox-dem', exaggeration: 1.5 });
+            
+            // Add atmospheric sky layer
+            if (!map.current.getLayer('sky')) {
+              map.current.addLayer({
+                id: 'sky',
+                type: 'sky',
+                paint: {
+                  'sky-type': 'atmosphere',
+                  'sky-atmosphere-sun': [0.0, 0.0],
+                  'sky-atmosphere-sun-intensity': 15
+                }
+              }, 'water');
+            }
+          }
+        }, 100);
       }
       setMapLoaded(true);
     });
@@ -106,10 +128,10 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
         }
       });
       
-      // Animate to 3D perspective
+      // Animate to subtle 3D perspective
       map.current.easeTo({
-        pitch: 60,
-        bearing: -17.6,
+        pitch: 35,
+        bearing: -12,
         duration: 1000
       });
     } else {
