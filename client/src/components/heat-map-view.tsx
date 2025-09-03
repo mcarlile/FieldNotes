@@ -63,34 +63,38 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
           maxzoom: 14
         });
 
-        // Use a small delay to ensure style is fully loaded
-        setTimeout(() => {
-          if (map.current && map.current.isStyleLoaded()) {
-            // Set terrain with subtle elevation (default 3D mode)
-            map.current.setTerrain({ source: 'mapbox-dem', exaggeration: 1.5 });
-            
-            // Add atmospheric sky layer
-            if (!map.current.getLayer('sky')) {
-              map.current.addLayer({
-                id: 'sky',
-                type: 'sky',
-                paint: {
-                  'sky-type': 'atmosphere',
-                  'sky-atmosphere-sun': [0.0, 0.0],
-                  'sky-atmosphere-sun-intensity': 15
-                }
-              }, 'water');
+        // Apply 3D settings directly without style checks
+        try {
+          // Set terrain with dramatic elevation  
+          map.current.setTerrain({ source: 'mapbox-dem', exaggeration: 4.0 });
+          
+          // Add atmospheric sky layer
+          map.current.addLayer({
+            id: 'sky',
+            type: 'sky',
+            paint: {
+              'sky-type': 'atmosphere',
+              'sky-atmosphere-sun': [0.0, 0.0],
+              'sky-atmosphere-sun-intensity': 15
             }
-
-            // Ensure the 3D camera angle is applied after terrain loads
-            map.current.easeTo({
-              pitch: 35,
-              bearing: -12,
-              duration: 1500
-            });
-          }
-        }, 500);
+          });
+        } catch (error) {
+          console.log('3D terrain will load after style finishes');
+        }
       }
+    });
+
+    // Force 3D camera angle after a longer delay to ensure everything is ready  
+    map.current.on("styledata", () => {
+      setTimeout(() => {
+        if (map.current && is3DMode) {
+          map.current.easeTo({
+            pitch: 35,
+            bearing: -12,
+            duration: 1500
+          });
+        }
+      }, 1000);
       setMapLoaded(true);
     });
 
@@ -111,7 +115,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     
     if (newIs3DMode) {
       // Enable 3D mode
-      map.current.setTerrain({ source: 'mapbox-dem', exaggeration: 1.5 });
+      map.current.setTerrain({ source: 'mapbox-dem', exaggeration: 4.0 });
       
       // Add sky layer first (background)
       if (!map.current.getLayer('sky')) {
