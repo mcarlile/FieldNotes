@@ -2,11 +2,75 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
+    
+    <!-- PWA Meta Tags -->
+    <meta name="application-name" content="Field Notes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Field Notes" />
+    <meta name="description" content="Outdoor adventure field notes with GPX track visualization and photo management" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#3b82f6" />
+    
+    <!-- Manifest -->
+    <link rel="manifest" href="/manifest.json" />
+    
+    <!-- iOS Icons -->
+    <link rel="apple-touch-icon" href="/icons/icon-152x152.png" />
+    <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152x152.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-192x192.png" />
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/icon-16x16.png" />
+    
+    <!-- Splash Screens for iOS -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    
+    <title>Field Notes - GPX Showcase</title>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    
+    <!-- PWA Install Script -->
+    <script>
+      // Handle PWA install prompt
+      let deferredPrompt;
+      
+      window.addEventListener('beforeinstallprompt', (e) => {
+        // Prevent Chrome 67 and earlier from automatically showing the prompt
+        e.preventDefault();
+        // Stash the event so it can be triggered later
+        deferredPrompt = e;
+        console.log('PWA install prompt available');
+        
+        // Add install button logic if needed
+        const installButton = document.getElementById('install-button');
+        if (installButton) {
+          installButton.style.display = 'block';
+          installButton.addEventListener('click', () => {
+            deferredPrompt.prompt();
+            deferredPrompt.userChoice.then((choiceResult) => {
+              if (choiceResult.outcome === 'accepted') {
+                console.log('User accepted the PWA install prompt');
+              } else {
+                console.log('User dismissed the PWA install prompt');
+              }
+              deferredPrompt = null;
+            });
+          });
+        }
+      });
+      
+      // Handle successful installation
+      window.addEventListener('appinstalled', (evt) => {
+        console.log('PWA was installed successfully');
+      });
+    </script>
+    
     <!-- This is a replit script which adds a banner on the top of the page when opened in development mode outside the replit environment -->
     <script type="text/javascript" src="https://replit.com/public/js/replit-dev-banner.js"></script>
   </body>
