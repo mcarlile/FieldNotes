@@ -514,13 +514,13 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
                   <span class="text-xs" style="color: #6b7280;">${note!.tripType} • ${note!.distance}mi</span>
                 </div>`
              ).join('')}
-             <div class="mt-2 text-xs" style="color: ${colors.primary};">Click any route to view details</div>
+             <div class="mt-2 text-xs" style="color: ${colors.primary};">Tap any route to view details</div>
            </div>`;
 
       activePopup = new mapboxgl.Popup({ 
         closeButton: true, 
         closeOnClick: false,
-        maxWidth: "300px"
+        maxWidth: "350px"
       })
         .setLngLat(e.lngLat)
         .setHTML(popupContent)
@@ -624,7 +624,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       });
     });
 
-  }, [fieldNotes, mapLoaded, theme]);
+  }, [fieldNotes, mapLoaded, theme, is3DMode]);
 
   // Handle density highlighting functionality
   const handleDensityHighlight = (density: string) => {
