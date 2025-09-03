@@ -66,14 +66,6 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     map.current.once('style.load', () => {
       if (!map.current) return;
       
-      // Restore exact camera position without animation
-      map.current.jumpTo({
-        center: currentCenter,
-        zoom: currentZoom,
-        pitch: currentPitch,
-        bearing: currentBearing
-      });
-      
       if (is3DMode && map.current) {
         map.current.addSource("mapbox-dem", {
           type: "raster-dem",
@@ -84,10 +76,22 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
         map.current.setTerrain({ source: "mapbox-dem", exaggeration: 4.0 });
       }
       
+      // Restore exact camera position AFTER terrain setup
+      setTimeout(() => {
+        if (map.current) {
+          map.current.jumpTo({
+            center: currentCenter,
+            zoom: currentZoom,
+            pitch: currentPitch,
+            bearing: currentBearing
+          });
+        }
+      }, 50);
+      
       // Force heat map re-rendering by setting mapLoaded back to true
       setTimeout(() => {
         setMapLoaded(true);
-      }, 100); // Small delay to ensure style is fully loaded
+      }, 150); // Slightly longer delay to ensure everything is ready
     });
   };
 
