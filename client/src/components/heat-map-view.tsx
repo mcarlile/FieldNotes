@@ -258,6 +258,9 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
 
   useEffect(() => {
     if (!map.current || !mapLoaded || filteredFieldNotes.length === 0) return;
+    
+    // Add style loading check to prevent errors
+    if (!map.current.isStyleLoaded()) return;
 
     // Remove existing layers and sources
     const existingLayers = [
