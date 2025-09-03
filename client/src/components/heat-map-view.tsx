@@ -499,7 +499,6 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       const routeIdArray = Array.from(allRouteIds);
       const intersectingNotes = routeIdArray.map((id: string) => fieldNotes.find(n => n.id === id)).filter(Boolean);
       
-      console.log('Clicked features:', clickedFeatures.length, 'Unique routes found:', routeIdArray.length, 'Route IDs:', routeIdArray);
 
       const popupContent = intersectingNotes.length === 1 && intersectingNotes[0]
         ? // Single route
@@ -632,7 +631,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       });
     });
 
-  }, [fieldNotes, mapLoaded, theme, is3DMode]);
+  }, [fieldNotes, mapLoaded, theme]);
 
   // Handle density highlighting functionality
   const handleDensityHighlight = (density: string) => {
