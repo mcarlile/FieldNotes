@@ -476,22 +476,30 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
         activePopup = null;
       }
 
-      // Get the first feature to show overlap info
-      if (clickedFeatures.length === 0) return;
-      const feature = clickedFeatures[0];
-      const overlapCount = feature.properties?.overlapCount || 1;
-      const routeIds = feature.properties?.routeIds;
-      
-      // Ensure routeIds is an array and fallback to single noteId if needed
-      let routeIdArray: string[] = [];
-      if (Array.isArray(routeIds)) {
-        routeIdArray = routeIds;
-      } else if (feature.properties?.noteId) {
-        routeIdArray = [feature.properties.noteId];
-      }
+      // Collect ALL unique route IDs from ALL clicked features (not just the first one)
+      const allRouteIds = new Set<string>();
+      let maxOverlapCount = 0;
 
-      // Find all routes that intersect at this point
+      clickedFeatures.forEach(feature => {
+        const overlapCount = feature.properties?.overlapCount || 1;
+        maxOverlapCount = Math.max(maxOverlapCount, overlapCount);
+        
+        // Get route IDs from this feature
+        const routeIds = feature.properties?.routeIds;
+        const noteId = feature.properties?.noteId;
+        
+        if (Array.isArray(routeIds)) {
+          routeIds.forEach(id => allRouteIds.add(id));
+        } else if (noteId) {
+          allRouteIds.add(noteId);
+        }
+      });
+
+      // Convert Set to Array and find all intersecting notes
+      const routeIdArray = Array.from(allRouteIds);
       const intersectingNotes = routeIdArray.map((id: string) => fieldNotes.find(n => n.id === id)).filter(Boolean);
+      
+      console.log('Clicked features:', clickedFeatures.length, 'Unique routes found:', routeIdArray.length, 'Route IDs:', routeIdArray);
 
       const popupContent = intersectingNotes.length === 1 && intersectingNotes[0]
         ? // Single route
@@ -505,7 +513,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
            </div>`
         : // Multiple routes overlapping
           `<div class="text-sm max-w-64">
-             <strong>${overlapCount} Routes Overlap Here:</strong><br/>
+             <strong>${intersectingNotes.length} Routes Overlap Here:</strong><br/>
              ${intersectingNotes.filter(note => note).map(note => 
                `<div class="mt-2 pl-2 border-l-2" style="border-color: ${colors.warning};">
                   <a href="/field-notes/${note!.id}" class="font-semibold underline" style="color: ${colors.primary}; text-decoration: underline;">
