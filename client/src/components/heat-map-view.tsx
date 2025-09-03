@@ -16,6 +16,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
   const [mapLoaded, setMapLoaded] = useState(false);
   const [highlightedDensity, setHighlightedDensity] = useState<string | null>(null);
   const [is3DMode, setIs3DMode] = useState(true);
+  const [selectedActivityType, setSelectedActivityType] = useState<string | null>(null);
 
   // Theme-aware colors
   const getThemeColors = () => {
@@ -31,6 +32,24 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
           destructive: "#dc2626" // Standard red for light mode
         };
   };
+
+  // Get activity type options sorted by count
+  const getActivityTypeOptions = () => {
+    const activityCounts = fieldNotes.reduce((acc, note) => {
+      const type = note.tripType;
+      acc[type] = (acc[type] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    return Object.entries(activityCounts)
+      .sort((a, b) => b[1] - a[1]) // Sort by count descending
+      .map(([type, count]) => ({ type, count }));
+  };
+
+  // Filter field notes based on selected activity type
+  const filteredFieldNotes = selectedActivityType 
+    ? fieldNotes.filter(note => note.tripType === selectedActivityType)
+    : fieldNotes;
 
   useEffect(() => {
     if (!mapContainer.current) return;
@@ -157,7 +176,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
   };
 
   useEffect(() => {
-    if (!map.current || !mapLoaded || fieldNotes.length === 0) return;
+    if (!map.current || !mapLoaded || filteredFieldNotes.length === 0) return;
 
     // Remove existing layers and sources
     const existingLayers = [
@@ -166,7 +185,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     ];
     
     // Also remove individual route layers if they exist
-    fieldNotes.forEach(note => {
+    filteredFieldNotes.forEach(note => {
       existingLayers.push(`route-${note.id}`);
     });
     
@@ -185,7 +204,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     let bounds = new mapboxgl.LngLatBounds();
     let routeStats: any[] = [];
 
-    fieldNotes.forEach((note, index) => {
+    filteredFieldNotes.forEach((note, index) => {
       let coordinates: [number, number][] = [];
       
       try {
@@ -220,7 +239,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     });
 
     console.log('Heat map route analysis:', routeStats);
-    console.log(`Total coordinates from ${fieldNotes.length} field notes: ${allCoordinates.length}`);
+    console.log(`Total coordinates from ${filteredFieldNotes.length} field notes: ${allCoordinates.length}`);
 
     if (allCoordinates.length === 0) {
       console.log('No valid coordinates found for heat map');
@@ -232,7 +251,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     const routeSegments = new Map<string, Set<string>>(); // Track which routes pass through each grid cell
     
     // First pass: map each route's path through grid cells
-    fieldNotes.forEach((note) => {
+    filteredFieldNotes.forEach((note) => {
       let coordinates: [number, number][] = [];
       
       try {
@@ -510,7 +529,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
 
       // Convert Set to Array and find all intersecting notes
       const routeIdArray = Array.from(allRouteIds);
-      const intersectingNotes = routeIdArray.map((id: string) => fieldNotes.find(n => n.id === id)).filter(Boolean);
+      const intersectingNotes = routeIdArray.map((id: string) => filteredFieldNotes.find(n => n.id === id)).filter(Boolean);
       
 
       const popupContent = intersectingNotes.length === 1 && intersectingNotes[0]
@@ -644,7 +663,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       });
     });
 
-  }, [fieldNotes, mapLoaded, theme]);
+  }, [filteredFieldNotes, mapLoaded, theme]);
 
   // Handle density highlighting functionality
   const handleDensityHighlight = (density: string) => {
@@ -688,6 +707,25 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
 
   return (
     <div className="relative w-full h-screen">
+      {/* Activity Type Filter */}
+      <div className="absolute top-4 left-4 z-10 bg-card border border-border rounded-lg p-3 shadow-lg min-w-[200px]">
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-foreground block">Filter by Activity</label>
+          <select
+            value={selectedActivityType || ''}
+            onChange={(e) => setSelectedActivityType(e.target.value || null)}
+            className="w-full p-2 text-sm bg-background border border-border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+          >
+            <option value="">All Activities ({fieldNotes.length})</option>
+            {getActivityTypeOptions().map(({ type, count }) => (
+              <option key={type} value={type}>
+                {type} ({count})
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       {/* 3D Mode Toggle */}
       <div className="absolute top-4 right-4 z-10 bg-card border border-border rounded-lg p-3 shadow-lg">
         <div className="flex items-center gap-3">
@@ -711,7 +749,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       <div ref={mapContainer} className="w-full h-full" />
       
       {/* Animated Heat Map Legend */}
-      {mapLoaded && fieldNotes.length > 0 && (
+      {mapLoaded && filteredFieldNotes.length > 0 && (
         <div className="absolute bottom-4 right-4 bg-card/95 backdrop-blur-sm rounded-lg p-4 shadow-lg border border-border transition-all duration-300 hover:shadow-xl hover:scale-105 hover:bg-card">
           <h4 className="text-sm font-semibold text-foreground mb-3 transition-colors duration-200">Route Density</h4>
           <div className="space-y-3">
