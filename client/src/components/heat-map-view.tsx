@@ -17,6 +17,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
   const [highlightedDensity, setHighlightedDensity] = useState<string | null>(null);
   const [is3DMode, setIs3DMode] = useState(true);
   const [selectedActivityType, setSelectedActivityType] = useState<string | null>(null);
+  const [selectedMapStyle, setSelectedMapStyle] = useState("outdoors-v11");
 
   // Theme-aware colors
   const getThemeColors = () => {
@@ -31,6 +32,44 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
           warning: "#f59e0b",    // Standard orange for light mode
           destructive: "#dc2626" // Standard red for light mode
         };
+  };
+
+  // Available Mapbox public layers
+  const mapStyles = [
+    { id: "streets-v12", name: "Streets", description: "Classic street map" },
+    { id: "outdoors-v11", name: "Outdoors", description: "Terrain and outdoor features" },
+    { id: "light-v11", name: "Light", description: "Clean, minimal style" },
+    { id: "dark-v11", name: "Dark", description: "Dark theme style" },
+    { id: "satellite-v9", name: "Satellite", description: "Satellite imagery" },
+    { id: "satellite-streets-v12", name: "Satellite Streets", description: "Satellite with street labels" },
+    { id: "navigation-day-v1", name: "Navigation Day", description: "Optimized for navigation" },
+    { id: "navigation-night-v1", name: "Navigation Night", description: "Night navigation mode" }
+  ];
+
+  // Change map style
+  const changeMapStyle = (styleId: string) => {
+    if (!map.current) return;
+    
+    setSelectedMapStyle(styleId);
+    map.current.setStyle(`mapbox://styles/mapbox/${styleId}`);
+    
+    // Re-apply 3D mode and heat map layers after style loads
+    map.current.once('style.load', () => {
+      if (is3DMode && map.current) {
+        map.current.addSource("mapbox-dem", {
+          type: "raster-dem",
+          url: "mapbox://mapbox.mapbox-terrain-dem-v1",
+          tileSize: 512,
+          maxzoom: 14,
+        });
+        map.current.setTerrain({ source: "mapbox-dem", exaggeration: 4.0 });
+        map.current.setPitch(55);
+        map.current.setBearing(-15);
+      }
+      
+      // Trigger heat map re-rendering by updating map loaded state
+      setMapLoaded(true);
+    });
   };
 
   // Get activity type options sorted by count with formatted labels
@@ -739,6 +778,24 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
             {getActivityTypeOptions().map(({ type, count, label }) => (
               <option key={type} value={type}>
                 {label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Map Layer Selector */}
+      <div className="absolute top-4 left-4 mt-20 z-10 bg-card border border-border rounded-lg p-3 shadow-lg min-w-[200px]">
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-foreground block">Map Layer</label>
+          <select
+            value={selectedMapStyle}
+            onChange={(e) => changeMapStyle(e.target.value)}
+            className="w-full p-2 text-sm bg-background border border-border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+          >
+            {mapStyles.map((style) => (
+              <option key={style.id} value={style.id} title={style.description}>
+                {style.name}
               </option>
             ))}
           </select>
