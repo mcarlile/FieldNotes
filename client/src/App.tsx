@@ -7,6 +7,7 @@ import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import FieldNoteDetail from "@/pages/field-note-detail";
 import Admin from "@/pages/admin";
+import TrailcamStudio from "@/pages/trailcam-studio";
 
 function Router() {
   return (
@@ -16,6 +17,7 @@ function Router() {
       <Route path="/admin" component={Admin} />
       <Route path="/admin/:id" component={Admin} />
       <Route path="/field-notes/:id/edit" component={Admin} />
+      <Route path="/trailcam-studio" component={TrailcamStudio} />
       <Route component={NotFound} />
     </Switch>
   );

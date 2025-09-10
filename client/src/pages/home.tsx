@@ -23,7 +23,7 @@ import {
   SideNavItems,
   SideNavLink,
 } from "@carbon/react";
-import { Add, Search, Filter, Map, Close, Light, Asleep } from "@carbon/icons-react";
+import { Add, Search, Filter, Map, Close, Light, Asleep, Video } from "@carbon/icons-react";
 import FieldNoteCard from "@/components/field-note-card";
 import HeatMapView from "@/components/heat-map-view";
 import { useTheme } from "@/contexts/theme-context";
@@ -190,6 +190,12 @@ export default function Home() {
                   data-testid="toggle-dark-mode"
                 />
 
+                <Link href="/trailcam-studio">
+                  <CarbonButton kind="tertiary" size="sm" data-testid="link-trailcam" renderIcon={Video}>
+                    TrailCam Studio
+                  </CarbonButton>
+                </Link>
+                
                 <Link href="/admin">
                   <CarbonButton size="sm" data-testid="link-admin" renderIcon={Add}>
                     Add New
@@ -242,6 +248,12 @@ export default function Home() {
                 data-testid="toggle-dark-mode"
               />
 
+              <Link href="/trailcam-studio">
+                <CarbonButton kind="tertiary" size="sm" data-testid="link-trailcam" renderIcon={Video}>
+                  TrailCam Studio
+                </CarbonButton>
+              </Link>
+              
               <Link href="/admin">
                 <CarbonButton size="sm" data-testid="link-admin" renderIcon={Add}>
                   Add New
