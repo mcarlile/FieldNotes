@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertFieldNoteSchema, insertPhotoSchema } from "@shared/schema";
+import { insertFieldNoteSchema, insertPhotoSchema, insertTrailcamProjectSchema, insertVideoClipSchema } from "@shared/schema";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { extractExifData, extractExifFromBuffer } from "./exif-extractor";
 import multer from 'multer';
@@ -387,6 +387,154 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error searching for public object:", error);
       return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // =============== TrailCam Studio API Routes ===============
+
+  // Get all TrailCam projects
+  app.get("/api/trailcam-projects", async (req, res) => {
+    try {
+      const { search, sortOrder } = req.query;
+      const projects = await storage.getTrailcamProjects({
+        search: search as string,
+        sortOrder: sortOrder as 'recent' | 'oldest' | 'name',
+      });
+      res.json(projects);
+    } catch (error) {
+      console.error("Error fetching TrailCam projects:", error);
+      res.status(500).json({ message: "Failed to fetch TrailCam projects" });
+    }
+  });
+
+  // Get specific TrailCam project by ID
+  app.get("/api/trailcam-projects/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const project = await storage.getTrailcamProjectById(id);
+      if (!project) {
+        return res.status(404).json({ message: "TrailCam project not found" });
+      }
+      res.json(project);
+    } catch (error) {
+      console.error("Error fetching TrailCam project:", error);
+      res.status(500).json({ message: "Failed to fetch TrailCam project" });
+    }
+  });
+
+  // Create new TrailCam project
+  app.post("/api/trailcam-projects", async (req, res) => {
+    try {
+      const validatedData = insertTrailcamProjectSchema.parse(req.body);
+      const project = await storage.createTrailcamProject(validatedData);
+      res.status(201).json(project);
+    } catch (error) {
+      console.error("Error creating TrailCam project:", error);
+      res.status(400).json({ message: "Failed to create TrailCam project" });
+    }
+  });
+
+  // Update TrailCam project
+  app.put("/api/trailcam-projects/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const validatedData = insertTrailcamProjectSchema.partial().parse(req.body);
+      const project = await storage.updateTrailcamProject(id, validatedData);
+      if (!project) {
+        return res.status(404).json({ message: "TrailCam project not found" });
+      }
+      res.json(project);
+    } catch (error) {
+      console.error("Error updating TrailCam project:", error);
+      res.status(400).json({ message: "Failed to update TrailCam project" });
+    }
+  });
+
+  // Delete TrailCam project
+  app.delete("/api/trailcam-projects/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const deleted = await storage.deleteTrailcamProject(id);
+      if (!deleted) {
+        return res.status(404).json({ message: "TrailCam project not found" });
+      }
+      res.status(204).end();
+    } catch (error) {
+      console.error("Error deleting TrailCam project:", error);
+      res.status(500).json({ message: "Failed to delete TrailCam project" });
+    }
+  });
+
+  // Get video clips for a project
+  app.get("/api/video-clips", async (req, res) => {
+    try {
+      const { projectId } = req.query;
+      if (!projectId) {
+        return res.status(400).json({ message: "projectId is required" });
+      }
+      const clips = await storage.getVideoClipsByProjectId(projectId as string);
+      res.json(clips);
+    } catch (error) {
+      console.error("Error fetching video clips:", error);
+      res.status(500).json({ message: "Failed to fetch video clips" });
+    }
+  });
+
+  // Get specific video clip by ID
+  app.get("/api/video-clips/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const clip = await storage.getVideoClipById(id);
+      if (!clip) {
+        return res.status(404).json({ message: "Video clip not found" });
+      }
+      res.json(clip);
+    } catch (error) {
+      console.error("Error fetching video clip:", error);
+      res.status(500).json({ message: "Failed to fetch video clip" });
+    }
+  });
+
+  // Create new video clip
+  app.post("/api/video-clips", async (req, res) => {
+    try {
+      const validatedData = insertVideoClipSchema.parse(req.body);
+      const clip = await storage.createVideoClip(validatedData);
+      res.status(201).json(clip);
+    } catch (error) {
+      console.error("Error creating video clip:", error);
+      res.status(400).json({ message: "Failed to create video clip" });
+    }
+  });
+
+  // Update video clip
+  app.put("/api/video-clips/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const validatedData = insertVideoClipSchema.partial().parse(req.body);
+      const clip = await storage.updateVideoClip(id, validatedData);
+      if (!clip) {
+        return res.status(404).json({ message: "Video clip not found" });
+      }
+      res.json(clip);
+    } catch (error) {
+      console.error("Error updating video clip:", error);
+      res.status(400).json({ message: "Failed to update video clip" });
+    }
+  });
+
+  // Delete video clip
+  app.delete("/api/video-clips/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const deleted = await storage.deleteVideoClip(id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Video clip not found" });
+      }
+      res.status(204).end();
+    } catch (error) {
+      console.error("Error deleting video clip:", error);
+      res.status(500).json({ message: "Failed to delete video clip" });
     }
   });
 

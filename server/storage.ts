@@ -1,4 +1,4 @@
-import { fieldNotes, photos, type FieldNote, type Photo, type InsertFieldNote, type InsertPhoto } from "@shared/schema";
+import { fieldNotes, photos, trailcamProjects, videoClips, type FieldNote, type Photo, type InsertFieldNote, type InsertPhoto, type TrailcamProject, type VideoClip, type InsertTrailcamProject, type InsertVideoClip } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, like, ilike, and, or } from "drizzle-orm";
 
@@ -21,6 +21,23 @@ export interface IStorage {
   updatePhoto(id: string, photo: Partial<InsertPhoto>): Promise<Photo | undefined>;
   deletePhoto(id: string): Promise<boolean>;
   updateFieldNotePhotos(fieldNoteId: string, photosData: any[]): Promise<Photo[]>;
+  
+  // TrailCam Projects
+  getTrailcamProjects(options?: {
+    search?: string;
+    sortOrder?: 'recent' | 'oldest' | 'name';
+  }): Promise<TrailcamProject[]>;
+  getTrailcamProjectById(id: string): Promise<TrailcamProject | undefined>;
+  createTrailcamProject(project: InsertTrailcamProject): Promise<TrailcamProject>;
+  updateTrailcamProject(id: string, project: Partial<InsertTrailcamProject>): Promise<TrailcamProject | undefined>;
+  deleteTrailcamProject(id: string): Promise<boolean>;
+  
+  // Video Clips
+  getVideoClipsByProjectId(projectId: string): Promise<VideoClip[]>;
+  getVideoClipById(id: string): Promise<VideoClip | undefined>;
+  createVideoClip(clip: InsertVideoClip): Promise<VideoClip>;
+  updateVideoClip(id: string, clip: Partial<InsertVideoClip>): Promise<VideoClip | undefined>;
+  deleteVideoClip(id: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -184,6 +201,111 @@ export class DatabaseStorage implements IStorage {
     
     // Return all current photos for this field note
     return await this.getPhotosByFieldNoteId(fieldNoteId);
+  }
+
+  // TrailCam Projects
+  async getTrailcamProjects(options: {
+    search?: string;
+    sortOrder?: 'recent' | 'oldest' | 'name';
+  } = {}): Promise<TrailcamProject[]> {
+    let query = db.select().from(trailcamProjects);
+    
+    const conditions = [];
+    
+    if (options.search) {
+      const searchTerm = options.search.trim();
+      if (searchTerm) {
+        conditions.push(
+          or(
+            ilike(trailcamProjects.title, `%${searchTerm}%`),
+            ilike(trailcamProjects.description, `%${searchTerm}%`)
+          )
+        );
+      }
+    }
+    
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as typeof query;
+    }
+    
+    // Apply sorting
+    switch (options.sortOrder) {
+      case 'oldest':
+        query = query.orderBy(asc(trailcamProjects.createdAt)) as typeof query;
+        break;
+      case 'name':
+        query = query.orderBy(asc(trailcamProjects.title)) as typeof query;
+        break;
+      case 'recent':
+      default:
+        query = query.orderBy(desc(trailcamProjects.createdAt)) as typeof query;
+        break;
+    }
+    
+    return await query;
+  }
+
+  async getTrailcamProjectById(id: string): Promise<TrailcamProject | undefined> {
+    const [project] = await db.select().from(trailcamProjects).where(eq(trailcamProjects.id, id));
+    return project || undefined;
+  }
+
+  async createTrailcamProject(insertProject: InsertTrailcamProject): Promise<TrailcamProject> {
+    const [project] = await db
+      .insert(trailcamProjects)
+      .values(insertProject)
+      .returning();
+    return project;
+  }
+
+  async updateTrailcamProject(id: string, updateProject: Partial<InsertTrailcamProject>): Promise<TrailcamProject | undefined> {
+    const [project] = await db
+      .update(trailcamProjects)
+      .set(updateProject)
+      .where(eq(trailcamProjects.id, id))
+      .returning();
+    return project || undefined;
+  }
+
+  async deleteTrailcamProject(id: string): Promise<boolean> {
+    // First delete all associated video clips
+    await db.delete(videoClips).where(eq(videoClips.projectId, id));
+    
+    // Then delete the project
+    const result = await db.delete(trailcamProjects).where(eq(trailcamProjects.id, id));
+    return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  // Video Clips
+  async getVideoClipsByProjectId(projectId: string): Promise<VideoClip[]> {
+    return await db.select().from(videoClips).where(eq(videoClips.projectId, projectId)).orderBy(asc(videoClips.startTime));
+  }
+
+  async getVideoClipById(id: string): Promise<VideoClip | undefined> {
+    const [clip] = await db.select().from(videoClips).where(eq(videoClips.id, id));
+    return clip || undefined;
+  }
+
+  async createVideoClip(insertClip: InsertVideoClip): Promise<VideoClip> {
+    const [clip] = await db
+      .insert(videoClips)
+      .values(insertClip)
+      .returning();
+    return clip;
+  }
+
+  async updateVideoClip(id: string, updateClip: Partial<InsertVideoClip>): Promise<VideoClip | undefined> {
+    const [clip] = await db
+      .update(videoClips)
+      .set(updateClip)
+      .where(eq(videoClips.id, id))
+      .returning();
+    return clip || undefined;
+  }
+
+  async deleteVideoClip(id: string): Promise<boolean> {
+    const result = await db.delete(videoClips).where(eq(videoClips.id, id));
+    return result.rowCount !== null && result.rowCount > 0;
   }
 }
 
@@ -414,6 +536,120 @@ export class MemStorage implements IStorage {
     // This is a simplified implementation for MemStorage
     // In practice, you'd want the same logic as DatabaseStorage
     return this.photosData.filter(photo => photo.fieldNoteId === fieldNoteId);
+  }
+
+  // TrailCam Projects - stub implementations for MemStorage
+  private trailcamProjectsData: TrailcamProject[] = [];
+  private videoClipsData: VideoClip[] = [];
+
+  async getTrailcamProjects(options: {
+    search?: string;
+    sortOrder?: 'recent' | 'oldest' | 'name';
+  } = {}): Promise<TrailcamProject[]> {
+    let filtered = [...this.trailcamProjectsData];
+
+    if (options.search) {
+      const searchLower = options.search.toLowerCase().trim();
+      if (searchLower) {
+        filtered = filtered.filter(project => 
+          project.title.toLowerCase().includes(searchLower) ||
+          (project.description && project.description.toLowerCase().includes(searchLower))
+        );
+      }
+    }
+
+    // Apply sorting
+    switch (options.sortOrder) {
+      case 'oldest':
+        filtered.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+        break;
+      case 'name':
+        filtered.sort((a, b) => a.title.localeCompare(b.title));
+        break;
+      case 'recent':
+      default:
+        filtered.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        break;
+    }
+
+    return filtered;
+  }
+
+  async getTrailcamProjectById(id: string): Promise<TrailcamProject | undefined> {
+    return this.trailcamProjectsData.find(project => project.id === id);
+  }
+
+  async createTrailcamProject(insertProject: InsertTrailcamProject): Promise<TrailcamProject> {
+    const project: TrailcamProject = {
+      id: Math.random().toString(36).substr(2, 9),
+      ...insertProject,
+      description: insertProject.description ?? null,
+      duration: insertProject.duration ?? null,
+      startTime: insertProject.startTime ?? null,
+      endTime: insertProject.endTime ?? null,
+      createdAt: new Date()
+    };
+    this.trailcamProjectsData.push(project);
+    return project;
+  }
+
+  async updateTrailcamProject(id: string, updateProject: Partial<InsertTrailcamProject>): Promise<TrailcamProject | undefined> {
+    const index = this.trailcamProjectsData.findIndex(project => project.id === id);
+    if (index === -1) return undefined;
+    
+    this.trailcamProjectsData[index] = { ...this.trailcamProjectsData[index], ...updateProject };
+    return this.trailcamProjectsData[index];
+  }
+
+  async deleteTrailcamProject(id: string): Promise<boolean> {
+    const index = this.trailcamProjectsData.findIndex(project => project.id === id);
+    if (index === -1) return false;
+    
+    // Delete associated video clips
+    this.videoClipsData = this.videoClipsData.filter(clip => clip.projectId !== id);
+    // Delete project
+    this.trailcamProjectsData.splice(index, 1);
+    return true;
+  }
+
+  // Video Clips
+  async getVideoClipsByProjectId(projectId: string): Promise<VideoClip[]> {
+    return this.videoClipsData
+      .filter(clip => clip.projectId === projectId)
+      .sort((a, b) => a.startTime - b.startTime);
+  }
+
+  async getVideoClipById(id: string): Promise<VideoClip | undefined> {
+    return this.videoClipsData.find(clip => clip.id === id);
+  }
+
+  async createVideoClip(insertClip: InsertVideoClip): Promise<VideoClip> {
+    const clip: VideoClip = {
+      id: Math.random().toString(36).substr(2, 9),
+      ...insertClip,
+      fileSize: insertClip.fileSize ?? null,
+      videoFormat: insertClip.videoFormat ?? null,
+      createdAt: new Date()
+    };
+    this.videoClipsData.push(clip);
+    return clip;
+  }
+
+  async updateVideoClip(id: string, updateClip: Partial<InsertVideoClip>): Promise<VideoClip | undefined> {
+    const index = this.videoClipsData.findIndex(clip => clip.id === id);
+    if (index === -1) return undefined;
+    
+    this.videoClipsData[index] = { ...this.videoClipsData[index], ...updateClip };
+    return this.videoClipsData[index];
+  }
+
+  async deleteVideoClip(id: string): Promise<boolean> {
+    const index = this.videoClipsData.findIndex(clip => clip.id === id);
+    if (index !== -1) {
+      this.videoClipsData.splice(index, 1);
+      return true;
+    }
+    return false;
   }
 }
 
