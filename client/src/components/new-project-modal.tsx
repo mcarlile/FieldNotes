@@ -18,6 +18,7 @@ import { GPXFileUploader } from "@/components/gpx-file-uploader";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import type { TrailcamProject, InsertTrailcamProject } from "@shared/schema";
+import type { GpxStats } from "@shared/gpx-utils";
 
 const projectFormSchema = z.object({
   title: z.string().min(1, "Project title is required"),
@@ -37,14 +38,7 @@ export function NewProjectModal({
   onClose,
   onProjectCreated,
 }: NewProjectModalProps) {
-  const [gpxData, setGpxData] = useState<{
-    distance: number;
-    elevationGain: number;
-    date: Date | null;
-    coordinates: [number, number][];
-    parsedData: any;
-    filename: string;
-  } | null>(null);
+  const [gpxData, setGpxData] = useState<(GpxStats & { filename: string }) | null>(null);
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -59,21 +53,33 @@ export function NewProjectModal({
   });
 
   const createProjectMutation = useMutation({
-    mutationFn: async (data: ProjectFormData) => {
+    mutationFn: async (data: ProjectFormData): Promise<TrailcamProject> => {
       if (!gpxData) {
         throw new Error("GPX file is required");
       }
 
       const projectData: InsertTrailcamProject = {
         title: data.title,
-        description: data.description || null,
-        gpxData: gpxData.parsedData,
-        duration: null, // Will be calculated later when video clips are added
-        startTime: gpxData.date,
-        endTime: null, // Will be set when project timeline is finalized
+        description: data.description || undefined,
+        gpxData: gpxData,
+        duration: undefined, // Will be calculated later when video clips are added
+        startTime: gpxData.date || undefined,
+        endTime: undefined, // Will be set when project timeline is finalized
       };
 
-      return apiRequest("/api/trailcam-projects", "POST", projectData);
+      const response = await fetch("/api/trailcam-projects", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(projectData),
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to create project");
+      }
+      
+      return response.json();
     },
     onSuccess: (project: TrailcamProject) => {
       toast({
@@ -103,14 +109,7 @@ export function NewProjectModal({
     createProjectMutation.mutate(data);
   };
 
-  const handleGPXComplete = (uploadedGpxData: {
-    distance: number;
-    elevationGain: number;
-    date: Date | null;
-    coordinates: [number, number][];
-    parsedData: any;
-    filename: string;
-  }) => {
+  const handleGPXComplete = (uploadedGpxData: GpxStats & { filename: string }) => {
     setGpxData(uploadedGpxData);
   };
 
@@ -180,11 +179,11 @@ export function NewProjectModal({
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <span className="text-muted-foreground">Distance:</span>
-                  <div className="font-medium">{gpxData.distance} km</div>
+                  <div className="font-medium">{gpxData.distance} miles</div>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Elevation Gain:</span>
-                  <div className="font-medium">{gpxData.elevationGain} m</div>
+                  <div className="font-medium">{gpxData.elevationGain} ft</div>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Track Points:</span>

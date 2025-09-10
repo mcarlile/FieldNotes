@@ -32,6 +32,7 @@ import {
   ChartLineSmooth,
 } from "@carbon/icons-react";
 import { useTheme } from "@/contexts/theme-context";
+import { NewProjectModal } from "@/components/new-project-modal";
 import type { TrailcamProject, VideoClip } from "@shared/schema";
 
 export default function TrailcamStudio() {
@@ -40,6 +41,7 @@ export default function TrailcamStudio() {
   const [currentTime, setCurrentTime] = useState(0); // Current playback position in seconds
   const [isPlaying, setIsPlaying] = useState(false);
   const [selectedClip, setSelectedClip] = useState<VideoClip | null>(null);
+  const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // Mock data for now - will be replaced with real API calls
@@ -97,7 +99,12 @@ export default function TrailcamStudio() {
                 </Link>
                 <h1 className="text-2xl font-semibold text-foreground">TrailCam Studio</h1>
               </div>
-              <CarbonButton size="sm" renderIcon={Add} data-testid="button-new-project">
+              <CarbonButton 
+                size="sm" 
+                renderIcon={Add} 
+                onClick={() => setShowNewProjectModal(true)}
+                data-testid="button-new-project"
+              >
                 New Project
               </CarbonButton>
             </div>
@@ -128,7 +135,11 @@ export default function TrailcamStudio() {
                   <Video size={48} className="mx-auto mb-4 text-muted-foreground" />
                   <h3 className="text-lg font-semibold text-foreground mb-2">No Projects Yet</h3>
                   <p className="text-muted-foreground mb-6">Create your first TrailCam project to start syncing videos with GPS data.</p>
-                  <CarbonButton renderIcon={Add} data-testid="button-create-first-project">
+                  <CarbonButton 
+                    renderIcon={Add} 
+                    onClick={() => setShowNewProjectModal(true)}
+                    data-testid="button-create-first-project"
+                  >
                     Create First Project
                   </CarbonButton>
                 </Tile>
@@ -165,6 +176,16 @@ export default function TrailcamStudio() {
             </Column>
           </Grid>
         </div>
+
+        {/* New Project Modal */}
+        <NewProjectModal
+          isOpen={showNewProjectModal}
+          onClose={() => setShowNewProjectModal(false)}
+          onProjectCreated={(project) => {
+            setSelectedProject(project);
+            setShowNewProjectModal(false);
+          }}
+        />
       </div>
     );
   }

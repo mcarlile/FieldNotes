@@ -8,32 +8,21 @@ import {
   InlineNotification
 } from "@carbon/react";
 import { Upload } from "@carbon/icons-react";
-import { parseGpxData } from "@shared/gpx-utils";
+import { parseGpxData, type GpxStats } from "@shared/gpx-utils";
 
 interface GPXUploadState {
   file: File;
   status: 'processing' | 'complete' | 'error';
   progress: number;
   errorMessage?: string;
-  gpxData?: {
-    distance: number;
-    elevationGain: number;
-    date: Date | null;
-    coordinates: [number, number][];
-    parsedData: any;
+  gpxData?: GpxStats & {
+    filename: string;
   };
 }
 
 interface GPXFileUploaderProps {
   maxFileSize?: number;
-  onComplete?: (gpxData: {
-    distance: number;
-    elevationGain: number;
-    date: Date | null;
-    coordinates: [number, number][];
-    parsedData: any;
-    filename: string;
-  }) => void;
+  onComplete?: (gpxData: GpxStats & { filename: string }) => void;
   buttonClassName?: string;
   children: React.ReactNode;
 }
@@ -47,13 +36,7 @@ export function GPXFileUploader({
   const [showModal, setShowModal] = useState(false);
   const [file, setFile] = useState<GPXUploadState | null>(null);
 
-  const processGPXFile = async (gpxFile: File): Promise<{
-    distance: number;
-    elevationGain: number;
-    date: Date | null;
-    coordinates: [number, number][];
-    parsedData: any;
-  }> => {
+  const processGPXFile = async (gpxFile: File): Promise<GpxStats> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -66,62 +49,7 @@ export function GPXFileUploader({
 
           // Parse GPX data using the existing utility
           const parsedData = parseGpxData(content);
-          if (!parsedData) {
-            reject(new Error('Invalid GPX file format'));
-            return;
-          }
-
-          // Extract coordinates and calculate stats
-          const coordinates = parsedData.coordinates || [];
-          let distance = 0;
-          let elevationGain = 0;
-          let minElevation = Infinity;
-          let maxElevation = -Infinity;
-
-          // Calculate distance and elevation gain
-          for (let i = 1; i < coordinates.length; i++) {
-            const [lng1, lat1, ele1] = coordinates[i - 1];
-            const [lng2, lat2, ele2] = coordinates[i];
-
-            // Calculate distance using Haversine formula
-            const R = 6371; // Earth's radius in kilometers
-            const dLat = (lat2 - lat1) * Math.PI / 180;
-            const dLng = (lng2 - lng1) * Math.PI / 180;
-            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-              Math.sin(dLng / 2) * Math.sin(dLng / 2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-            distance += R * c;
-
-            // Track elevation
-            if (ele1 !== undefined) {
-              minElevation = Math.min(minElevation, ele1);
-              maxElevation = Math.max(maxElevation, ele1);
-            }
-            if (ele2 !== undefined) {
-              minElevation = Math.min(minElevation, ele2);
-              maxElevation = Math.max(maxElevation, ele2);
-            }
-          }
-
-          // Calculate elevation gain (simplified - actual gain would need more sophisticated calculation)
-          if (minElevation !== Infinity && maxElevation !== -Infinity) {
-            elevationGain = maxElevation - minElevation;
-          }
-
-          // Try to extract date from GPX metadata
-          let date: Date | null = null;
-          if (parsedData.metadata?.time) {
-            date = new Date(parsedData.metadata.time);
-          }
-
-          resolve({
-            distance: Math.round(distance * 100) / 100, // Round to 2 decimal places
-            elevationGain: Math.round(elevationGain),
-            date,
-            coordinates: coordinates.map(([lng, lat]) => [lng, lat] as [number, number]),
-            parsedData,
-          });
+          resolve(parsedData);
         } catch (error) {
           reject(error);
         }
@@ -170,19 +98,21 @@ export function GPXFileUploader({
       // Process GPX file
       const gpxData = await processGPXFile(gpxFile);
       
+      const gpxDataWithFilename = {
+        ...gpxData,
+        filename: gpxFile.name,
+      };
+      
       setFile({
         file: gpxFile,
         status: 'complete',
         progress: 100,
-        gpxData,
+        gpxData: gpxDataWithFilename,
       });
 
       // Call completion callback
       if (onComplete) {
-        onComplete({
-          ...gpxData,
-          filename: gpxFile.name,
-        });
+        onComplete(gpxDataWithFilename);
       }
     } catch (error) {
       setFile({
@@ -198,20 +128,6 @@ export function GPXFileUploader({
     setFile(null);
   };
 
-  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const files = event.dataTransfer.files;
-    if (files.length > 0) {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.files = files;
-      handleFileAdd({ target: input } as React.ChangeEvent<HTMLInputElement>);
-    }
-  };
-
-  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-  };
 
   const resetAndClose = () => {
     setFile(null);
@@ -244,9 +160,14 @@ export function GPXFileUploader({
             <FileUploaderDropContainer
               accept={['.gpx']}
               labelText="Drag and drop your GPX file here or click to browse"
-              onAddFiles={handleFileAdd}
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
+              onAddFiles={(_, { addedFiles }) => {
+                if (addedFiles.length > 0) {
+                  const mockEvent = {
+                    target: { files: addedFiles } as any
+                  } as React.ChangeEvent<HTMLInputElement>;
+                  handleFileAdd(mockEvent);
+                }
+              }}
               data-testid="drop-container-gpx"
             />
           )}
@@ -266,7 +187,7 @@ export function GPXFileUploader({
                   <ProgressBar 
                     value={file.progress} 
                     max={100}
-                    labelText="Processing GPX data"
+                    label="Processing GPX data"
                     data-testid="progress-gpx-processing"
                   />
                 </div>
@@ -286,7 +207,7 @@ export function GPXFileUploader({
                 <InlineNotification
                   kind="success"
                   title="GPX File Processed Successfully"
-                  subtitle={`Distance: ${file.gpxData.distance} km, Elevation Gain: ${file.gpxData.elevationGain} m, ${file.gpxData.coordinates.length} track points`}
+                  subtitle={`Distance: ${file.gpxData.distance} miles, Elevation Gain: ${file.gpxData.elevationGain} ft, ${file.gpxData.coordinates.length} track points`}
                   hideCloseButton
                   data-testid="notification-gpx-success"
                 />
