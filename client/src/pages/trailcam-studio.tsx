@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
@@ -35,6 +35,7 @@ import {
 import { useTheme } from "@/contexts/theme-context";
 import { NewProjectModal } from "@/components/new-project-modal";
 import { VideoClipUploader } from "@/components/video-clip-uploader";
+import MapboxMap from "@/components/mapbox-map";
 import type { TrailcamProject, VideoClip, InsertVideoClip } from "@shared/schema";
 
 export default function TrailcamStudio() {
@@ -300,12 +301,24 @@ export default function TrailcamStudio() {
                 <h2 className="text-lg font-semibold text-foreground">MAP</h2>
               </div>
             </div>
-            <div className="flex-1 bg-muted/20 flex items-center justify-center">
-              <div className="text-center">
-                <Map size={64} className="mx-auto mb-4 text-muted-foreground" />
-                <p className="text-muted-foreground">Interactive map with GPS route</p>
-                <p className="text-sm text-muted-foreground mt-1">Current position: {formatTime(currentTime)}</p>
-              </div>
+            <div className="flex-1 bg-muted/20">
+              <Suspense 
+                fallback={
+                  <div className="flex items-center justify-center h-full">
+                    <div className="text-center">
+                      <Map size={64} className="mx-auto mb-4 text-muted-foreground" />
+                      <p className="text-muted-foreground">Loading map...</p>
+                    </div>
+                  </div>
+                }
+              >
+                <MapboxMap
+                  gpxData={selectedProject.gpxData}
+                  photos={[]}
+                  onPhotoClick={() => {}}
+                  className="w-full h-full"
+                />
+              </Suspense>
             </div>
           </div>
         </div>
