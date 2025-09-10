@@ -49,6 +49,38 @@ export const photosRelations = relations(photos, ({ one }) => ({
   }),
 }));
 
+// TrailCam Studio tables
+export const trailcamProjects = pgTable("trailcam_projects", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  description: text("description"),
+  gpxData: jsonb("gpx_data").notNull(), // GPS route data
+  duration: real("duration"), // total project duration in seconds
+  startTime: timestamp("start_time"), // project start timestamp
+  endTime: timestamp("end_time"), // project end timestamp
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  titleIdx: index("trailcam_projects_title_idx").on(table.title),
+}));
+
+export const videoClips = pgTable("video_clips", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").references(() => trailcamProjects.id).notNull(),
+  title: text("title").notNull(),
+  filename: text("filename").notNull(),
+  url: text("url").notNull(),
+  startTime: real("start_time").notNull(), // offset from project start in seconds
+  endTime: real("end_time").notNull(), // offset from project start in seconds
+  duration: real("duration").notNull(), // clip duration in seconds
+  color: text("color").default("#3b82f6"), // timeline color coding
+  fileSize: text("file_size"),
+  videoFormat: text("video_format"), // MP4, WebM, etc.
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  projectIdIdx: index("video_clips_project_id_idx").on(table.projectId),
+  startTimeIdx: index("video_clips_start_time_idx").on(table.startTime),
+}));
+
 export const insertFieldNoteSchema = createInsertSchema(fieldNotes).omit({
   id: true,
   createdAt: true,
@@ -61,7 +93,37 @@ export const insertPhotoSchema = createInsertSchema(photos).omit({
   createdAt: true,
 });
 
+// TrailCam Studio relations
+export const trailcamProjectsRelations = relations(trailcamProjects, ({ many }) => ({
+  videoClips: many(videoClips),
+}));
+
+export const videoClipsRelations = relations(videoClips, ({ one }) => ({
+  project: one(trailcamProjects, {
+    fields: [videoClips.projectId],
+    references: [trailcamProjects.id],
+  }),
+}));
+
+// TrailCam Studio schemas
+export const insertTrailcamProjectSchema = createInsertSchema(trailcamProjects).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  startTime: z.coerce.date().optional(),
+  endTime: z.coerce.date().optional(),
+});
+
+export const insertVideoClipSchema = createInsertSchema(videoClips).omit({
+  id: true,
+  createdAt: true,
+});
+
 export type InsertFieldNote = z.infer<typeof insertFieldNoteSchema>;
 export type InsertPhoto = z.infer<typeof insertPhotoSchema>;
+export type InsertTrailcamProject = z.infer<typeof insertTrailcamProjectSchema>;
+export type InsertVideoClip = z.infer<typeof insertVideoClipSchema>;
 export type FieldNote = typeof fieldNotes.$inferSelect;
 export type Photo = typeof photos.$inferSelect;
+export type TrailcamProject = typeof trailcamProjects.$inferSelect;
+export type VideoClip = typeof videoClips.$inferSelect;
