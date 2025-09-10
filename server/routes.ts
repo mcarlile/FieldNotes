@@ -510,6 +510,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/video-clips", async (req, res) => {
     try {
       const validatedData = insertVideoClipSchema.parse(req.body);
+      
+      // Normalize the URL if it's a full storage URL
+      if (validatedData.url) {
+        validatedData.url = objectStorageService.normalizeObjectEntityPath(validatedData.url);
+      }
+      
       const clip = await storage.createVideoClip(validatedData);
       res.status(201).json(clip);
     } catch (error) {

@@ -132,7 +132,11 @@ export function VideoClipUploader({
       throw new Error('Failed to upload video file');
     }
     
-    return uploadURL;
+    // Return the URL that should be used for reading the file (not the upload URL)
+    // The upload URL contains query parameters and is for writing only
+    // We need to extract the base path for reading
+    const url = new URL(uploadURL);
+    return url.pathname;
   };
 
   const handleFileAdd = async (event: React.ChangeEvent<HTMLInputElement>) => {
