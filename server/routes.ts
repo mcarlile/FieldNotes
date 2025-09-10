@@ -301,6 +301,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Generic object storage upload endpoint (for videos and other files)
+  app.post("/api/objects/upload", async (req, res) => {
+    try {
+      const uploadURL = await objectStorageService.getObjectEntityUploadURL();
+      res.json({ uploadURL });
+    } catch (error) {
+      console.error("Error getting upload URL:", error);
+      res.status(500).json({ error: "Failed to get upload URL" });
+    }
+  });
+
   // Remove the PUT endpoint as it conflicts with Vite routing
   // The POST endpoint above handles upload URL requests
 

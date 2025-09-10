@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 import { 
   Grid,
@@ -33,10 +34,13 @@ import {
 } from "@carbon/icons-react";
 import { useTheme } from "@/contexts/theme-context";
 import { NewProjectModal } from "@/components/new-project-modal";
-import type { TrailcamProject, VideoClip } from "@shared/schema";
+import { VideoClipUploader } from "@/components/video-clip-uploader";
+import type { TrailcamProject, VideoClip, InsertVideoClip } from "@shared/schema";
 
 export default function TrailcamStudio() {
   const { theme } = useTheme();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [selectedProject, setSelectedProject] = useState<TrailcamProject | null>(null);
   const [currentTime, setCurrentTime] = useState(0); // Current playback position in seconds
   const [isPlaying, setIsPlaying] = useState(false);
@@ -64,6 +68,69 @@ export default function TrailcamStudio() {
     },
     enabled: !!selectedProject?.id,
   });
+
+  // Create video clip mutation
+  const createClipMutation = useMutation({
+    mutationFn: async (clipData: InsertVideoClip) => {
+      const response = await fetch("/api/video-clips", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(clipData),
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to create video clip");
+      }
+      
+      return response.json();
+    },
+    onSuccess: (clip: VideoClip) => {
+      toast({
+        title: "Success",
+        description: `Video clip "${clip.title}" added successfully!`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/video-clips", selectedProject?.id] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add video clip",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Handle video clip upload completion
+  const handleClipUpload = (clipData: {
+    title: string;
+    filename: string;
+    url: string;
+    startTime: number;
+    endTime: number;
+    duration: number;
+    color: string;
+    fileSize: string;
+    videoFormat: string;
+  }) => {
+    if (!selectedProject?.id) return;
+
+    const insertData: InsertVideoClip = {
+      projectId: selectedProject.id,
+      title: clipData.title,
+      filename: clipData.filename,
+      url: clipData.url,
+      startTime: clipData.startTime,
+      endTime: clipData.endTime,
+      duration: clipData.duration,
+      color: clipData.color,
+      fileSize: clipData.fileSize,
+      videoFormat: clipData.videoFormat,
+    };
+
+    createClipMutation.mutate(insertData);
+  };
 
   // Color palette for timeline clips
   const clipColors = [
@@ -386,9 +453,10 @@ export default function TrailcamStudio() {
                 <Video size={20} className="text-muted-foreground" />
                 <h2 className="text-base font-semibold text-foreground">CLIPS ({clips.length})</h2>
               </div>
-              <CarbonButton size="sm" renderIcon={Add} data-testid="button-add-clip">
-                ADD
-              </CarbonButton>
+              <VideoClipUploader onComplete={handleClipUpload}>
+                <Add size={16} />
+                ADD CLIP
+              </VideoClipUploader>
             </div>
           </div>
           
