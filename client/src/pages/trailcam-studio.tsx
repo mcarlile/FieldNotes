@@ -328,18 +328,41 @@ export default function TrailcamStudio() {
                   )}
                 </div>
               </div>
-              <div className="flex-1 bg-black flex items-center justify-center">
-                <div className="text-center text-white">
-                  <Video size={64} className="mx-auto mb-4 text-gray-400" />
-                  <p className="text-gray-300">
-                    {selectedClip ? `Playing: ${selectedClip.title}` : 'Select a clip to play'}
-                  </p>
-                  <div className="flex items-center justify-center gap-4 mt-4">
+              <div className="flex-1 bg-black flex items-center justify-center relative">
+                {selectedClip ? (
+                  <video
+                    ref={videoRef}
+                    className="w-full h-full object-contain"
+                    controls
+                    onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+                    onPlay={() => setIsPlaying(true)}
+                    onPause={() => setIsPlaying(false)}
+                    data-testid="video-player"
+                  >
+                    <source src={selectedClip.url} type={`video/${selectedClip.videoFormat?.toLowerCase() || 'mp4'}`} />
+                    Your browser does not support the video tag.
+                  </video>
+                ) : (
+                  <div className="text-center text-white">
+                    <Video size={64} className="mx-auto mb-4 text-gray-400" />
+                    <p className="text-gray-300">Select a clip to play</p>
+                    <p className="text-gray-500 text-sm mt-2">Upload video clips and click PREVIEW to start</p>
+                  </div>
+                )}
+                
+                {/* Overlay controls when video is playing */}
+                {selectedClip && (
+                  <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex items-center gap-2 bg-black/50 rounded-lg px-4 py-2">
                     <CarbonButton 
                       kind="ghost" 
                       size="sm" 
                       renderIcon={SkipBack}
                       className="text-white"
+                      onClick={() => {
+                        if (videoRef.current) {
+                          videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 10);
+                        }
+                      }}
                       data-testid="button-skip-back"
                     />
                     <CarbonButton 
@@ -347,7 +370,15 @@ export default function TrailcamStudio() {
                       size="lg" 
                       renderIcon={isPlaying ? Pause : Play}
                       className="text-white"
-                      onClick={() => setIsPlaying(!isPlaying)}
+                      onClick={() => {
+                        if (videoRef.current) {
+                          if (isPlaying) {
+                            videoRef.current.pause();
+                          } else {
+                            videoRef.current.play();
+                          }
+                        }
+                      }}
                       data-testid="button-play-pause"
                     />
                     <CarbonButton 
@@ -355,10 +386,21 @@ export default function TrailcamStudio() {
                       size="sm" 
                       renderIcon={SkipForward}
                       className="text-white"
+                      onClick={() => {
+                        if (videoRef.current) {
+                          videoRef.current.currentTime = Math.min(
+                            videoRef.current.duration || 0, 
+                            videoRef.current.currentTime + 10
+                          );
+                        }
+                      }}
                       data-testid="button-skip-forward"
                     />
+                    <span className="text-white text-sm ml-2">
+                      {formatTime(currentTime)} / {videoRef.current?.duration ? formatTime(videoRef.current.duration) : '0:00'}
+                    </span>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
