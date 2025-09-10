@@ -8,7 +8,6 @@ import {
   InlineNotification,
   TextInput,
   NumberInput,
-  ColorPicker,
   Form,
   FormGroup,
   Stack,
@@ -363,7 +362,7 @@ export function VideoClipUploader({
                       max={videoDuration || 0}
                       step={1}
                       value={watchedStartTime}
-                      onChange={(e) => setValue('startTime', Number(e.target.value))}
+                      onChange={(e) => setValue('startTime', Number((e.target as HTMLInputElement).value))}
                       invalid={!!errors.startTime}
                       invalidText={errors.startTime?.message}
                       data-testid="input-start-time"
@@ -376,7 +375,7 @@ export function VideoClipUploader({
                       max={videoDuration || 0}
                       step={1}
                       value={watchedEndTime}
-                      onChange={(e) => setValue('endTime', Number(e.target.value))}
+                      onChange={(e) => setValue('endTime', Number((e.target as HTMLInputElement).value))}
                       invalid={!!errors.endTime || watchedEndTime <= watchedStartTime}
                       invalidText={errors.endTime?.message || (watchedEndTime <= watchedStartTime ? "End time must be after start time" : "")}
                       data-testid="input-end-time"
