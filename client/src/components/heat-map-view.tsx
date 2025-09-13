@@ -15,7 +15,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
   const map = useRef<mapboxgl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [highlightedDensity, setHighlightedDensity] = useState<string | null>(null);
-  const [is3DMode, setIs3DMode] = useState(true);
+  const [is3DMode, setIs3DMode] = useState(false);
   const [selectedActivityType, setSelectedActivityType] = useState<string | null>(null);
   const [selectedMapStyle, setSelectedMapStyle] = useState("outdoors-v11");
   const [webGLSupported, setWebGLSupported] = useState<boolean>(true);
@@ -156,14 +156,14 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     }
 
     try {
-      // Initialize map with subtle 3D perspective by default
+      // Initialize map in 2D mode by default
       map.current = new mapboxgl.Map({
         container: mapContainer.current,
         style: "mapbox://styles/mapbox/outdoors-v11",
         center: [-120.2, 39.3], // Default center (Tahoe area)
         zoom: 10,
-        pitch: 55, // Strong 3D tilt for dramatic perspective
-        bearing: -15, // More rotation for dynamic view
+        pitch: 0, // Flat 2D view by default
+        bearing: 0, // No rotation
       });
     } catch (error) {
       console.error("Failed to create Mapbox map:", error);
@@ -173,46 +173,21 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     }
 
     map.current.on("load", () => {
-      // Enable 3D terrain by default since is3DMode starts as true
+      // Start in 2D mode, only add terrain source for later 3D toggle
       if (map.current) {
-        // Add terrain source for 3D mode
+        // Add terrain source but don't apply it by default
         map.current.addSource('mapbox-dem', {
           type: 'raster-dem',
           url: 'mapbox://mapbox.mapbox-terrain-dem-v1',
           tileSize: 512,
           maxzoom: 14
         });
-
-        // Apply 3D settings directly without style checks
-        try {
-          // Set terrain with dramatic elevation  
-          map.current.setTerrain({ source: 'mapbox-dem', exaggeration: 4.0 });
-          
-          // Add atmospheric sky layer
-          map.current.addLayer({
-            id: 'sky',
-            type: 'sky',
-            paint: {
-              'sky-type': 'atmosphere',
-              'sky-atmosphere-sun': [0.0, 0.0],
-              'sky-atmosphere-sun-intensity': 15
-            }
-          });
-        } catch (error) {
-          console.log('3D terrain will load after style finishes');
-        }
+        // Don't apply 3D settings by default since is3DMode starts as false
       }
     });
 
-    // Force 3D camera angle after a longer delay to ensure everything is ready  
+    // Set map as loaded after style loads
     map.current.on("styledata", () => {
-      setTimeout(() => {
-        if (map.current && is3DMode) {
-          // Set camera directly without animation
-          map.current.setPitch(55);
-          map.current.setBearing(-15);
-        }
-      }, 1000);
       setMapLoaded(true);
     });
 
