@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
-import { initMapbox } from "@/lib/mapbox";
+import { initMapbox, isWebGLSupported } from "@/lib/mapbox";
 import { useTheme } from "@/contexts/theme-context";
 import type { FieldNote } from "@shared/schema";
 import { parseGpxData } from "@shared/gpx-utils";
@@ -18,6 +18,8 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
   const [is3DMode, setIs3DMode] = useState(true);
   const [selectedActivityType, setSelectedActivityType] = useState<string | null>(null);
   const [selectedMapStyle, setSelectedMapStyle] = useState("outdoors-v11");
+  const [webGLSupported, setWebGLSupported] = useState<boolean>(true);
+  const [mapError, setMapError] = useState<string | null>(null);
 
   // Theme-aware colors
   const getThemeColors = () => {
@@ -137,22 +139,38 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
   useEffect(() => {
     if (!mapContainer.current) return;
 
+    // Check WebGL support first
+    if (!isWebGLSupported()) {
+      setWebGLSupported(false);
+      setMapError("WebGL is not supported in this environment. Maps require WebGL for 3D rendering.");
+      return;
+    }
+
     try {
       initMapbox();
     } catch (error) {
       console.error("Failed to initialize Mapbox:", error);
+      setMapError("Failed to initialize Mapbox. Please check your API keys.");
+      setMapLoaded(false);
       return;
     }
 
-    // Initialize map with subtle 3D perspective by default
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: "mapbox://styles/mapbox/outdoors-v11",
-      center: [-120.2, 39.3], // Default center (Tahoe area)
-      zoom: 10,
-      pitch: 55, // Strong 3D tilt for dramatic perspective
-      bearing: -15, // More rotation for dynamic view
-    });
+    try {
+      // Initialize map with subtle 3D perspective by default
+      map.current = new mapboxgl.Map({
+        container: mapContainer.current,
+        style: "mapbox://styles/mapbox/outdoors-v11",
+        center: [-120.2, 39.3], // Default center (Tahoe area)
+        zoom: 10,
+        pitch: 55, // Strong 3D tilt for dramatic perspective
+        bearing: -15, // More rotation for dynamic view
+      });
+    } catch (error) {
+      console.error("Failed to create Mapbox map:", error);
+      setMapError("Failed to create map. WebGL might not be available.");
+      setMapLoaded(false);
+      return;
+    }
 
     map.current.on("load", () => {
       // Enable 3D terrain by default since is3DMode starts as true
@@ -266,6 +284,8 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     if (!map.current.isStyleLoaded()) return;
     
     console.log('Rendering heat map with', filteredFieldNotes.length, 'field notes');
+
+    try {
 
     // Remove existing layers and sources more safely
     const existingLayers = [
@@ -763,6 +783,13 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
         });
       });
     });
+    
+    } catch (error) {
+      console.error("Failed to render heatmap routes:", error);
+      setMapLoaded(false);
+      // Optionally show user-friendly error message
+      console.warn("Heatmap rendering failed, possibly due to WebGL issues. Try refreshing the page.");
+    }
   };
 
   // Use useEffect to trigger heat map rendering
@@ -1036,8 +1063,28 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
           </div>
         </div>
       )}
+
+      {mapError && (
+        <div className="absolute inset-0 bg-background flex items-center justify-center">
+          <div className="text-center max-w-md px-4">
+            <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-destructive/10 flex items-center justify-center">
+              <svg className="w-6 h-6 text-destructive" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-foreground mb-2">Map Unavailable</h3>
+            <p className="text-muted-foreground text-sm mb-4">{mapError}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm hover:bg-primary/90 transition-colors"
+            >
+              Reload Page
+            </button>
+          </div>
+        </div>
+      )}
       
-      {!mapLoaded && fieldNotes.length > 0 && (
+      {!mapLoaded && fieldNotes.length > 0 && !mapError && (
         <div className="absolute inset-0 bg-background flex items-center justify-center">
           <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
