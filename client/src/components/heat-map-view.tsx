@@ -258,7 +258,6 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     // Add style loading check to prevent errors
     if (!map.current.isStyleLoaded()) return;
     
-    console.log('Rendering heat map with', filteredFieldNotes.length, 'field notes');
 
     try {
 
@@ -334,16 +333,14 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       });
     });
 
-    console.log('Heat map route analysis:', routeStats);
-    console.log(`Total coordinates from ${filteredFieldNotes.length} field notes: ${allCoordinates.length}`);
 
     if (allCoordinates.length === 0) {
       console.log('No valid coordinates found for heat map');
       return;
     }
 
-    // Create a more precise overlap detection system
-    const gridSize = 0.0005; // Smaller grid for better precision (degrees)
+    // Create an optimized overlap detection system
+    const gridSize = 0.002; // Larger grid for better performance (degrees)
     const routeSegments = new Map<string, Set<string>>(); // Track which routes pass through each grid cell
     
     // First pass: map each route's path through grid cells
@@ -389,7 +386,6 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     });
 
     const maxOverlap = Math.max(...Array.from(overlapCounts.values()), 1);
-    console.log(`Grid analysis: ${routeSegments.size} cells, max overlap: ${maxOverlap} routes`);
     
     // Create GeoJSON features for each complete route
     const features: any[] = [];
@@ -434,7 +430,6 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
           sampledCoords.push(coordinates[coordinates.length - 1]);
         }
 
-        console.log(`Route "${note.title}": ${coordinates.length} coords → ${sampledCoords.length} sampled (rate: ${sampleRate})`);
 
         // Create line segments with overlap density calculation
         for (let i = 0; i < sampledCoords.length - 1; i++) {
@@ -772,44 +767,48 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     renderHeatMap();
   }, [filteredFieldNotes, mapLoaded, theme, selectedMapStyle]);
 
-  // Also render when map style finishes loading
+  // Also render when map style finishes loading (but debounced)
   useEffect(() => {
     if (!map.current) return;
     
+    let styleLoadTimeout: NodeJS.Timeout;
+    
     const handleStyleLoad = () => {
-      console.log('Style loaded, re-rendering heat map');
-      setTimeout(() => renderHeatMap(), 200); // Give time for terrain to settle
+      // Debounce multiple style load events
+      clearTimeout(styleLoadTimeout);
+      styleLoadTimeout = setTimeout(() => {
+        if (mapLoaded && filteredFieldNotes.length > 0) {
+          renderHeatMap();
+        }
+      }, 100); // Reduced delay
     };
     
     map.current.on('style.load', handleStyleLoad);
     
     return () => {
+      clearTimeout(styleLoadTimeout);
       if (map.current) {
         map.current.off('style.load', handleStyleLoad);
       }
     };
-  }, []);
+  }, [mapLoaded, filteredFieldNotes.length]);
 
-  // Retry mechanism for robustness
+  // Simplified retry mechanism - only check once after a longer delay
   useEffect(() => {
-    if (!map.current || !mapLoaded) return;
+    if (!map.current || !mapLoaded || filteredFieldNotes.length === 0) return;
     
-    const checkAndRetryHeatMap = () => {
-      // Check if heat map layers exist, if not, try to re-render
+    // Single check after initial load to ensure layers exist
+    const checkTimeout = setTimeout(() => {
       const heatMapLayers = ['route-heat-single', 'route-heat-medium', 'route-heat-high'];
       const missingLayers = heatMapLayers.filter(layerId => !map.current?.getLayer(layerId));
       
-      if (missingLayers.length > 0 && filteredFieldNotes.length > 0) {
-        console.log('Missing heat map layers detected, re-rendering:', missingLayers);
+      if (missingLayers.length > 0) {
         renderHeatMap();
       }
-    };
+    }, 1000);
     
-    // Check periodically for missing layers
-    const intervalId = setInterval(checkAndRetryHeatMap, 2000);
-    
-    return () => clearInterval(intervalId);
-  }, [mapLoaded, filteredFieldNotes.length]);
+    return () => clearTimeout(checkTimeout);
+  }, [mapLoaded, filteredFieldNotes]);
 
   // Handle density highlighting functionality
   const handleDensityHighlight = (density: string) => {
