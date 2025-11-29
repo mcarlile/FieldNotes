@@ -5,6 +5,7 @@ import { insertFieldNoteSchema, insertPhotoSchema, insertTrailcamProjectSchema, 
 import { ObjectStorageService, ObjectNotFoundError, objectStorageService } from "./objectStorage";
 import { extractExifData, extractExifFromBuffer } from "./exif-extractor";
 import { startVideoProcessing } from "./videoProcessor";
+import { resolveClipCoordinates } from "@shared/gpx-utils";
 import multer from 'multer';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -648,6 +649,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Normalize the URL if it's a full storage URL
       if (validatedData.url) {
         validatedData.url = objectStorageService.normalizeObjectEntityPath(validatedData.url);
+      }
+      
+      // Fetch project to get GPX data for coordinate calculation
+      const project = await storage.getTrailcamProjectById(validatedData.projectId);
+      if (project?.gpxData) {
+        const coords = resolveClipCoordinates(
+          project.gpxData, 
+          validatedData.startTime, 
+          validatedData.endTime
+        );
+        console.log(`Calculated clip coordinates: start(${coords.startLatitude}, ${coords.startLongitude}), end(${coords.endLatitude}, ${coords.endLongitude})`);
+        
+        validatedData.startLatitude = coords.startLatitude;
+        validatedData.startLongitude = coords.startLongitude;
+        validatedData.endLatitude = coords.endLatitude;
+        validatedData.endLongitude = coords.endLongitude;
       }
       
       const clip = await storage.createVideoClip(validatedData);
