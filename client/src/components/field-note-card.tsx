@@ -69,8 +69,8 @@ export default function FieldNoteCard({ fieldNote, searchTerm }: FieldNoteCardPr
           <span className="flex-shrink-0">{formatDate(fieldNote.date.toString())}</span>
           <div className="flex items-center gap-2 text-right">
             {fieldNote.photoCount !== undefined && fieldNote.photoCount > 0 && (
-              <span className="flex items-center gap-1">
-                <Camera size={12} />
+              <span className="flex items-center gap-1 pointer-events-none">
+                <Camera size={12} className="shrink-0" />
                 {fieldNote.photoCount}
               </span>
             )}

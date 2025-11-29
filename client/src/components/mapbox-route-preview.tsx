@@ -1,7 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import type { FieldNote } from "@shared/schema";
 import { parseGpxData } from "@shared/gpx-utils";
+import { isWebGLSupported } from "@/lib/mapbox";
 
 interface MapboxRoutePreviewProps {
   fieldNote: FieldNote;
@@ -11,6 +12,7 @@ interface MapboxRoutePreviewProps {
 export default function MapboxRoutePreview({ fieldNote, className = "" }: MapboxRoutePreviewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
+  const [mapError, setMapError] = useState<boolean>(false);
 
   useEffect(() => {
     if (!mapContainer.current || !fieldNote.gpxData) return;
@@ -40,48 +42,60 @@ export default function MapboxRoutePreview({ fieldNote, className = "" }: Mapbox
       return;
     }
 
+    // Check WebGL support before initializing map
+    if (!isWebGLSupported()) {
+      setMapError(true);
+      return;
+    }
+
     // Initialize the map only once
     if (!map.current) {
-      mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
-      
-      // Calculate initial bounds and center
-      let initialCenter: [number, number] = [0, 0];
-      let initialZoom = 1;
-      
-      if (coordinates.length > 0) {
-        const bounds = coordinates.reduce((bounds, coord) => {
-          return bounds.extend(coord);
-        }, new mapboxgl.LngLatBounds(coordinates[0], coordinates[0]));
+      try {
+        mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
         
-        initialCenter = bounds.getCenter().toArray() as [number, number];
+        // Calculate initial bounds and center
+        let initialCenter: [number, number] = [0, 0];
+        let initialZoom = 1;
         
-        // Calculate appropriate zoom level for the bounds
-        const ne = bounds.getNorthEast();
-        const sw = bounds.getSouthWest();
-        const maxZoom = 14;
+        if (coordinates.length > 0) {
+          const bounds = coordinates.reduce((bounds, coord) => {
+            return bounds.extend(coord);
+          }, new mapboxgl.LngLatBounds(coordinates[0], coordinates[0]));
+          
+          initialCenter = bounds.getCenter().toArray() as [number, number];
+          
+          // Calculate appropriate zoom level for the bounds
+          const ne = bounds.getNorthEast();
+          const sw = bounds.getSouthWest();
+          const maxZoom = 14;
+          
+          // Simple zoom calculation based on coordinate span
+          const latSpan = ne.lat - sw.lat;
+          const lngSpan = ne.lng - sw.lng;
+          const maxSpan = Math.max(latSpan, lngSpan);
+          
+          if (maxSpan > 10) initialZoom = 4;
+          else if (maxSpan > 5) initialZoom = 6;
+          else if (maxSpan > 1) initialZoom = 8;
+          else if (maxSpan > 0.5) initialZoom = 10;
+          else if (maxSpan > 0.1) initialZoom = 12;
+          else initialZoom = maxZoom;
+        }
         
-        // Simple zoom calculation based on coordinate span
-        const latSpan = ne.lat - sw.lat;
-        const lngSpan = ne.lng - sw.lng;
-        const maxSpan = Math.max(latSpan, lngSpan);
-        
-        if (maxSpan > 10) initialZoom = 4;
-        else if (maxSpan > 5) initialZoom = 6;
-        else if (maxSpan > 1) initialZoom = 8;
-        else if (maxSpan > 0.5) initialZoom = 10;
-        else if (maxSpan > 0.1) initialZoom = 12;
-        else initialZoom = maxZoom;
+        map.current = new mapboxgl.Map({
+          container: mapContainer.current,
+          style: 'mapbox://styles/mapbox/outdoors-v12',
+          center: initialCenter,
+          zoom: initialZoom,
+          interactive: false, // Disable interactions for preview
+          attributionControl: false,
+          logoPosition: 'top-right'
+        });
+      } catch (error) {
+        console.warn('Failed to initialize map:', error);
+        setMapError(true);
+        return;
       }
-      
-      map.current = new mapboxgl.Map({
-        container: mapContainer.current,
-        style: 'mapbox://styles/mapbox/outdoors-v12',
-        center: initialCenter,
-        zoom: initialZoom,
-        interactive: false, // Disable interactions for preview
-        attributionControl: false,
-        logoPosition: 'top-right'
-      });
 
       map.current.on('load', () => {
         if (!map.current || coordinates.length === 0) return;
@@ -136,11 +150,11 @@ export default function MapboxRoutePreview({ fieldNote, className = "" }: Mapbox
     };
   }, [fieldNote.gpxData]);
 
-  // Show fallback when no valid GPX data
-  if (!fieldNote.gpxData) {
+  // Show fallback when no valid GPX data or map error
+  if (!fieldNote.gpxData || mapError) {
     return (
       <div className={`bg-muted flex items-center justify-center text-muted-foreground text-sm font-ibm ${className}`}>
-        No Route Data
+        {mapError ? 'Map Preview' : 'No Route Data'}
       </div>
     );
   }
