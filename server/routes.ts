@@ -2,8 +2,9 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertFieldNoteSchema, insertPhotoSchema, insertTrailcamProjectSchema, insertVideoClipSchema } from "@shared/schema";
-import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
+import { ObjectStorageService, ObjectNotFoundError, objectStorageService } from "./objectStorage";
 import { extractExifData, extractExifFromBuffer } from "./exif-extractor";
+import { startVideoProcessing } from "./videoProcessor";
 import multer from 'multer';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -420,7 +421,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Object Storage endpoints for photo uploads
-  const objectStorageService = new ObjectStorageService();
+  // Note: objectStorageService is imported from ./objectStorage
 
   // Endpoint to get upload URL for photos (both POST and PUT for compatibility)
   app.post("/api/photos/upload", async (req, res) => {
@@ -651,6 +652,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const clip = await storage.createVideoClip(validatedData);
       res.status(201).json(clip);
+      
+      // Start async video processing (transcoding + thumbnail generation)
+      console.log(`Starting video processing for clip ${clip.id}`);
+      startVideoProcessing(clip.id);
     } catch (error) {
       console.error("Error creating video clip:", error);
       res.status(400).json({ message: "Failed to create video clip" });
@@ -685,6 +690,106 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error deleting video clip:", error);
       res.status(500).json({ message: "Failed to delete video clip" });
+    }
+  });
+
+  // Stream video clip (serves the video for browser playback)
+  app.get("/api/video-clips/:id/stream", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const clip = await storage.getVideoClipById(id);
+      
+      if (!clip) {
+        return res.status(404).json({ message: "Video clip not found" });
+      }
+      
+      // Use transcoded version if available, otherwise fall back to original
+      const videoUrl = clip.transcodedUrl || clip.url;
+      
+      const file = await objectStorageService.getFileFromRawPath(videoUrl);
+      const [metadata] = await file.getMetadata();
+      
+      // Handle range requests for seeking
+      const range = req.headers.range;
+      const fileSize = Number(metadata.size);
+      
+      if (range) {
+        const parts = range.replace(/bytes=/, '').split('-');
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+        const chunkSize = end - start + 1;
+        
+        res.writeHead(206, {
+          'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': chunkSize,
+          'Content-Type': 'video/mp4',
+        });
+        
+        const stream = file.createReadStream({ start, end });
+        stream.pipe(res);
+      } else {
+        res.writeHead(200, {
+          'Content-Length': fileSize,
+          'Content-Type': 'video/mp4',
+          'Accept-Ranges': 'bytes',
+        });
+        
+        const stream = file.createReadStream();
+        stream.pipe(res);
+      }
+    } catch (error) {
+      console.error("Error streaming video:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ message: "Failed to stream video" });
+      }
+    }
+  });
+
+  // Stream video thumbnail
+  app.get("/api/video-clips/:id/thumbnail", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const clip = await storage.getVideoClipById(id);
+      
+      if (!clip || !clip.thumbnailUrl) {
+        return res.status(404).json({ message: "Thumbnail not found" });
+      }
+      
+      const file = await objectStorageService.getFileFromRawPath(clip.thumbnailUrl);
+      await objectStorageService.downloadObject(file, res, 86400); // 24 hour cache
+    } catch (error) {
+      console.error("Error serving thumbnail:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ message: "Failed to serve thumbnail" });
+      }
+    }
+  });
+
+  // Retry video processing (if it failed)
+  app.post("/api/video-clips/:id/reprocess", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const clip = await storage.getVideoClipById(id);
+      
+      if (!clip) {
+        return res.status(404).json({ message: "Video clip not found" });
+      }
+      
+      if (clip.processingStatus === 'processing') {
+        return res.status(400).json({ message: "Video is already being processed" });
+      }
+      
+      await storage.updateVideoClip(id, { 
+        processingStatus: 'pending',
+        processingError: null 
+      });
+      
+      startVideoProcessing(id);
+      res.json({ message: "Video processing started" });
+    } catch (error) {
+      console.error("Error reprocessing video:", error);
+      res.status(500).json({ message: "Failed to start video processing" });
     }
   });
 
@@ -879,7 +984,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`Assembling ${chunks.length} chunks for upload ${uploadKey}`);
 
-      const objectStorageService = new ObjectStorageService();
       const uploadURL = await objectStorageService.getObjectEntityUploadURL();
 
       // Assemble file by streaming chunks

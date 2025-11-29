@@ -192,7 +192,72 @@ export class ObjectStorageService {
     const entityId = rawObjectPath.slice(objectEntityDir.length);
     return `/objects/${entityId}`;
   }
+
+  // Downloads an object to a write stream (for video processing)
+  async downloadObjectToStream(file: File, writeStream: NodeJS.WritableStream): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const readStream = file.createReadStream();
+      
+      readStream.on('error', (err) => {
+        reject(err);
+      });
+      
+      writeStream.on('error', (err) => {
+        reject(err);
+      });
+      
+      writeStream.on('finish', () => {
+        resolve();
+      });
+      
+      readStream.pipe(writeStream);
+    });
+  }
+
+  // Gets a file from a raw object storage path (for video processing)
+  async getFileFromRawPath(rawPath: string): Promise<File> {
+    // Handle different path formats
+    let parsedPath = rawPath;
+    
+    // Remove /objects/ prefix if present
+    if (rawPath.startsWith('/objects/')) {
+      parsedPath = rawPath.slice('/objects/'.length);
+      let entityDir = this.getPrivateObjectDir();
+      if (!entityDir.endsWith('/')) {
+        entityDir = `${entityDir}/`;
+      }
+      parsedPath = `${entityDir}${parsedPath}`;
+    }
+    
+    // Handle direct bucket paths like /replit-objstore-.../...
+    if (parsedPath.startsWith('/')) {
+      const { bucketName, objectName } = parseObjectPath(parsedPath);
+      const bucket = objectStorageClient.bucket(bucketName);
+      return bucket.file(objectName);
+    }
+    
+    throw new ObjectNotFoundError();
+  }
+
+  // Generate upload URL for a specific filename (for processed videos)
+  async generateUploadUrl(filename: string): Promise<string> {
+    const privateObjectDir = this.getPrivateObjectDir();
+    const objectId = randomUUID();
+    const fullPath = `${privateObjectDir}/processed/${objectId}`;
+    
+    const { bucketName, objectName } = parseObjectPath(fullPath);
+    
+    return signObjectURL({
+      bucketName,
+      objectName,
+      method: 'PUT',
+      ttlSec: 3600,
+    });
+  }
 }
+
+// Export singleton instance
+export const objectStorageService = new ObjectStorageService();
 
 function parseObjectPath(path: string): {
   bucketName: string;
