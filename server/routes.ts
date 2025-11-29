@@ -657,7 +657,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const coords = resolveClipCoordinates(
           project.gpxData, 
           validatedData.startTime, 
-          validatedData.endTime
+          validatedData.endTime,
+          project.duration || undefined
         );
         console.log(`Calculated clip coordinates: start(${coords.startLatitude}, ${coords.startLongitude}), end(${coords.endLatitude}, ${coords.endLongitude})`);
         
@@ -692,6 +693,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error updating video clip:", error);
       res.status(400).json({ message: "Failed to update video clip" });
+    }
+  });
+
+  // Recalculate GPS coordinates for a video clip
+  app.post("/api/video-clips/:id/recalculate-coordinates", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const clip = await storage.getVideoClipById(id);
+      
+      if (!clip) {
+        return res.status(404).json({ message: "Video clip not found" });
+      }
+      
+      const project = await storage.getTrailcamProjectById(clip.projectId);
+      if (!project?.gpxData) {
+        return res.status(400).json({ message: "Project has no GPX data" });
+      }
+      
+      const coords = resolveClipCoordinates(
+        project.gpxData, 
+        clip.startTime, 
+        clip.endTime,
+        project.duration || undefined
+      );
+      
+      console.log(`Recalculated clip ${id} coordinates: start(${coords.startLatitude}, ${coords.startLongitude}), end(${coords.endLatitude}, ${coords.endLongitude})`);
+      
+      const updatedClip = await storage.updateVideoClip(id, {
+        startLatitude: coords.startLatitude,
+        startLongitude: coords.startLongitude,
+        endLatitude: coords.endLatitude,
+        endLongitude: coords.endLongitude,
+      });
+      
+      res.json(updatedClip);
+    } catch (error) {
+      console.error("Error recalculating coordinates:", error);
+      res.status(500).json({ message: "Failed to recalculate coordinates" });
     }
   });
 

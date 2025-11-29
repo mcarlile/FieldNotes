@@ -299,40 +299,104 @@ export function interpolateCoordinatesAtOffset(
 
 /**
  * Resolves start and end coordinates for a video clip based on its timeline position
+ * Supports both raw GPX strings and parsed JSON with coordinates array
  */
 export function resolveClipCoordinates(
   gpxData: any, 
   clipStartTime: number, 
-  clipEndTime: number
+  clipEndTime: number,
+  totalDuration?: number // Total project duration in seconds
 ): { 
   startLatitude: number | null; 
   startLongitude: number | null; 
   endLatitude: number | null; 
   endLongitude: number | null;
 } {
-  // If gpxData contains raw GPX string, parse it; otherwise it might be parsed JSON
-  let track: TrackWithTimestamps;
-  
+  // If gpxData contains raw GPX string, parse it and use timestamp-based interpolation
   if (typeof gpxData === 'string') {
-    track = parseGpxWithTimestamps(gpxData);
-  } else if (gpxData && typeof gpxData.rawGpx === 'string') {
-    track = parseGpxWithTimestamps(gpxData.rawGpx);
-  } else {
-    return { 
-      startLatitude: null, 
-      startLongitude: null, 
-      endLatitude: null, 
-      endLongitude: null 
+    const track = parseGpxWithTimestamps(gpxData);
+    const startCoords = interpolateCoordinatesAtOffset(track, clipStartTime);
+    const endCoords = interpolateCoordinatesAtOffset(track, clipEndTime);
+    
+    return {
+      startLatitude: startCoords?.latitude ?? null,
+      startLongitude: startCoords?.longitude ?? null,
+      endLatitude: endCoords?.latitude ?? null,
+      endLongitude: endCoords?.longitude ?? null
     };
   }
   
-  const startCoords = interpolateCoordinatesAtOffset(track, clipStartTime);
-  const endCoords = interpolateCoordinatesAtOffset(track, clipEndTime);
+  if (gpxData && typeof gpxData.rawGpx === 'string') {
+    const track = parseGpxWithTimestamps(gpxData.rawGpx);
+    const startCoords = interpolateCoordinatesAtOffset(track, clipStartTime);
+    const endCoords = interpolateCoordinatesAtOffset(track, clipEndTime);
+    
+    return {
+      startLatitude: startCoords?.latitude ?? null,
+      startLongitude: startCoords?.longitude ?? null,
+      endLatitude: endCoords?.latitude ?? null,
+      endLongitude: endCoords?.longitude ?? null
+    };
+  }
   
-  return {
-    startLatitude: startCoords?.latitude ?? null,
-    startLongitude: startCoords?.longitude ?? null,
-    endLatitude: endCoords?.latitude ?? null,
-    endLongitude: endCoords?.longitude ?? null
+  // Handle parsed JSON format with coordinates array (distance-based interpolation)
+  if (gpxData && Array.isArray(gpxData.coordinates) && gpxData.coordinates.length > 0) {
+    const coordinates: [number, number][] = gpxData.coordinates;
+    const numPoints = coordinates.length;
+    
+    // If no duration provided, we can't do time-based interpolation
+    // Use simple index-based interpolation assuming linear time progression
+    if (!totalDuration || totalDuration <= 0) {
+      // Without duration, use the first and last points as fallback
+      const firstPoint = coordinates[0];
+      const lastPoint = coordinates[numPoints - 1];
+      
+      return {
+        startLatitude: firstPoint[1],
+        startLongitude: firstPoint[0],
+        endLatitude: lastPoint[1],
+        endLongitude: lastPoint[0]
+      };
+    }
+    
+    // Time-based interpolation: map clip times to positions along the track
+    const startFraction = Math.max(0, Math.min(1, clipStartTime / totalDuration));
+    const endFraction = Math.max(0, Math.min(1, clipEndTime / totalDuration));
+    
+    // Find the interpolated position for start time
+    const startIndex = startFraction * (numPoints - 1);
+    const startIndexLow = Math.floor(startIndex);
+    const startIndexHigh = Math.min(startIndexLow + 1, numPoints - 1);
+    const startIndexFraction = startIndex - startIndexLow;
+    
+    const startLat = coordinates[startIndexLow][1] + 
+      startIndexFraction * (coordinates[startIndexHigh][1] - coordinates[startIndexLow][1]);
+    const startLon = coordinates[startIndexLow][0] + 
+      startIndexFraction * (coordinates[startIndexHigh][0] - coordinates[startIndexLow][0]);
+    
+    // Find the interpolated position for end time
+    const endIndex = endFraction * (numPoints - 1);
+    const endIndexLow = Math.floor(endIndex);
+    const endIndexHigh = Math.min(endIndexLow + 1, numPoints - 1);
+    const endIndexFraction = endIndex - endIndexLow;
+    
+    const endLat = coordinates[endIndexLow][1] + 
+      endIndexFraction * (coordinates[endIndexHigh][1] - coordinates[endIndexLow][1]);
+    const endLon = coordinates[endIndexLow][0] + 
+      endIndexFraction * (coordinates[endIndexHigh][0] - coordinates[endIndexLow][0]);
+    
+    return {
+      startLatitude: startLat,
+      startLongitude: startLon,
+      endLatitude: endLat,
+      endLongitude: endLon
+    };
+  }
+  
+  return { 
+    startLatitude: null, 
+    startLongitude: null, 
+    endLatitude: null, 
+    endLongitude: null 
   };
 }
