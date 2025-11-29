@@ -8,17 +8,87 @@ import multer from 'multer';
 import * as fs from 'fs';
 import * as path from 'path';
 
+import * as crypto from 'crypto';
+
 const CHUNK_UPLOAD_DIR = '/tmp/video-chunks';
 const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_VIDEO_SIZE = 1.5 * 1024 * 1024 * 1024; // 1.5GB
 const MAX_CHUNKS = 200; // 200 chunks * 10MB = 2GB max
 const UPLOAD_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+const UPLOAD_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour token validity
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const RATE_LIMIT_MAX_REQUESTS = 100; // 100 requests per minute per IP
+const MAX_CONCURRENT_UPLOADS_PER_IP = 3;
+
+// Secret for signing upload tokens (in production, use env variable)
+const UPLOAD_TOKEN_SECRET = process.env.UPLOAD_TOKEN_SECRET || crypto.randomBytes(32).toString('hex');
 
 // Cleanup old uploads periodically
-const activeUploads = new Map<string, { startTime: number; totalChunks: number; receivedChunks: Set<number> }>();
+const activeUploads = new Map<string, { 
+  startTime: number; 
+  totalChunks: number; 
+  receivedChunks: Set<number>;
+  token: string;
+  ip: string;
+}>();
+
+// Valid upload tokens
+const validTokens = new Map<string, { uploadKey: string; expiresAt: number; ip: string }>();
+
+// Rate limiting by IP
+const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
+
+// Concurrent uploads by IP
+const uploadsPerIP = new Map<string, Set<string>>();
 
 if (!fs.existsSync(CHUNK_UPLOAD_DIR)) {
   fs.mkdirSync(CHUNK_UPLOAD_DIR, { recursive: true });
+}
+
+// Generate a signed upload token
+function generateUploadToken(uploadKey: string, ip: string): string {
+  const payload = JSON.stringify({ uploadKey, ip, exp: Date.now() + UPLOAD_TOKEN_TTL_MS });
+  const signature = crypto.createHmac('sha256', UPLOAD_TOKEN_SECRET).update(payload).digest('hex');
+  return Buffer.from(payload).toString('base64') + '.' + signature;
+}
+
+// Verify and decode an upload token
+function verifyUploadToken(token: string, ip: string): { uploadKey: string } | null {
+  try {
+    const [payloadB64, signature] = token.split('.');
+    if (!payloadB64 || !signature) return null;
+    
+    const payload = Buffer.from(payloadB64, 'base64').toString();
+    const expectedSignature = crypto.createHmac('sha256', UPLOAD_TOKEN_SECRET).update(payload).digest('hex');
+    
+    if (signature !== expectedSignature) return null;
+    
+    const data = JSON.parse(payload);
+    if (Date.now() > data.exp) return null;
+    if (data.ip !== ip) return null;
+    
+    return { uploadKey: data.uploadKey };
+  } catch {
+    return null;
+  }
+}
+
+// Check rate limit
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  
+  if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+    rateLimitMap.set(ip, { count: 1, windowStart: now });
+    return true;
+  }
+  
+  if (entry.count >= RATE_LIMIT_MAX_REQUESTS) {
+    return false;
+  }
+  
+  entry.count++;
+  return true;
 }
 
 // Clean up stale uploads on startup and periodically
@@ -30,8 +100,25 @@ function cleanupStaleUploads() {
       if (fs.existsSync(chunkDir)) {
         fs.rmSync(chunkDir, { recursive: true, force: true });
       }
+      
+      // Clean up IP tracking
+      const ipUploads = uploadsPerIP.get(data.ip);
+      if (ipUploads) {
+        ipUploads.delete(key);
+        if (ipUploads.size === 0) {
+          uploadsPerIP.delete(data.ip);
+        }
+      }
+      
       activeUploads.delete(key);
       console.log(`Cleaned up stale upload: ${key}`);
+    }
+  }
+  
+  // Clean up expired tokens
+  for (const [token, data] of validTokens.entries()) {
+    if (now > data.expiresAt) {
+      validTokens.delete(token);
     }
   }
 }
@@ -598,6 +685,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Initialize a chunked video upload and get a signed token
+  app.post("/api/video/init-upload", async (req, res) => {
+    try {
+      const ip = req.ip || req.socket.remoteAddress || 'unknown';
+      
+      // Rate limiting
+      if (!checkRateLimit(ip)) {
+        return res.status(429).json({ message: "Too many requests, please slow down" });
+      }
+      
+      // Check concurrent upload limit
+      const currentUploads = uploadsPerIP.get(ip);
+      if (currentUploads && currentUploads.size >= MAX_CONCURRENT_UPLOADS_PER_IP) {
+        return res.status(429).json({ message: "Maximum concurrent uploads reached" });
+      }
+      
+      // Generate upload key and token
+      const uploadKey = `video-${Date.now()}-${crypto.randomBytes(6).toString('hex')}`;
+      const token = generateUploadToken(uploadKey, ip);
+      
+      // Track token
+      validTokens.set(token, { 
+        uploadKey, 
+        expiresAt: Date.now() + UPLOAD_TOKEN_TTL_MS,
+        ip 
+      });
+      
+      // Track upload per IP
+      if (!uploadsPerIP.has(ip)) {
+        uploadsPerIP.set(ip, new Set());
+      }
+      uploadsPerIP.get(ip)!.add(uploadKey);
+      
+      console.log(`Initialized upload ${uploadKey} for IP ${ip}`);
+      
+      res.json({ uploadKey, token });
+    } catch (error) {
+      console.error("Error initializing upload:", error);
+      res.status(500).json({ message: "Failed to initialize upload" });
+    }
+  });
+
   // Chunked video upload - receive individual chunks
   const chunkUpload = multer({
     storage: multer.memoryStorage(),
@@ -609,18 +738,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/video/upload-chunk", chunkUpload.single('chunk'), async (req, res) => {
     try {
-      const { chunkIndex, totalChunks, uploadKey } = req.body;
+      const ip = req.ip || req.socket.remoteAddress || 'unknown';
+      const { chunkIndex, totalChunks, uploadKey, token } = req.body;
+      
+      // Rate limiting
+      if (!checkRateLimit(ip)) {
+        return res.status(429).json({ message: "Too many requests" });
+      }
       
       if (!req.file) {
         return res.status(400).json({ message: "No chunk data provided" });
       }
       
-      if (!uploadKey || chunkIndex === undefined || !totalChunks) {
+      if (!uploadKey || chunkIndex === undefined || !totalChunks || !token) {
         return res.status(400).json({ message: "Missing required parameters" });
       }
 
-      // Validate upload key format (must be video-timestamp-randomstring)
-      if (!/^video-\d+-[a-z0-9]+$/.test(uploadKey)) {
+      // Verify token
+      const tokenData = verifyUploadToken(token, ip);
+      if (!tokenData || tokenData.uploadKey !== uploadKey) {
+        return res.status(401).json({ message: "Invalid or expired upload token" });
+      }
+
+      // Validate upload key format (must be video-timestamp-randomhex)
+      if (!/^video-\d+-[a-f0-9]+$/.test(uploadKey)) {
         return res.status(400).json({ message: "Invalid upload key format" });
       }
 
@@ -638,10 +779,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           startTime: Date.now(),
           totalChunks: totalChunksNum,
           receivedChunks: new Set(),
+          token,
+          ip,
         });
       }
 
       const uploadState = activeUploads.get(uploadKey)!;
+      
+      // Verify token matches the one used to initialize
+      if (uploadState.token && uploadState.token !== token) {
+        return res.status(401).json({ message: "Token mismatch" });
+      }
       
       // Validate total chunks matches
       if (uploadState.totalChunks !== totalChunksNum) {
@@ -679,14 +827,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Chunked video upload - complete and assemble
   app.post("/api/video/complete-upload", async (req, res) => {
     try {
-      const { uploadKey, filename, contentType } = req.body;
+      const ip = req.ip || req.socket.remoteAddress || 'unknown';
+      const { uploadKey, filename, contentType, token } = req.body;
       
-      if (!uploadKey) {
-        return res.status(400).json({ message: "Upload key is required" });
+      if (!uploadKey || !token) {
+        return res.status(400).json({ message: "Upload key and token are required" });
+      }
+
+      // Verify token
+      const tokenData = verifyUploadToken(token, ip);
+      if (!tokenData || tokenData.uploadKey !== uploadKey) {
+        return res.status(401).json({ message: "Invalid or expired upload token" });
       }
 
       // Validate upload key format
-      if (!/^video-\d+-[a-z0-9]+$/.test(uploadKey)) {
+      if (!/^video-\d+-[a-f0-9]+$/.test(uploadKey)) {
         return res.status(400).json({ message: "Invalid upload key format" });
       }
 
@@ -766,6 +921,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Clean up
       fs.rmSync(chunkDir, { recursive: true, force: true });
+      
+      // Clean up IP tracking and token (uploadState was already retrieved above)
+      if (uploadState) {
+        const ipUploads = uploadsPerIP.get(uploadState.ip);
+        if (ipUploads) {
+          ipUploads.delete(uploadKey);
+          if (ipUploads.size === 0) {
+            uploadsPerIP.delete(uploadState.ip);
+          }
+        }
+        // Invalidate the token
+        validTokens.delete(token);
+      }
+      
       activeUploads.delete(uploadKey);
 
       const url = new URL(uploadURL);
@@ -790,14 +959,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { uploadKey } = req.params;
       
       // Validate upload key format
-      if (!/^video-\d+-[a-z0-9]+$/.test(uploadKey)) {
+      if (!/^video-\d+-[a-f0-9]+$/.test(uploadKey)) {
         return res.status(400).json({ message: "Invalid upload key format" });
       }
 
       const chunkDir = path.join(CHUNK_UPLOAD_DIR, uploadKey);
+      const uploadState = activeUploads.get(uploadKey);
       
       if (fs.existsSync(chunkDir)) {
         fs.rmSync(chunkDir, { recursive: true, force: true });
+      }
+      
+      // Clean up IP tracking and invalidate token
+      if (uploadState) {
+        const ipUploads = uploadsPerIP.get(uploadState.ip);
+        if (ipUploads) {
+          ipUploads.delete(uploadKey);
+          if (ipUploads.size === 0) {
+            uploadsPerIP.delete(uploadState.ip);
+          }
+        }
+        // Invalidate the token
+        validTokens.delete(uploadState.token);
       }
       
       activeUploads.delete(uploadKey);
@@ -810,13 +993,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get upload status for resume capability
-  app.get("/api/video/upload/:uploadKey/status", async (req, res) => {
+  app.post("/api/video/upload/:uploadKey/status", async (req, res) => {
     try {
+      const ip = req.ip || req.socket.remoteAddress || 'unknown';
       const { uploadKey } = req.params;
+      const { token } = req.body;
       
       // Validate upload key format
-      if (!/^video-\d+-[a-z0-9]+$/.test(uploadKey)) {
+      if (!/^video-\d+-[a-f0-9]+$/.test(uploadKey)) {
         return res.status(400).json({ message: "Invalid upload key format" });
+      }
+      
+      // Verify token
+      if (!token) {
+        return res.status(401).json({ message: "Token required" });
+      }
+      const tokenData = verifyUploadToken(token, ip);
+      if (!tokenData || tokenData.uploadKey !== uploadKey) {
+        return res.status(401).json({ message: "Invalid or expired upload token" });
       }
 
       const uploadState = activeUploads.get(uploadKey);

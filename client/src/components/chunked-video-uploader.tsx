@@ -29,6 +29,7 @@ interface ChunkUploadState {
   errorMessage?: string;
   url?: string;
   uploadKey?: string;
+  uploadToken?: string;
   currentChunk?: number;
   totalChunks?: number;
 }
@@ -113,10 +114,25 @@ export function ChunkedVideoUploader({
     });
   }, []);
 
+  const initUpload = async (): Promise<{ uploadKey: string; token: string }> => {
+    const response = await fetch('/api/video/init-upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Failed to initialize upload' }));
+      throw new Error(error.message || 'Failed to initialize upload');
+    }
+    
+    return response.json();
+  };
+
   const uploadChunk = async (
     chunk: Blob, 
     chunkIndex: number, 
     uploadKey: string,
+    token: string,
     totalChunks: number,
     signal: AbortSignal,
     retries: number = 3
@@ -126,6 +142,7 @@ export function ChunkedVideoUploader({
     formData.append('chunkIndex', String(chunkIndex));
     formData.append('totalChunks', String(totalChunks));
     formData.append('uploadKey', uploadKey);
+    formData.append('token', token);
 
     let lastError: Error | null = null;
     
@@ -161,11 +178,11 @@ export function ChunkedVideoUploader({
     throw lastError || new Error('Failed to upload chunk after retries');
   };
 
-  const completeUpload = async (uploadKey: string, filename: string, contentType: string): Promise<string> => {
+  const completeUpload = async (uploadKey: string, token: string, filename: string, contentType: string): Promise<string> => {
     const response = await fetch('/api/video/complete-upload', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uploadKey, filename, contentType }),
+      body: JSON.stringify({ uploadKey, token, filename, contentType }),
     });
 
     if (!response.ok) {
@@ -178,7 +195,6 @@ export function ChunkedVideoUploader({
   };
 
   const uploadFile = async (file: File) => {
-    const uploadKey = `video-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
     
     abortControllerRef.current = new AbortController();
@@ -186,16 +202,25 @@ export function ChunkedVideoUploader({
 
     setUploadState({
       file,
-      status: 'uploading',
+      status: 'preparing',
       progress: 0,
       uploadedBytes: 0,
       totalBytes: file.size,
-      uploadKey,
       currentChunk: 0,
       totalChunks,
     });
 
     try {
+      // Initialize upload and get token
+      const { uploadKey, token } = await initUpload();
+      
+      setUploadState(prev => prev ? {
+        ...prev,
+        status: 'uploading',
+        uploadKey,
+        uploadToken: token,
+      } : null);
+
       for (let i = 0; i < totalChunks; i++) {
         if (isPausedRef.current) {
           setUploadState(prev => prev ? { ...prev, status: 'paused', currentChunk: i } : null);
@@ -206,7 +231,7 @@ export function ChunkedVideoUploader({
         const end = Math.min(start + CHUNK_SIZE, file.size);
         const chunk = file.slice(start, end);
 
-        await uploadChunk(chunk, i, uploadKey, totalChunks, abortControllerRef.current.signal);
+        await uploadChunk(chunk, i, uploadKey, token, totalChunks, abortControllerRef.current.signal);
 
         const uploadedBytes = end;
         const progress = Math.round((uploadedBytes / file.size) * 100);
@@ -219,7 +244,7 @@ export function ChunkedVideoUploader({
         } : null);
       }
 
-      const url = await completeUpload(uploadKey, file.name, file.type);
+      const url = await completeUpload(uploadKey, token, file.name, file.type);
 
       setUploadState(prev => prev ? {
         ...prev,
@@ -306,9 +331,13 @@ export function ChunkedVideoUploader({
     }
   };
 
-  const getUploadStatus = async (uploadKey: string): Promise<{ receivedChunks: number[] } | null> => {
+  const getUploadStatus = async (uploadKey: string, token: string): Promise<{ receivedChunks: number[] } | null> => {
     try {
-      const response = await fetch(`/api/video/upload/${uploadKey}/status`);
+      const response = await fetch(`/api/video/upload/${uploadKey}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      });
       if (!response.ok) return null;
       return response.json();
     } catch {
@@ -317,13 +346,14 @@ export function ChunkedVideoUploader({
   };
 
   const resumeUpload = async () => {
-    if (!uploadState || !uploadState.uploadKey) return;
+    if (!uploadState || !uploadState.uploadKey || !uploadState.uploadToken) return;
 
     const file = uploadState.file;
+    const token = uploadState.uploadToken;
     const totalChunks = uploadState.totalChunks || Math.ceil(file.size / CHUNK_SIZE);
     
     // Get which chunks have already been uploaded
-    const status = await getUploadStatus(uploadState.uploadKey);
+    const status = await getUploadStatus(uploadState.uploadKey, token);
     const uploadedChunks = new Set(status?.receivedChunks || []);
     
     abortControllerRef.current = new AbortController();
@@ -347,7 +377,7 @@ export function ChunkedVideoUploader({
         const end = Math.min(start + CHUNK_SIZE, file.size);
         const chunk = file.slice(start, end);
 
-        await uploadChunk(chunk, i, uploadState.uploadKey!, totalChunks, abortControllerRef.current.signal);
+        await uploadChunk(chunk, i, uploadState.uploadKey!, token, totalChunks, abortControllerRef.current.signal);
         uploadedChunks.add(i);
 
         const uploadedBytes = Math.min((uploadedChunks.size / totalChunks) * file.size, file.size);
@@ -361,7 +391,7 @@ export function ChunkedVideoUploader({
         } : null);
       }
 
-      const url = await completeUpload(uploadState.uploadKey, file.name, file.type);
+      const url = await completeUpload(uploadState.uploadKey, token, file.name, file.type);
 
       setUploadState(prev => prev ? {
         ...prev,
