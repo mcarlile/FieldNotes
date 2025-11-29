@@ -68,7 +68,11 @@ export const videoClips = pgTable("video_clips", {
   projectId: varchar("project_id").references(() => trailcamProjects.id).notNull(),
   title: text("title").notNull(),
   filename: text("filename").notNull(),
-  url: text("url").notNull(),
+  url: text("url").notNull(), // Original high-res video URL
+  transcodedUrl: text("transcoded_url"), // 1080p transcoded version URL
+  thumbnailUrl: text("thumbnail_url"), // First frame thumbnail URL
+  processingStatus: text("processing_status").default("pending"), // pending, processing, ready, error
+  processingError: text("processing_error"), // Error message if processing failed
   startTime: real("start_time").notNull(), // offset from project start in seconds
   endTime: real("end_time").notNull(), // offset from project start in seconds
   duration: real("duration").notNull(), // clip duration in seconds
