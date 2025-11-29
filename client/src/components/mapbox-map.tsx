@@ -220,7 +220,6 @@ export default function MapboxMap({
               display: flex;
               align-items: center;
               justify-content: center;
-              transition: transform 0.2s ease, box-shadow 0.2s ease;
             `;
             
             // Add camera icon inside
@@ -230,16 +229,6 @@ export default function MapboxMap({
                 <path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/>
               </svg>
             `;
-            
-            // Add hover effect
-            markerEl.addEventListener('mouseenter', () => {
-              markerEl.style.transform = 'scale(1.2)';
-              markerEl.style.boxShadow = '0 4px 12px rgba(0, 128, 255, 0.5)';
-            });
-            markerEl.addEventListener('mouseleave', () => {
-              markerEl.style.transform = 'scale(1)';
-              markerEl.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.3)';
-            });
             
             // Add click handler
             markerEl.addEventListener('click', (e) => {
