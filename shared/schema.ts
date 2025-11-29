@@ -76,6 +76,10 @@ export const videoClips = pgTable("video_clips", {
   startTime: real("start_time").notNull(), // offset from project start in seconds
   endTime: real("end_time").notNull(), // offset from project start in seconds
   duration: real("duration").notNull(), // clip duration in seconds
+  startLatitude: real("start_latitude"), // GPS latitude at clip start
+  startLongitude: real("start_longitude"), // GPS longitude at clip start
+  endLatitude: real("end_latitude"), // GPS latitude at clip end
+  endLongitude: real("end_longitude"), // GPS longitude at clip end
   color: text("color").default("#3b82f6"), // timeline color coding
   fileSize: text("file_size"),
   videoFormat: text("video_format"), // MP4, WebM, etc.

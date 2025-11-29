@@ -21,6 +21,21 @@ export interface ElevationPoint {
   coordinates: [number, number]; // [longitude, latitude]
 }
 
+export interface TimedTrackPoint {
+  timestamp: number; // Unix timestamp in milliseconds
+  offsetSeconds: number; // Seconds from track start
+  latitude: number;
+  longitude: number;
+  elevation?: number; // Elevation in meters
+}
+
+export interface TrackWithTimestamps {
+  startTime: Date | null;
+  endTime: Date | null;
+  durationSeconds: number;
+  points: TimedTrackPoint[];
+}
+
 /**
  * Calculates the distance between two GPS coordinates using the Haversine formula
  */
@@ -152,5 +167,172 @@ export function parseGpxData(gpxContent: string): GpxStats {
     date: extractedDate,
     coordinates,
     elevationProfile
+  };
+}
+
+/**
+ * Extracts track points with timestamps from GPX content for time-based interpolation
+ */
+export function parseGpxWithTimestamps(gpxContent: string): TrackWithTimestamps {
+  const DOMParser = getDOMParser();
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(gpxContent, "application/xml");
+  
+  const trackPoints = Array.from(xmlDoc.getElementsByTagName("trkpt"));
+  
+  if (trackPoints.length === 0) {
+    return { startTime: null, endTime: null, durationSeconds: 0, points: [] };
+  }
+  
+  const points: TimedTrackPoint[] = [];
+  let startTimestamp: number | null = null;
+  
+  trackPoints.forEach((point: any) => {
+    const lat = parseFloat(point.getAttribute("lat") || "0");
+    const lon = parseFloat(point.getAttribute("lon") || "0");
+    
+    if (isNaN(lat) || isNaN(lon)) return;
+    
+    // Get timestamp from track point
+    const timeElements = point.getElementsByTagName("time");
+    let timestamp: number | null = null;
+    
+    if (timeElements.length > 0 && timeElements[0].textContent) {
+      timestamp = new Date(timeElements[0].textContent).getTime();
+    }
+    
+    // Get elevation if available
+    let elevation: number | undefined;
+    const eleElements = point.getElementsByTagName("ele");
+    if (eleElements.length > 0) {
+      const ele = parseFloat(eleElements[0].textContent || "0");
+      if (!isNaN(ele)) {
+        elevation = ele;
+      }
+    }
+    
+    if (timestamp !== null) {
+      if (startTimestamp === null) {
+        startTimestamp = timestamp;
+      }
+      
+      points.push({
+        timestamp,
+        offsetSeconds: (timestamp - startTimestamp) / 1000,
+        latitude: lat,
+        longitude: lon,
+        elevation
+      });
+    }
+  });
+  
+  // Sort by timestamp
+  points.sort((a, b) => a.timestamp - b.timestamp);
+  
+  const startTime = points.length > 0 ? new Date(points[0].timestamp) : null;
+  const endTime = points.length > 0 ? new Date(points[points.length - 1].timestamp) : null;
+  const durationSeconds = points.length > 0 
+    ? (points[points.length - 1].timestamp - points[0].timestamp) / 1000 
+    : 0;
+  
+  return { startTime, endTime, durationSeconds, points };
+}
+
+/**
+ * Interpolates coordinates at a given offset (in seconds) from track start
+ */
+export function interpolateCoordinatesAtOffset(
+  track: TrackWithTimestamps, 
+  offsetSeconds: number
+): { latitude: number; longitude: number } | null {
+  if (track.points.length === 0) {
+    return null;
+  }
+  
+  // Clamp offset to valid range
+  const clampedOffset = Math.max(0, Math.min(offsetSeconds, track.durationSeconds));
+  
+  // Find surrounding points
+  let beforePoint: TimedTrackPoint | null = null;
+  let afterPoint: TimedTrackPoint | null = null;
+  
+  for (let i = 0; i < track.points.length; i++) {
+    const point = track.points[i];
+    
+    if (point.offsetSeconds <= clampedOffset) {
+      beforePoint = point;
+    }
+    
+    if (point.offsetSeconds >= clampedOffset && afterPoint === null) {
+      afterPoint = point;
+      break;
+    }
+  }
+  
+  // Handle edge cases
+  if (!beforePoint && afterPoint) {
+    return { latitude: afterPoint.latitude, longitude: afterPoint.longitude };
+  }
+  
+  if (beforePoint && !afterPoint) {
+    return { latitude: beforePoint.latitude, longitude: beforePoint.longitude };
+  }
+  
+  if (!beforePoint || !afterPoint) {
+    return null;
+  }
+  
+  // If same point, return it directly
+  if (beforePoint === afterPoint || beforePoint.offsetSeconds === afterPoint.offsetSeconds) {
+    return { latitude: beforePoint.latitude, longitude: beforePoint.longitude };
+  }
+  
+  // Linear interpolation between surrounding points
+  const fraction = (clampedOffset - beforePoint.offsetSeconds) / 
+    (afterPoint.offsetSeconds - beforePoint.offsetSeconds);
+  
+  const latitude = beforePoint.latitude + fraction * (afterPoint.latitude - beforePoint.latitude);
+  const longitude = beforePoint.longitude + fraction * (afterPoint.longitude - beforePoint.longitude);
+  
+  return { latitude, longitude };
+}
+
+/**
+ * Resolves start and end coordinates for a video clip based on its timeline position
+ */
+export function resolveClipCoordinates(
+  gpxData: any, 
+  clipStartTime: number, 
+  clipEndTime: number
+): { 
+  startLatitude: number | null; 
+  startLongitude: number | null; 
+  endLatitude: number | null; 
+  endLongitude: number | null;
+} {
+  // If gpxData contains raw GPX string, parse it; otherwise it might be parsed JSON
+  let track: TrackWithTimestamps;
+  
+  if (typeof gpxData === 'string') {
+    track = parseGpxWithTimestamps(gpxData);
+  } else if (gpxData && typeof gpxData.rawGpx === 'string') {
+    track = parseGpxWithTimestamps(gpxData.rawGpx);
+  } else {
+    return { 
+      startLatitude: null, 
+      startLongitude: null, 
+      endLatitude: null, 
+      endLongitude: null 
+    };
+  }
+  
+  const startCoords = interpolateCoordinatesAtOffset(track, clipStartTime);
+  const endCoords = interpolateCoordinatesAtOffset(track, clipEndTime);
+  
+  return {
+    startLatitude: startCoords?.latitude ?? null,
+    startLongitude: startCoords?.longitude ?? null,
+    endLatitude: endCoords?.latitude ?? null,
+    endLongitude: endCoords?.longitude ?? null
   };
 }
