@@ -7,7 +7,7 @@ import { extractExifData, extractExifFromBuffer } from "./exif-extractor";
 import multer from 'multer';
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Get all field notes with optional filters
+  // Get all field notes with optional filters (includes photo count)
   app.get("/api/field-notes", async (req, res) => {
     try {
       const { search, tripType, sortOrder } = req.query;
@@ -16,7 +16,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         tripType: tripType as string,
         sortOrder: sortOrder as 'recent' | 'oldest' | 'name',
       });
-      res.json(fieldNotes);
+      
+      // Fetch photo counts for all field notes efficiently
+      const fieldNotesWithCounts = await Promise.all(
+        fieldNotes.map(async (note) => {
+          const photos = await storage.getPhotosByFieldNoteId(note.id);
+          return {
+            ...note,
+            photoCount: photos.length,
+          };
+        })
+      );
+      
+      res.json(fieldNotesWithCounts);
     } catch (error) {
       console.error("Error fetching field notes:", error);
       res.status(500).json({ message: "Failed to fetch field notes" });

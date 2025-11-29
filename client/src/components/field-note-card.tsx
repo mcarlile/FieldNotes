@@ -1,9 +1,14 @@
 import { ClickableTile, Tag } from "@carbon/react";
+import { Camera } from "@carbon/icons-react";
 import type { FieldNote } from "@shared/schema";
 import MapboxRoutePreview from "./mapbox-route-preview";
 
+interface FieldNoteWithPhotoCount extends FieldNote {
+  photoCount?: number;
+}
+
 interface FieldNoteCardProps {
-  fieldNote: FieldNote;
+  fieldNote: FieldNoteWithPhotoCount;
   searchTerm?: string;
 }
 
@@ -62,10 +67,18 @@ export default function FieldNoteCard({ fieldNote, searchTerm }: FieldNoteCardPr
         
         <div className="flex justify-between items-center text-xs text-muted-foreground">
           <span className="flex-shrink-0">{formatDate(fieldNote.date.toString())}</span>
-          <div className="text-right break-words">
-            {fieldNote.distance && `${fieldNote.distance} miles`}
-            {fieldNote.distance && fieldNote.elevationGain && " • "}
-            {fieldNote.elevationGain && `${fieldNote.elevationGain} ft`}
+          <div className="flex items-center gap-2 text-right">
+            {fieldNote.photoCount !== undefined && fieldNote.photoCount > 0 && (
+              <span className="flex items-center gap-1">
+                <Camera size={12} />
+                {fieldNote.photoCount}
+              </span>
+            )}
+            <span className="break-words">
+              {fieldNote.distance && `${fieldNote.distance} mi`}
+              {fieldNote.distance && fieldNote.elevationGain && " • "}
+              {fieldNote.elevationGain && `${fieldNote.elevationGain} ft`}
+            </span>
           </div>
         </div>
       </div>
