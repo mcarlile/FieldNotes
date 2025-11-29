@@ -31,6 +31,9 @@ import {
   TrashCan,
   Map,
   ChartLineSmooth,
+  Renew,
+  Warning,
+  CheckmarkFilled,
 } from "@carbon/icons-react";
 import { useTheme } from "@/contexts/theme-context";
 import { NewProjectModal } from "@/components/new-project-modal";
@@ -68,6 +71,12 @@ export default function TrailcamStudio() {
       return response.json();
     },
     enabled: !!selectedProject?.id,
+    refetchInterval: (query) => {
+      const hasProcessingClips = query.state.data?.some(
+        clip => clip.processingStatus !== 'ready' && clip.processingStatus !== 'error'
+      );
+      return hasProcessingClips ? 3000 : false;
+    },
   });
 
   // Create video clip mutation
@@ -341,18 +350,49 @@ export default function TrailcamStudio() {
               </div>
               <div className="flex-1 bg-black flex items-center justify-center relative">
                 {selectedClip ? (
-                  <video
-                    ref={videoRef}
-                    className="w-full h-full object-contain"
-                    controls
-                    onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
-                    onPlay={() => setIsPlaying(true)}
-                    onPause={() => setIsPlaying(false)}
-                    data-testid="video-player"
-                  >
-                    <source src={selectedClip.url} type={`video/${selectedClip.videoFormat?.toLowerCase() || 'mp4'}`} />
-                    Your browser does not support the video tag.
-                  </video>
+                  selectedClip.processingStatus === 'ready' ? (
+                    <video
+                      ref={videoRef}
+                      className="w-full h-full object-contain"
+                      controls
+                      onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+                      onPlay={() => setIsPlaying(true)}
+                      onPause={() => setIsPlaying(false)}
+                      data-testid="video-player"
+                    >
+                      <source src={`/api/video-clips/${selectedClip.id}/stream`} type="video/mp4" />
+                      Your browser does not support the video tag.
+                    </video>
+                  ) : selectedClip.processingStatus === 'error' ? (
+                    <div className="text-center text-white">
+                      <Warning size={64} className="mx-auto mb-4 text-red-400" />
+                      <p className="text-gray-300">Video processing failed</p>
+                      <p className="text-gray-500 text-sm mt-2">{selectedClip.processingError || 'Unknown error'}</p>
+                      <CarbonButton 
+                        kind="tertiary" 
+                        size="sm" 
+                        renderIcon={Renew}
+                        className="mt-4"
+                        onClick={() => {
+                          fetch(`/api/video-clips/${selectedClip.id}/reprocess`, { method: 'POST' })
+                            .then(() => {
+                              toast({ title: "Reprocessing started", description: "Video is being reprocessed" });
+                              queryClient.invalidateQueries({ queryKey: ["/api/video-clips", selectedProject?.id] });
+                            })
+                            .catch(() => toast({ title: "Error", description: "Failed to reprocess video", variant: "destructive" }));
+                        }}
+                        data-testid="button-reprocess"
+                      >
+                        Retry Processing
+                      </CarbonButton>
+                    </div>
+                  ) : (
+                    <div className="text-center text-white">
+                      <Loading withOverlay={false} small className="mx-auto mb-4" />
+                      <p className="text-gray-300">Video is being processed...</p>
+                      <p className="text-gray-500 text-sm mt-2">Transcoding to 1080p for optimized playback</p>
+                    </div>
+                  )
                 ) : (
                   <div className="text-center text-white">
                     <Video size={64} className="mx-auto mb-4 text-gray-400" />
@@ -529,8 +569,29 @@ export default function TrailcamStudio() {
                     className="w-48 flex-shrink-0 bg-muted/20 rounded border border-border overflow-hidden"
                     data-testid={`clip-card-${clip.id}`}
                   >
-                    <div className="h-24 bg-black flex items-center justify-center">
-                      <Video size={24} className="text-gray-400" />
+                    <div className="h-24 bg-black flex items-center justify-center relative">
+                      {clip.thumbnailUrl ? (
+                        <img 
+                          src={`/api/video-clips/${clip.id}/thumbnail`} 
+                          alt={clip.title}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <Video size={24} className="text-gray-400" />
+                      )}
+                      {clip.processingStatus === 'ready' ? (
+                        <div className="absolute top-1 right-1">
+                          <CheckmarkFilled size={16} className="text-green-400" />
+                        </div>
+                      ) : clip.processingStatus === 'error' ? (
+                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                          <Warning size={24} className="text-red-400" />
+                        </div>
+                      ) : (
+                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                          <Loading withOverlay={false} small />
+                        </div>
+                      )}
                     </div>
                     <div className="p-3">
                       <div className="flex items-center justify-between mb-2">
@@ -540,6 +601,12 @@ export default function TrailcamStudio() {
                           style={{ backgroundColor: clipColors[index % clipColors.length] }}
                         ></div>
                       </div>
+                      {clip.processingStatus !== 'ready' && clip.processingStatus !== 'error' && (
+                        <div className="text-xs text-blue-400 mb-2">Processing...</div>
+                      )}
+                      {clip.processingStatus === 'error' && (
+                        <div className="text-xs text-red-400 mb-2">Failed</div>
+                      )}
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <div>
                           <label className="text-muted-foreground">Start</label>
@@ -556,9 +623,10 @@ export default function TrailcamStudio() {
                           size="sm" 
                           className="flex-1"
                           onClick={() => setSelectedClip(clip)}
+                          disabled={clip.processingStatus !== 'ready' && clip.processingStatus !== 'error'}
                           data-testid={`button-preview-${clip.id}`}
                         >
-                          PREVIEW
+                          {clip.processingStatus !== 'ready' && clip.processingStatus !== 'error' ? 'PROCESSING' : 'PREVIEW'}
                         </CarbonButton>
                       </div>
                     </div>
