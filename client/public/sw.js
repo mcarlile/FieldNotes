@@ -22,6 +22,18 @@ self.addEventListener('install', (event) => {
 
 // Fetch event - serve from cache when offline
 self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+  
+  // Skip service worker for:
+  // 1. Non-GET requests (POST, PUT, DELETE, etc.) - especially video uploads
+  // 2. API requests
+  // 3. Video upload endpoints
+  if (event.request.method !== 'GET' || 
+      url.pathname.startsWith('/api/') ||
+      url.pathname.includes('/video/')) {
+    return;
+  }
+  
   event.respondWith(
     caches.match(event.request)
       .then((response) => {
@@ -33,6 +45,7 @@ self.addEventListener('fetch', (event) => {
         if (event.request.destination === 'document') {
           return caches.match('/');
         }
+        return new Response('Offline', { status: 503 });
       })
   );
 });
