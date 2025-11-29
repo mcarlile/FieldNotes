@@ -38,7 +38,7 @@ import {
 import { useTheme } from "@/contexts/theme-context";
 import { NewProjectModal } from "@/components/new-project-modal";
 import { ChunkedVideoUploader } from "@/components/chunked-video-uploader";
-import MapboxMap from "@/components/mapbox-map";
+import MapboxMap, { ClipMarker } from "@/components/mapbox-map";
 import type { TrailcamProject, VideoClip, InsertVideoClip } from "@shared/schema";
 
 export default function TrailcamStudio() {
@@ -153,6 +153,37 @@ export default function TrailcamStudio() {
     "#6366f1", // indigo
     "#84cc16", // lime
   ];
+
+  // Create clip markers for map display when a clip is selected
+  const clipMarkers: ClipMarker[] = selectedClip
+    ? (() => {
+        const markers: ClipMarker[] = [];
+        const clipIndex = clips.findIndex(c => c.id === selectedClip.id);
+        const color = clipIndex >= 0 ? clipColors[clipIndex % clipColors.length] : clipColors[0];
+        
+        if (selectedClip.startLatitude !== null && selectedClip.startLatitude !== undefined &&
+            selectedClip.startLongitude !== null && selectedClip.startLongitude !== undefined) {
+          markers.push({
+            id: selectedClip.id,
+            type: 'start',
+            latitude: selectedClip.startLatitude,
+            longitude: selectedClip.startLongitude,
+            color: color,
+          });
+        }
+        if (selectedClip.endLatitude !== null && selectedClip.endLatitude !== undefined &&
+            selectedClip.endLongitude !== null && selectedClip.endLongitude !== undefined) {
+          markers.push({
+            id: selectedClip.id,
+            type: 'end',
+            latitude: selectedClip.endLatitude,
+            longitude: selectedClip.endLongitude,
+            color: color,
+          });
+        }
+        return markers;
+      })()
+    : [];
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -323,6 +354,7 @@ export default function TrailcamStudio() {
               >
                 <MapboxMap
                   gpxData={selectedProject.gpxData}
+                  clipMarkers={clipMarkers}
                   className="w-full h-full"
                 />
               </Suspense>
@@ -617,6 +649,30 @@ export default function TrailcamStudio() {
                           <div className="text-foreground">{formatTime(clip.endTime)}</div>
                         </div>
                       </div>
+                      {/* GPS coordinates for debugging */}
+                      {(clip.startLatitude !== null && clip.startLatitude !== undefined) || 
+                       (clip.endLatitude !== null && clip.endLatitude !== undefined) ? (
+                        <div className="mt-2 pt-2 border-t border-border/50 text-xs">
+                          {clip.startLatitude !== null && clip.startLatitude !== undefined &&
+                           clip.startLongitude !== null && clip.startLongitude !== undefined && (
+                            <div className="flex items-center gap-1">
+                              <span className="text-green-500 font-medium">S:</span>
+                              <span className="text-muted-foreground font-mono text-[10px]">
+                                {clip.startLatitude.toFixed(5)}, {clip.startLongitude.toFixed(5)}
+                              </span>
+                            </div>
+                          )}
+                          {clip.endLatitude !== null && clip.endLatitude !== undefined &&
+                           clip.endLongitude !== null && clip.endLongitude !== undefined && (
+                            <div className="flex items-center gap-1">
+                              <span className="text-red-500 font-medium">E:</span>
+                              <span className="text-muted-foreground font-mono text-[10px]">
+                                {clip.endLatitude.toFixed(5)}, {clip.endLongitude.toFixed(5)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
                       <div className="flex gap-1 mt-2">
                         <CarbonButton 
                           kind="ghost" 
