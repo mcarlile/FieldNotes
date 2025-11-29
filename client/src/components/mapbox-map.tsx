@@ -4,20 +4,31 @@ import { initMapbox } from "@/lib/mapbox";
 import { parseGpxData } from "@shared/gpx-utils";
 import type { ElevationPoint } from "@shared/gpx-utils";
 
+export interface ClipMarker {
+  id: string;
+  type: 'start' | 'end';
+  latitude: number;
+  longitude: number;
+  color?: string;
+}
+
 interface MapboxMapProps {
   gpxData: any;
   hoveredElevationPoint?: ElevationPoint | null;
+  clipMarkers?: ClipMarker[];
   className?: string;
 }
 
 export default function MapboxMap({ 
   gpxData, 
   hoveredElevationPoint, 
+  clipMarkers,
   className 
 }: MapboxMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const elevationMarker = useRef<mapboxgl.Marker | null>(null);
+  const clipMarkersRef = useRef<Map<string, mapboxgl.Marker>>(new Map());
   const animationFrameRef = useRef<number | null>(null);
   const coordinatesRef = useRef<[number, number][]>([]);
   const [webglError, setWebglError] = useState(false);
@@ -252,6 +263,86 @@ export default function MapboxMap({
       }
     }
   }, [hoveredElevationPoint]);
+
+  // Handle clip markers for start/end points
+  useEffect(() => {
+    if (!map.current) return;
+
+    // Wait for map to be loaded
+    if (!map.current.loaded()) {
+      const onLoad = () => {
+        updateClipMarkers();
+      };
+      map.current.on('load', onLoad);
+      return () => {
+        map.current?.off('load', onLoad);
+      };
+    }
+
+    updateClipMarkers();
+
+    function updateClipMarkers() {
+      if (!map.current) return;
+
+      // Remove old markers that are no longer needed
+      const currentMarkerIds = new Set(clipMarkers?.map(m => `${m.id}-${m.type}`) || []);
+      clipMarkersRef.current.forEach((marker, key) => {
+        if (!currentMarkerIds.has(key)) {
+          marker.remove();
+          clipMarkersRef.current.delete(key);
+        }
+      });
+
+      // Add or update markers
+      clipMarkers?.forEach((clipMarker) => {
+        const markerId = `${clipMarker.id}-${clipMarker.type}`;
+        
+        if (clipMarkersRef.current.has(markerId)) {
+          // Update existing marker position
+          clipMarkersRef.current.get(markerId)?.setLngLat([clipMarker.longitude, clipMarker.latitude]);
+        } else {
+          // Create new marker
+          const markerEl = document.createElement('div');
+          const isStart = clipMarker.type === 'start';
+          const markerColor = clipMarker.color || (isStart ? '#10b981' : '#ef4444');
+          
+          markerEl.style.cssText = `
+            width: 20px;
+            height: 20px;
+            background: ${markerColor};
+            border: 3px solid white;
+            border-radius: 50%;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            cursor: pointer;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          `;
+          
+          // Add inner icon
+          const innerEl = document.createElement('div');
+          innerEl.style.cssText = `
+            color: white;
+            font-size: 10px;
+            font-weight: bold;
+          `;
+          innerEl.textContent = isStart ? 'S' : 'E';
+          markerEl.appendChild(innerEl);
+          
+          const marker = new mapboxgl.Marker(markerEl)
+            .setLngLat([clipMarker.longitude, clipMarker.latitude])
+            .addTo(map.current!);
+          
+          clipMarkersRef.current.set(markerId, marker);
+        }
+      });
+    }
+
+    return () => {
+      // Cleanup is handled in the main useEffect for map initialization
+    };
+  }, [clipMarkers]);
 
   // Show fallback UI if WebGL is not supported
   if (webglError) {
