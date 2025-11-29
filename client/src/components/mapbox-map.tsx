@@ -181,7 +181,14 @@ export default function MapboxMap({
           bounds.extend(coord);
         });
         
-        // Photo coordinates no longer added to bounds since markers are removed
+        // Add photo coordinates to bounds so map includes all markers
+        if (photos && photos.length > 0) {
+          photos.forEach((photo) => {
+            if (photo.latitude && photo.longitude) {
+              bounds.extend([photo.longitude, photo.latitude]);
+            }
+          });
+        }
         
         if (!bounds.isEmpty()) {
           map.current.fitBounds(bounds, { 
@@ -191,11 +198,65 @@ export default function MapboxMap({
         }
       }
 
-      // Clear existing photo markers - removing photo indicators as requested
+      // Clear existing photo markers before adding new ones
       photoMarkers.current.forEach(marker => marker.remove());
       photoMarkers.current.clear();
 
-      // Photo markers removed - no longer displaying photo location indicators on map
+      // Add photo markers for photos with valid GPS coordinates
+      if (photos && photos.length > 0) {
+        photos.forEach((photo) => {
+          if (photo.latitude && photo.longitude) {
+            // Create custom photo marker element
+            const markerEl = document.createElement('div');
+            markerEl.className = 'photo-marker';
+            markerEl.style.cssText = `
+              width: 32px;
+              height: 32px;
+              background: linear-gradient(135deg, #0080ff, #0066cc);
+              border: 3px solid white;
+              border-radius: 50%;
+              cursor: pointer;
+              box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              transition: transform 0.2s ease, box-shadow 0.2s ease;
+            `;
+            
+            // Add camera icon inside
+            markerEl.innerHTML = `
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+                <path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/>
+                <path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/>
+              </svg>
+            `;
+            
+            // Add hover effect
+            markerEl.addEventListener('mouseenter', () => {
+              markerEl.style.transform = 'scale(1.2)';
+              markerEl.style.boxShadow = '0 4px 12px rgba(0, 128, 255, 0.5)';
+            });
+            markerEl.addEventListener('mouseleave', () => {
+              markerEl.style.transform = 'scale(1)';
+              markerEl.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.3)';
+            });
+            
+            // Add click handler
+            markerEl.addEventListener('click', (e) => {
+              e.stopPropagation();
+              if (onPhotoClick) {
+                onPhotoClick(photo.id);
+              }
+            });
+            
+            const marker = new mapboxgl.Marker(markerEl)
+              .setLngLat([photo.longitude, photo.latitude])
+              .addTo(map.current!);
+            
+            photoMarkers.current.set(photo.id, marker);
+          }
+        });
+      }
     });
 
     return () => {
