@@ -1,7 +1,6 @@
 import { useState, lazy, Suspense } from "react";
 import { Button } from "@carbon/react";
 import { Maximize, View, Close } from "@carbon/icons-react";
-import type { Photo } from "@shared/schema";
 import { parseGpxData } from "@shared/gpx-utils";
 
 // Lazy load the MapboxMap component
@@ -9,12 +8,10 @@ const MapboxMap = lazy(() => import('./mapbox-map'));
 
 interface FullScreenMapModalProps {
   gpxData: unknown;
-  photos: Photo[];
-  onPhotoClick?: (photoId: string) => void;
   onClose: () => void;
 }
 
-function FullScreenMapModal({ gpxData, photos, onPhotoClick, onClose }: FullScreenMapModalProps) {
+function FullScreenMapModal({ gpxData, onClose }: FullScreenMapModalProps) {
   return (
     <div className="fixed inset-0 z-50 bg-background">
       {/* Header with close button */}
@@ -44,8 +41,6 @@ function FullScreenMapModal({ gpxData, photos, onPhotoClick, onClose }: FullScre
         }>
           <MapboxMap
             gpxData={gpxData}
-            photos={photos}
-            onPhotoClick={onPhotoClick || (() => {})}
             className="w-full h-full"
           />
         </Suspense>
@@ -56,12 +51,10 @@ function FullScreenMapModal({ gpxData, photos, onPhotoClick, onClose }: FullScre
 
 interface MapPreviewProps {
   gpxData: unknown;
-  photos: Photo[];
-  onPhotoClick?: (photoId: string) => void;
   className?: string;
 }
 
-export default function MapPreview({ gpxData, photos, onPhotoClick, className = "" }: MapPreviewProps) {
+export default function MapPreview({ gpxData, className = "" }: MapPreviewProps) {
   const [showFullMap, setShowFullMap] = useState(false);
 
   // Parse GPX data to get coordinates for preview
@@ -159,21 +152,8 @@ export default function MapPreview({ gpxData, photos, onPhotoClick, className = 
     console.log('Path overlay string length:', pathOverlay.length);
     console.log('Sample path coords:', simplifiedCoords.slice(0, 3));
 
-    // Add photo markers
-    let markers = '';
-    if (photos.length > 0) {
-      const photoMarkers = photos
-        .filter(photo => photo.latitude && photo.longitude)
-        .slice(0, 10) // Limit markers for URL length
-        .map(photo => `pin-s-camera+0080ff(${photo.longitude},${photo.latitude})`)
-        .join(',');
-      if (photoMarkers) {
-        markers = ',' + photoMarkers;
-      }
-    }
-
     // Try without encoding first to see if that's the issue
-    const url = `https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/static/${pathOverlay}${markers}/${centerLng},${centerLat},${zoom}/400x300@2x?access_token=${accessToken}`;
+    const url = `https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/static/${pathOverlay}/${centerLng},${centerLat},${zoom}/400x300@2x?access_token=${accessToken}`;
     console.log('Generated static map URL (simplified coords):', url.substring(0, 100) + '...');
     console.log('Route stats:', {
       originalCoords: coordinates.length,
@@ -191,8 +171,6 @@ export default function MapPreview({ gpxData, photos, onPhotoClick, className = 
   if (showFullMap) {
     return <FullScreenMapModal 
       gpxData={gpxData} 
-      photos={photos} 
-      onPhotoClick={onPhotoClick} 
       onClose={() => setShowFullMap(false)} 
     />;
   }

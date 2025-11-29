@@ -34,7 +34,7 @@ import {
 } from "@carbon/icons-react";
 import { useTheme } from "@/contexts/theme-context";
 import { NewProjectModal } from "@/components/new-project-modal";
-import { VideoClipUploader } from "@/components/video-clip-uploader";
+import { ChunkedVideoUploader } from "@/components/chunked-video-uploader";
 import MapboxMap from "@/components/mapbox-map";
 import type { TrailcamProject, VideoClip, InsertVideoClip } from "@shared/schema";
 
@@ -314,8 +314,6 @@ export default function TrailcamStudio() {
               >
                 <MapboxMap
                   gpxData={selectedProject.gpxData}
-                  photos={[]}
-                  onPhotoClick={() => {}}
                   className="w-full h-full"
                 />
               </Suspense>
@@ -508,10 +506,10 @@ export default function TrailcamStudio() {
                 <Video size={20} className="text-muted-foreground" />
                 <h2 className="text-base font-semibold text-foreground">CLIPS ({clips.length})</h2>
               </div>
-              <VideoClipUploader onComplete={handleClipUpload}>
+              <ChunkedVideoUploader onComplete={handleClipUpload}>
                 <Add size={16} />
                 ADD CLIP
-              </VideoClipUploader>
+              </ChunkedVideoUploader>
             </div>
           </div>
           

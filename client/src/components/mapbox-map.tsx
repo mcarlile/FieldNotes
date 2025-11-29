@@ -2,33 +2,24 @@ import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import { initMapbox } from "@/lib/mapbox";
 import { parseGpxData } from "@shared/gpx-utils";
-import type { Photo } from "@shared/schema";
 import type { ElevationPoint } from "@shared/gpx-utils";
 
 interface MapboxMapProps {
   gpxData: any;
-  photos: Photo[];
-  onPhotoClick: (photoId: string) => void;
   hoveredElevationPoint?: ElevationPoint | null;
-  hoveredPhotoId?: string | null;
   className?: string;
 }
 
 export default function MapboxMap({ 
   gpxData, 
-  photos, 
-  onPhotoClick, 
   hoveredElevationPoint, 
-  hoveredPhotoId, 
   className 
 }: MapboxMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const elevationMarker = useRef<mapboxgl.Marker | null>(null);
   const animationFrameRef = useRef<number | null>(null);
-  const photoMarkers = useRef<Map<string, mapboxgl.Marker>>(new Map());
   const coordinatesRef = useRef<[number, number][]>([]);
-  const [mapFocus, setMapFocus] = useState<'all' | 'track' | 'photos'>('all');
   const [webglError, setWebglError] = useState(false);
 
   // Initialize map and add GPX track
@@ -190,22 +181,13 @@ export default function MapboxMap({
           .setLngLat(parsedGpxData.coordinates[0])
           .addTo(map.current);
 
-        // Calculate bounds to include both GPX track and photos
+        // Calculate bounds for GPX track
         const bounds = new mapboxgl.LngLatBounds();
         
         // Add GPX coordinates to bounds
         parsedGpxData.coordinates.forEach((coord: [number, number]) => {
           bounds.extend(coord);
         });
-        
-        // Add photo coordinates to bounds so map includes all markers
-        if (photos && photos.length > 0) {
-          photos.forEach((photo) => {
-            if (photo.latitude && photo.longitude) {
-              bounds.extend([photo.longitude, photo.latitude]);
-            }
-          });
-        }
         
         if (!bounds.isEmpty()) {
           map.current.fitBounds(bounds, { 
@@ -214,74 +196,6 @@ export default function MapboxMap({
           });
         }
       }
-
-      // Clear existing photo markers before adding new ones
-      photoMarkers.current.forEach(marker => marker.remove());
-      photoMarkers.current.clear();
-
-      // Filter and number photos with valid GPS coordinates
-      if (photos && photos.length > 0) {
-        const geotaggedPhotos = photos
-          .filter(photo => {
-            // Strict validation: must be valid numbers, not null/undefined/NaN
-            const lat = Number(photo.latitude);
-            const lng = Number(photo.longitude);
-            return !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0;
-          })
-          .sort((a, b) => {
-            // Sort by timestamp if available, otherwise keep original order
-            if (a.timestamp && b.timestamp) {
-              return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
-            }
-            return 0;
-          });
-
-        geotaggedPhotos.forEach((photo, index) => {
-          const photoNumber = index + 1;
-          const lat = Number(photo.latitude);
-          const lng = Number(photo.longitude);
-          
-          // Create simple numbered marker - completely static, no animations
-          const markerEl = document.createElement('div');
-          markerEl.className = 'photo-marker';
-          markerEl.style.width = '28px';
-          markerEl.style.height = '28px';
-          markerEl.style.backgroundColor = '#0f62fe';
-          markerEl.style.border = '2px solid white';
-          markerEl.style.borderRadius = '50%';
-          markerEl.style.cursor = 'pointer';
-          markerEl.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.3)';
-          markerEl.style.display = 'flex';
-          markerEl.style.alignItems = 'center';
-          markerEl.style.justifyContent = 'center';
-          markerEl.style.color = 'white';
-          markerEl.style.fontSize = '12px';
-          markerEl.style.fontWeight = '700';
-          markerEl.style.fontFamily = '-apple-system, BlinkMacSystemFont, sans-serif';
-          markerEl.style.userSelect = 'none';
-          markerEl.style.pointerEvents = 'auto';
-          markerEl.textContent = String(photoNumber);
-          
-          // Simple click handler only
-          markerEl.onclick = (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            if (onPhotoClick) {
-              onPhotoClick(photo.id);
-            }
-          };
-          
-          // Create marker with center anchor to prevent offset issues
-          const marker = new mapboxgl.Marker({
-            element: markerEl,
-            anchor: 'center'
-          })
-            .setLngLat([lng, lat])
-            .addTo(map.current!);
-          
-          photoMarkers.current.set(photo.id, marker);
-        });
-      }
     });
 
     return () => {
@@ -289,10 +203,6 @@ export default function MapboxMap({
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
-      
-      // Clean up all photo markers
-      photoMarkers.current.forEach(marker => marker.remove());
-      photoMarkers.current.clear();
       
       if (elevationMarker.current) {
         elevationMarker.current.remove();
@@ -303,7 +213,7 @@ export default function MapboxMap({
         map.current = null;
       }
     };
-  }, [gpxData, photos, onPhotoClick]);
+  }, [gpxData]);
 
   // Handle elevation profile hover with immediate, responsive updates
   useEffect(() => {
@@ -342,22 +252,6 @@ export default function MapboxMap({
       }
     }
   }, [hoveredElevationPoint]);
-
-  // Handle photo hover for map zoom - no marker transforms, only pan
-  useEffect(() => {
-    if (!map.current || !hoveredPhotoId) return;
-
-    const hoveredPhoto = photos.find(p => p.id === hoveredPhotoId);
-    if (hoveredPhoto && hoveredPhoto.latitude && hoveredPhoto.longitude) {
-      // Smoothly pan to the hovered photo (no marker styling changes)
-      map.current.flyTo({
-        center: [hoveredPhoto.longitude, hoveredPhoto.latitude],
-        zoom: Math.max(map.current.getZoom(), 16),
-        duration: 800,
-        essential: true
-      });
-    }
-  }, [hoveredPhotoId, photos]);
 
   // Show fallback UI if WebGL is not supported
   if (webglError) {

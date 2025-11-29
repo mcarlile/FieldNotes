@@ -5,6 +5,37 @@ import { insertFieldNoteSchema, insertPhotoSchema, insertTrailcamProjectSchema, 
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { extractExifData, extractExifFromBuffer } from "./exif-extractor";
 import multer from 'multer';
+import * as fs from 'fs';
+import * as path from 'path';
+
+const CHUNK_UPLOAD_DIR = '/tmp/video-chunks';
+const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_VIDEO_SIZE = 1.5 * 1024 * 1024 * 1024; // 1.5GB
+const MAX_CHUNKS = 200; // 200 chunks * 10MB = 2GB max
+const UPLOAD_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
+// Cleanup old uploads periodically
+const activeUploads = new Map<string, { startTime: number; totalChunks: number; receivedChunks: Set<number> }>();
+
+if (!fs.existsSync(CHUNK_UPLOAD_DIR)) {
+  fs.mkdirSync(CHUNK_UPLOAD_DIR, { recursive: true });
+}
+
+// Clean up stale uploads on startup and periodically
+function cleanupStaleUploads() {
+  const now = Date.now();
+  for (const [key, data] of activeUploads.entries()) {
+    if (now - data.startTime > UPLOAD_TIMEOUT_MS) {
+      const chunkDir = path.join(CHUNK_UPLOAD_DIR, key);
+      if (fs.existsSync(chunkDir)) {
+        fs.rmSync(chunkDir, { recursive: true, force: true });
+      }
+      activeUploads.delete(key);
+      console.log(`Cleaned up stale upload: ${key}`);
+    }
+  }
+}
+setInterval(cleanupStaleUploads, 5 * 60 * 1000); // Run every 5 minutes
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Get all field notes with optional filters (includes photo count)
@@ -564,6 +595,243 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error deleting video clip:", error);
       res.status(500).json({ message: "Failed to delete video clip" });
+    }
+  });
+
+  // Chunked video upload - receive individual chunks
+  const chunkUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+      fileSize: CHUNK_SIZE + 1024 * 1024, // Allow slightly larger than chunk size
+      files: 1,
+    },
+  });
+
+  app.post("/api/video/upload-chunk", chunkUpload.single('chunk'), async (req, res) => {
+    try {
+      const { chunkIndex, totalChunks, uploadKey } = req.body;
+      
+      if (!req.file) {
+        return res.status(400).json({ message: "No chunk data provided" });
+      }
+      
+      if (!uploadKey || chunkIndex === undefined || !totalChunks) {
+        return res.status(400).json({ message: "Missing required parameters" });
+      }
+
+      // Validate upload key format (must be video-timestamp-randomstring)
+      if (!/^video-\d+-[a-z0-9]+$/.test(uploadKey)) {
+        return res.status(400).json({ message: "Invalid upload key format" });
+      }
+
+      const chunkIdx = parseInt(chunkIndex);
+      const totalChunksNum = parseInt(totalChunks);
+
+      // Validate chunk limits
+      if (totalChunksNum > MAX_CHUNKS || chunkIdx >= totalChunksNum || chunkIdx < 0) {
+        return res.status(400).json({ message: "Invalid chunk parameters" });
+      }
+
+      // Track upload state
+      if (!activeUploads.has(uploadKey)) {
+        activeUploads.set(uploadKey, {
+          startTime: Date.now(),
+          totalChunks: totalChunksNum,
+          receivedChunks: new Set(),
+        });
+      }
+
+      const uploadState = activeUploads.get(uploadKey)!;
+      
+      // Validate total chunks matches
+      if (uploadState.totalChunks !== totalChunksNum) {
+        return res.status(400).json({ message: "Total chunks mismatch" });
+      }
+
+      // Prevent duplicate chunk uploads
+      if (uploadState.receivedChunks.has(chunkIdx)) {
+        return res.json({ success: true, chunkIndex: chunkIdx, received: req.file.size, duplicate: true });
+      }
+
+      const chunkDir = path.join(CHUNK_UPLOAD_DIR, uploadKey);
+      if (!fs.existsSync(chunkDir)) {
+        fs.mkdirSync(chunkDir, { recursive: true });
+      }
+
+      const chunkPath = path.join(chunkDir, `chunk-${chunkIdx.toString().padStart(5, '0')}`);
+      fs.writeFileSync(chunkPath, req.file.buffer);
+      uploadState.receivedChunks.add(chunkIdx);
+
+      console.log(`Received chunk ${chunkIdx + 1}/${totalChunksNum} for upload ${uploadKey} (${req.file.size} bytes)`);
+
+      res.json({ 
+        success: true, 
+        chunkIndex: chunkIdx, 
+        received: req.file.size,
+        chunksReceived: uploadState.receivedChunks.size,
+      });
+    } catch (error) {
+      console.error("Error handling chunk upload:", error);
+      res.status(500).json({ message: "Failed to upload chunk" });
+    }
+  });
+
+  // Chunked video upload - complete and assemble
+  app.post("/api/video/complete-upload", async (req, res) => {
+    try {
+      const { uploadKey, filename, contentType } = req.body;
+      
+      if (!uploadKey) {
+        return res.status(400).json({ message: "Upload key is required" });
+      }
+
+      // Validate upload key format
+      if (!/^video-\d+-[a-z0-9]+$/.test(uploadKey)) {
+        return res.status(400).json({ message: "Invalid upload key format" });
+      }
+
+      // Validate content type for video files
+      const validVideoTypes = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'video/avi'];
+      const videoContentType = contentType || 'video/mp4';
+      if (!validVideoTypes.includes(videoContentType)) {
+        return res.status(400).json({ message: "Invalid content type for video" });
+      }
+
+      const uploadState = activeUploads.get(uploadKey);
+      const chunkDir = path.join(CHUNK_UPLOAD_DIR, uploadKey);
+      
+      if (!fs.existsSync(chunkDir)) {
+        return res.status(404).json({ message: "Upload not found" });
+      }
+
+      const chunks = fs.readdirSync(chunkDir)
+        .filter(f => f.startsWith('chunk-'))
+        .sort();
+
+      if (chunks.length === 0) {
+        return res.status(400).json({ message: "No chunks found" });
+      }
+
+      // Validate all chunks are present
+      if (uploadState && chunks.length !== uploadState.totalChunks) {
+        return res.status(400).json({ 
+          message: `Missing chunks: expected ${uploadState.totalChunks}, got ${chunks.length}` 
+        });
+      }
+
+      console.log(`Assembling ${chunks.length} chunks for upload ${uploadKey}`);
+
+      const objectStorageService = new ObjectStorageService();
+      const uploadURL = await objectStorageService.getObjectEntityUploadURL();
+
+      // Assemble file by streaming chunks
+      const assembledFilePath = path.join(chunkDir, 'assembled');
+      const writeStream = fs.createWriteStream(assembledFilePath);
+
+      for (const chunkFile of chunks) {
+        const chunkPath = path.join(chunkDir, chunkFile);
+        const chunkData = fs.readFileSync(chunkPath);
+        writeStream.write(chunkData);
+      }
+
+      await new Promise<void>((resolve, reject) => {
+        writeStream.end((err: Error | null) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+
+      // Get file size without loading entire file
+      const stats = fs.statSync(assembledFilePath);
+      console.log(`Assembled file size: ${stats.size} bytes`);
+
+      // Stream file to object storage using fetch with file stream
+      const fileStream = fs.createReadStream(assembledFilePath);
+      const { Readable } = await import('stream');
+
+      const uploadResponse = await fetch(uploadURL, {
+        method: 'PUT',
+        body: Readable.toWeb(fileStream) as ReadableStream,
+        headers: {
+          'Content-Type': videoContentType,
+          'Content-Length': String(stats.size),
+        },
+        // @ts-ignore - duplex is required for streaming body
+        duplex: 'half',
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error(`Failed to upload to object storage: ${uploadResponse.status}`);
+      }
+
+      // Clean up
+      fs.rmSync(chunkDir, { recursive: true, force: true });
+      activeUploads.delete(uploadKey);
+
+      const url = new URL(uploadURL);
+      const normalizedUrl = objectStorageService.normalizeObjectEntityPath(url.pathname);
+
+      console.log(`Video upload complete: ${normalizedUrl}`);
+
+      res.json({ 
+        success: true, 
+        url: normalizedUrl,
+        size: stats.size 
+      });
+    } catch (error) {
+      console.error("Error completing video upload:", error);
+      res.status(500).json({ message: "Failed to complete upload" });
+    }
+  });
+
+  // Chunked video upload - abort/cleanup
+  app.delete("/api/video/upload/:uploadKey", async (req, res) => {
+    try {
+      const { uploadKey } = req.params;
+      
+      // Validate upload key format
+      if (!/^video-\d+-[a-z0-9]+$/.test(uploadKey)) {
+        return res.status(400).json({ message: "Invalid upload key format" });
+      }
+
+      const chunkDir = path.join(CHUNK_UPLOAD_DIR, uploadKey);
+      
+      if (fs.existsSync(chunkDir)) {
+        fs.rmSync(chunkDir, { recursive: true, force: true });
+      }
+      
+      activeUploads.delete(uploadKey);
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error aborting upload:", error);
+      res.status(500).json({ message: "Failed to abort upload" });
+    }
+  });
+
+  // Get upload status for resume capability
+  app.get("/api/video/upload/:uploadKey/status", async (req, res) => {
+    try {
+      const { uploadKey } = req.params;
+      
+      // Validate upload key format
+      if (!/^video-\d+-[a-z0-9]+$/.test(uploadKey)) {
+        return res.status(400).json({ message: "Invalid upload key format" });
+      }
+
+      const uploadState = activeUploads.get(uploadKey);
+      if (!uploadState) {
+        return res.status(404).json({ message: "Upload not found" });
+      }
+
+      res.json({
+        totalChunks: uploadState.totalChunks,
+        receivedChunks: Array.from(uploadState.receivedChunks),
+        chunksReceived: uploadState.receivedChunks.size,
+      });
+    } catch (error) {
+      console.error("Error getting upload status:", error);
+      res.status(500).json({ message: "Failed to get upload status" });
     }
   });
 

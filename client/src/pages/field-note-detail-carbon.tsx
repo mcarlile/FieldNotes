@@ -193,8 +193,6 @@ export default function FieldNoteDetail() {
                 <Tile className="p-0 overflow-hidden">
                   <MapboxMap
                     gpxData={fieldNote.gpxData}
-                    photos={photos}
-                    onPhotoClick={setSelectedPhotoId}
                     className="w-full h-96"
                   />
                 </Tile>
@@ -260,7 +258,9 @@ export default function FieldNoteDetail() {
       {selectedPhotoId && (
         <PhotoLightbox
           photoId={selectedPhotoId}
+          photos={photos}
           onClose={() => setSelectedPhotoId(null)}
+          onPhotoChange={setSelectedPhotoId}
         />
       )}
     </div>

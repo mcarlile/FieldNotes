@@ -262,10 +262,7 @@ export default function FieldNoteDetail() {
                     <div className="w-full h-64 sm:h-96">
                       <MapboxMap
                         gpxData={fieldNote.gpxData}
-                        photos={photos}
-                        onPhotoClick={setSelectedPhotoId}
                         hoveredElevationPoint={hoveredElevationPoint}
-                        hoveredPhotoId={hoveredPhotoId}
                         className="w-full h-full"
                       />
                     </div>
