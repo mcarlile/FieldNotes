@@ -29,12 +29,27 @@ export default function MapboxMap({
   const photoMarkers = useRef<Map<string, mapboxgl.Marker>>(new Map());
   const coordinatesRef = useRef<[number, number][]>([]);
   const [mapFocus, setMapFocus] = useState<'all' | 'track' | 'photos'>('all');
+  const [webglError, setWebglError] = useState(false);
 
   // Initialize map and add GPX track
   useEffect(() => {
     if (!mapContainer.current) return;
 
-    initMapbox();
+    // Check for WebGL support first
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    if (!gl) {
+      setWebglError(true);
+      return;
+    }
+
+    try {
+      initMapbox();
+    } catch (error) {
+      console.warn('Mapbox initialization error:', error);
+      setWebglError(true);
+      return;
+    }
 
     // Parse GPX data if it's a string
     let parsedGpxData: any = null;
@@ -84,21 +99,23 @@ export default function MapboxMap({
       }
     }
 
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/outdoors-v12',
-      center: initialCenter,
-      zoom: initialZoom,
-    });
+    try {
+      map.current = new mapboxgl.Map({
+        container: mapContainer.current,
+        style: 'mapbox://styles/mapbox/outdoors-v12',
+        center: initialCenter,
+        zoom: initialZoom,
+      });
+    } catch (error) {
+      console.warn('Failed to create Mapbox map:', error);
+      setWebglError(true);
+      return;
+    }
 
     map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
 
     map.current.on('load', () => {
       if (!map.current) return;
-
-      // Debug logging for GPX data
-      console.log('MapboxMap - parsedGpxData:', parsedGpxData);
-      console.log('MapboxMap - coordinates length:', parsedGpxData?.coordinates?.length);
 
       // Add GPX track if available
       if (parsedGpxData && parsedGpxData.coordinates && parsedGpxData.coordinates.length > 0) {
@@ -205,7 +222,12 @@ export default function MapboxMap({
       // Filter and number photos with valid GPS coordinates
       if (photos && photos.length > 0) {
         const geotaggedPhotos = photos
-          .filter(photo => photo.latitude && photo.longitude)
+          .filter(photo => {
+            // Strict validation: must be valid numbers, not null/undefined/NaN
+            const lat = Number(photo.latitude);
+            const lng = Number(photo.longitude);
+            return !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0;
+          })
           .sort((a, b) => {
             // Sort by timestamp if available, otherwise keep original order
             if (a.timestamp && b.timestamp) {
@@ -216,31 +238,28 @@ export default function MapboxMap({
 
         geotaggedPhotos.forEach((photo, index) => {
           const photoNumber = index + 1;
+          const lat = Number(photo.latitude);
+          const lng = Number(photo.longitude);
           
           // Create simple numbered marker - completely static, no animations
           const markerEl = document.createElement('div');
           markerEl.className = 'photo-marker';
-          markerEl.setAttribute('style', `
-            width: 28px;
-            height: 28px;
-            background-color: #0f62fe;
-            border: 2px solid white;
-            border-radius: 50%;
-            cursor: pointer;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 12px;
-            font-weight: 700;
-            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-            user-select: none;
-            pointer-events: auto;
-            transition: none !important;
-            transform: none !important;
-            animation: none !important;
-          `);
+          markerEl.style.width = '28px';
+          markerEl.style.height = '28px';
+          markerEl.style.backgroundColor = '#0f62fe';
+          markerEl.style.border = '2px solid white';
+          markerEl.style.borderRadius = '50%';
+          markerEl.style.cursor = 'pointer';
+          markerEl.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.3)';
+          markerEl.style.display = 'flex';
+          markerEl.style.alignItems = 'center';
+          markerEl.style.justifyContent = 'center';
+          markerEl.style.color = 'white';
+          markerEl.style.fontSize = '12px';
+          markerEl.style.fontWeight = '700';
+          markerEl.style.fontFamily = '-apple-system, BlinkMacSystemFont, sans-serif';
+          markerEl.style.userSelect = 'none';
+          markerEl.style.pointerEvents = 'auto';
           markerEl.textContent = String(photoNumber);
           
           // Simple click handler only
@@ -257,7 +276,7 @@ export default function MapboxMap({
             element: markerEl,
             anchor: 'center'
           })
-            .setLngLat([photo.longitude!, photo.latitude!])
+            .setLngLat([lng, lat])
             .addTo(map.current!);
           
           photoMarkers.current.set(photo.id, marker);
@@ -324,51 +343,40 @@ export default function MapboxMap({
     }
   }, [hoveredElevationPoint]);
 
-  // Handle photo hover for map zoom
+  // Handle photo hover for map zoom - no marker transforms, only pan
   useEffect(() => {
     if (!map.current || !hoveredPhotoId) return;
 
     const hoveredPhoto = photos.find(p => p.id === hoveredPhotoId);
     if (hoveredPhoto && hoveredPhoto.latitude && hoveredPhoto.longitude) {
-      // Smoothly zoom to the hovered photo
+      // Smoothly pan to the hovered photo (no marker styling changes)
       map.current.flyTo({
         center: [hoveredPhoto.longitude, hoveredPhoto.latitude],
         zoom: Math.max(map.current.getZoom(), 16),
         duration: 800,
         essential: true
       });
-
-      // Highlight the hovered photo marker
-      const marker = photoMarkers.current.get(hoveredPhotoId);
-      if (marker) {
-        const markerEl = marker.getElement().querySelector('.photo-marker') as HTMLElement;
-        const labelEl = marker.getElement().querySelector('.photo-label') as HTMLElement;
-        if (markerEl && labelEl) {
-          markerEl.style.transform = 'scale(1.4)';
-          markerEl.style.background = '#ff2200';
-          markerEl.style.boxShadow = '0 6px 12px rgba(255, 34, 0, 0.5)';
-          labelEl.style.opacity = '1';
-        }
-      }
     }
-
-    return () => {
-      // Reset highlighted marker when hover ends
-      if (hoveredPhotoId) {
-        const marker = photoMarkers.current.get(hoveredPhotoId);
-        if (marker) {
-          const markerEl = marker.getElement().querySelector('.photo-marker') as HTMLElement;
-          const labelEl = marker.getElement().querySelector('.photo-label') as HTMLElement;
-          if (markerEl && labelEl) {
-            markerEl.style.transform = 'scale(1)';
-            markerEl.style.background = '#ff6900';
-            markerEl.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
-            labelEl.style.opacity = '0';
-          }
-        }
-      }
-    };
   }, [hoveredPhotoId, photos]);
+
+  // Show fallback UI if WebGL is not supported
+  if (webglError) {
+    return (
+      <div 
+        className={`bg-muted flex items-center justify-center ${className}`}
+        data-testid="mapbox-map-fallback"
+      >
+        <div className="text-center p-6">
+          <div className="text-muted-foreground text-sm">
+            Map preview unavailable
+          </div>
+          <div className="text-muted-foreground text-xs mt-1">
+            WebGL is required for interactive maps
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div 
