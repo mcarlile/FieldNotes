@@ -170,9 +170,14 @@
   font-family: 'IBM Plex Sans', sans-serif;
 }
 
-.photo-marker:hover {
-  transform: scale(1.5) !important;
-  background: #ff6900 !important;
+/* Photo markers - completely static, no animations or transforms */
+.photo-marker,
+.photo-marker:hover,
+.photo-marker:focus,
+.photo-marker:active {
+  transition: none !important;
+  transform: none !important;
+  animation: none !important;
 }
 
 /* Hide Carbon Modal footer only for photo lightbox on mobile devices */

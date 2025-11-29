@@ -202,48 +202,65 @@ export default function MapboxMap({
       photoMarkers.current.forEach(marker => marker.remove());
       photoMarkers.current.clear();
 
-      // Add photo markers for photos with valid GPS coordinates
+      // Filter and number photos with valid GPS coordinates
       if (photos && photos.length > 0) {
-        photos.forEach((photo) => {
-          if (photo.latitude && photo.longitude) {
-            // Create custom photo marker element
-            const markerEl = document.createElement('div');
-            markerEl.className = 'photo-marker';
-            markerEl.style.cssText = `
-              width: 32px;
-              height: 32px;
-              background: linear-gradient(135deg, #0080ff, #0066cc);
-              border: 3px solid white;
-              border-radius: 50%;
-              cursor: pointer;
-              box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-              display: flex;
-              align-items: center;
-              justify-content: center;
-            `;
-            
-            // Add camera icon inside
-            markerEl.innerHTML = `
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
-                <path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/>
-                <path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/>
-              </svg>
-            `;
-            
-            // Add click handler
-            markerEl.addEventListener('click', (e) => {
-              e.stopPropagation();
-              if (onPhotoClick) {
-                onPhotoClick(photo.id);
-              }
-            });
-            
-            const marker = new mapboxgl.Marker(markerEl)
-              .setLngLat([photo.longitude, photo.latitude])
-              .addTo(map.current!);
-            
-            photoMarkers.current.set(photo.id, marker);
-          }
+        const geotaggedPhotos = photos
+          .filter(photo => photo.latitude && photo.longitude)
+          .sort((a, b) => {
+            // Sort by timestamp if available, otherwise keep original order
+            if (a.timestamp && b.timestamp) {
+              return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+            }
+            return 0;
+          });
+
+        geotaggedPhotos.forEach((photo, index) => {
+          const photoNumber = index + 1;
+          
+          // Create simple numbered marker - completely static, no animations
+          const markerEl = document.createElement('div');
+          markerEl.className = 'photo-marker';
+          markerEl.setAttribute('style', `
+            width: 28px;
+            height: 28px;
+            background-color: #0f62fe;
+            border: 2px solid white;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 12px;
+            font-weight: 700;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            user-select: none;
+            pointer-events: auto;
+            transition: none !important;
+            transform: none !important;
+            animation: none !important;
+          `);
+          markerEl.textContent = String(photoNumber);
+          
+          // Simple click handler only
+          markerEl.onclick = (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            if (onPhotoClick) {
+              onPhotoClick(photo.id);
+            }
+          };
+          
+          // Create marker with center anchor to prevent offset issues
+          const marker = new mapboxgl.Marker({
+            element: markerEl,
+            anchor: 'center'
+          })
+            .setLngLat([photo.longitude!, photo.latitude!])
+            .addTo(map.current!);
+          
+          photoMarkers.current.set(photo.id, marker);
         });
       }
     });
