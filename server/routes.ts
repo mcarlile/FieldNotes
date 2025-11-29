@@ -94,7 +94,8 @@ function checkRateLimit(ip: string): boolean {
 // Clean up stale uploads on startup and periodically
 function cleanupStaleUploads() {
   const now = Date.now();
-  for (const [key, data] of activeUploads.entries()) {
+  const uploadEntries = Array.from(activeUploads.entries());
+  for (const [key, data] of uploadEntries) {
     if (now - data.startTime > UPLOAD_TIMEOUT_MS) {
       const chunkDir = path.join(CHUNK_UPLOAD_DIR, key);
       if (fs.existsSync(chunkDir)) {
@@ -116,7 +117,8 @@ function cleanupStaleUploads() {
   }
   
   // Clean up expired tokens
-  for (const [token, data] of validTokens.entries()) {
+  const tokenEntries = Array.from(validTokens.entries());
+  for (const [token, data] of tokenEntries) {
     if (now > data.expiresAt) {
       validTokens.delete(token);
     }
@@ -214,12 +216,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       fieldSize: 1024 * 1024, // 1MB field limit
       fields: 10 // Max 10 fields
     },
-    fileFilter: (req, file, cb) => {
+    fileFilter: (_req, file, cb) => {
       // Only accept image files
       if (file.mimetype.startsWith('image/')) {
         cb(null, true);
       } else {
-        cb(new Error('Only image files are allowed'), false);
+        cb(null, false);
       }
     }
   });
@@ -245,9 +247,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fileSize: `${Math.round(req.file.size / 1024)} KB`,
         ...exifData
       });
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Error extracting EXIF from uploaded photo:", error);
-      if (error.message === 'EXIF extraction timeout') {
+      if (error instanceof Error && error.message === 'EXIF extraction timeout') {
         res.status(408).json({ message: "EXIF extraction timed out" });
       } else {
         res.status(500).json({ message: "Failed to extract EXIF data" });
@@ -491,8 +493,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             
             console.log(`Background EXIF processing complete for photo: ${photo.id}`);
           }
-        } catch (exifError) {
-          console.warn(`Background EXIF processing failed for photo ${photo.url}:`, exifError.message);
+        } catch (exifError: unknown) {
+          const errorMessage = exifError instanceof Error ? exifError.message : 'Unknown error';
+          console.warn(`Background EXIF processing failed for photo ${photo.url}:`, errorMessage);
         }
       });
     } catch (error) {

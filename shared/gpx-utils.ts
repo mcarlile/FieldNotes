@@ -1,4 +1,11 @@
-import { DOMParser } from "xmldom";
+import { DOMParser as XmlDomParser } from "xmldom";
+
+const getDOMParser = (): typeof XmlDomParser => {
+  if (typeof window !== 'undefined' && window.DOMParser) {
+    return window.DOMParser as unknown as typeof XmlDomParser;
+  }
+  return XmlDomParser;
+};
 
 export interface GpxStats {
   distance: number; // in miles
@@ -40,6 +47,7 @@ function metersToFeet(meters: number): number {
  * Parses GPX content and extracts distance, elevation gain, date, and coordinates
  */
 export function parseGpxData(gpxContent: string): GpxStats {
+  const DOMParser = getDOMParser();
   const parser = new DOMParser();
   const xmlDoc = parser.parseFromString(gpxContent, "application/xml");
   

@@ -270,7 +270,7 @@ export default function FieldNoteDetail() {
                   
                   {/* Elevation Profile */}
                   <Tile className="p-6">
-                    {parsedGpxData && parsedGpxData.elevationProfile ? (
+                    {parsedGpxData && parsedGpxData.elevationProfile && parsedGpxData.elevationProfile.length > 0 ? (
                       <ElevationProfile 
                         elevationProfile={parsedGpxData.elevationProfile}
                         onHoverPoint={setHoveredElevationPoint}
