@@ -10,6 +10,15 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+**December 14, 2025 - Photo Upload Robustness Enhancement:**
+- ✓ Added server-side upload verification before creating database records
+- ✓ Prevents orphaned DB records when uploads fail by checking object existence
+- ✓ Enhanced verifyObjectExists() to handle all URL formats (normalized paths, GCS URLs, raw bucket paths)
+- ✓ Added client-side image compression (max 2048px, 85% quality) to reduce upload times
+- ✓ Implemented retry logic with exponential backoff (3 attempts with 1s, 2s, 4s delays)
+- ✓ Added dynamic upload timeouts based on file size (minimum 30s)
+- ✓ Improved error messaging for failed uploads with specific failure reasons
+
 **August 17, 2025 - Unified Header System with Theme Controls:**
 - ✓ Implemented consistent header design across all detail pages (field-note-detail, admin)
 - ✓ Added breadcrumb navigation with proper hierarchy on all pages
