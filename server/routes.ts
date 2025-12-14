@@ -459,7 +459,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         validatedData.url = objectStorageService.normalizeObjectEntityPath(validatedData.url);
       }
       
-      // Create the photo record first and return immediately
+      // Verify the uploaded object exists before creating the database record
+      // This prevents orphaned DB records when uploads fail
+      const objectExists = await objectStorageService.verifyObjectExists(validatedData.url);
+      if (!objectExists) {
+        console.error(`Upload verification failed: Object not found at ${validatedData.url}`);
+        return res.status(400).json({ 
+          error: "Upload verification failed", 
+          message: "The uploaded file could not be verified. Please try uploading again."
+        });
+      }
+      
+      // Create the photo record after verifying the upload
       const photo = await storage.createPhoto(validatedData);
       res.status(201).json(photo);
       

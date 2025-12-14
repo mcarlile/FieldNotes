@@ -170,6 +170,58 @@ export class ObjectStorageService {
     return objectFile;
   }
 
+  // Verifies that an uploaded object exists in storage
+  // Supports multiple path formats: normalized /objects/... paths, full GCS URLs, and raw bucket paths
+  async verifyObjectExists(rawPath: string): Promise<boolean> {
+    try {
+      let objectPath = rawPath;
+      
+      // Handle full GCS URLs - normalize them first
+      if (rawPath.startsWith("https://storage.googleapis.com/")) {
+        objectPath = this.normalizeObjectEntityPath(rawPath);
+      }
+      
+      // Handle normalized /objects/... paths
+      if (objectPath.startsWith("/objects/")) {
+        const parts = objectPath.slice(1).split("/");
+        if (parts.length < 2) {
+          return false;
+        }
+
+        const entityId = parts.slice(1).join("/");
+        let entityDir = this.getPrivateObjectDir();
+        if (!entityDir.endsWith("/")) {
+          entityDir = `${entityDir}/`;
+        }
+        const objectEntityPath = `${entityDir}${entityId}`;
+        const { bucketName, objectName } = parseObjectPath(objectEntityPath);
+        const bucket = objectStorageClient.bucket(bucketName);
+        const objectFile = bucket.file(objectName);
+        const [exists] = await objectFile.exists();
+        return exists;
+      }
+      
+      // Handle raw bucket-relative paths like /replit-objstore-xyz/uploads/uuid
+      if (objectPath.startsWith("/")) {
+        try {
+          const { bucketName, objectName } = parseObjectPath(objectPath);
+          const bucket = objectStorageClient.bucket(bucketName);
+          const objectFile = bucket.file(objectName);
+          const [exists] = await objectFile.exists();
+          return exists;
+        } catch (parseError) {
+          console.warn("Failed to parse raw bucket path:", objectPath, parseError);
+          return false;
+        }
+      }
+      
+      return false;
+    } catch (error) {
+      console.error("Error verifying object existence:", error);
+      return false;
+    }
+  }
+
   normalizeObjectEntityPath(rawPath: string): string {
     if (!rawPath.startsWith("https://storage.googleapis.com/")) {
       return rawPath;
