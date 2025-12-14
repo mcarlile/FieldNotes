@@ -24,12 +24,72 @@ interface CarbonPhotoUploaderProps {
 
 interface FileUploadState {
   file: File;
-  status: 'pending' | 'uploading' | 'complete' | 'error';
+  compressedFile?: File;
+  status: 'pending' | 'compressing' | 'uploading' | 'complete' | 'error';
   progress: number;
   uploadUrl?: string;
   errorMessage?: string;
   exifData?: PhotoExifData;
 }
+
+// Compress image to reduce upload size
+const compressImage = async (file: File, maxWidth = 2048, quality = 0.85): Promise<File> => {
+  return new Promise((resolve, reject) => {
+    // Skip compression for small files (< 500KB)
+    if (file.size < 500 * 1024) {
+      resolve(file);
+      return;
+    }
+
+    const img = new Image();
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    img.onload = () => {
+      let { width, height } = img;
+      
+      // Scale down if larger than maxWidth
+      if (width > maxWidth) {
+        height = (height * maxWidth) / width;
+        width = maxWidth;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      
+      if (!ctx) {
+        resolve(file);
+        return;
+      }
+
+      ctx.drawImage(img, 0, 0, width, height);
+      
+      canvas.toBlob(
+        (blob) => {
+          if (blob && blob.size < file.size) {
+            // Only use compressed version if it's smaller
+            const compressedFile = new File([blob], file.name, {
+              type: 'image/jpeg',
+              lastModified: Date.now(),
+            });
+            resolve(compressedFile);
+          } else {
+            resolve(file);
+          }
+        },
+        'image/jpeg',
+        quality
+      );
+    };
+
+    img.onerror = () => {
+      // If compression fails, use original file
+      resolve(file);
+    };
+
+    img.src = URL.createObjectURL(file);
+  });
+};
 
 export function CarbonPhotoUploader({
   maxNumberOfFiles = 1,
@@ -69,7 +129,7 @@ export function CarbonPhotoUploader({
       const exifData = await exifResponse.json();
       return exifData;
     } catch (error) {
-      if (error.name === 'AbortError') {
+      if ((error as Error).name === 'AbortError') {
         console.warn('EXIF extraction timed out for file:', file.name);
       } else {
         console.error('Failed to extract EXIF data:', error);
@@ -110,7 +170,7 @@ export function CarbonPhotoUploader({
     
     // Extract EXIF data from new files in parallel with limits
     const PARALLEL_LIMIT = 3; // Process max 3 files at once
-    const batches = [];
+    const batches: File[][] = [];
     for (let i = 0; i < validFiles.length; i += PARALLEL_LIMIT) {
       batches.push(validFiles.slice(i, i + PARALLEL_LIMIT));
     }
@@ -164,7 +224,7 @@ export function CarbonPhotoUploader({
     
     // Extract EXIF data from new files in parallel with limits
     const PARALLEL_LIMIT = 3; // Process max 3 files at once
-    const batches = [];
+    const batches: File[][] = [];
     for (let i = 0; i < validFiles.length; i += PARALLEL_LIMIT) {
       batches.push(validFiles.slice(i, i + PARALLEL_LIMIT));
     }
@@ -201,9 +261,23 @@ export function CarbonPhotoUploader({
       if (fileState.status !== 'pending') return null;
 
       try {
+        // Step 1: Compress image
+        setFiles(prev => prev.map((f, idx) => 
+          idx === i ? { ...f, status: 'compressing' as const, progress: 5 } : f
+        ));
+
+        const compressedFile = await compressImage(fileState.file);
+        const compressionRatio = compressedFile.size < fileState.file.size 
+          ? Math.round((1 - compressedFile.size / fileState.file.size) * 100)
+          : 0;
+        
+        if (compressionRatio > 0) {
+          console.log(`Compressed ${fileState.file.name}: ${compressionRatio}% smaller`);
+        }
+
         // Update status to uploading
         setFiles(prev => prev.map((f, idx) => 
-          idx === i ? { ...f, status: 'uploading' as const, progress: 10 } : f
+          idx === i ? { ...f, status: 'uploading' as const, progress: 15, compressedFile } : f
         ));
 
         // Get upload parameters with timeout
@@ -221,38 +295,52 @@ export function CarbonPhotoUploader({
         // Upload file with progress tracking and retry logic
         let uploadAttempts = 0;
         const maxRetries = 3;
-        let response;
+        let response: Response | undefined;
+        const fileToUpload = compressedFile;
         
         while (uploadAttempts < maxRetries) {
           try {
             uploadAttempts++;
             
+            // Use longer timeout for larger files
+            const controller = new AbortController();
+            const uploadTimeout = Math.max(30000, fileToUpload.size / 1024); // At least 30s, or 1s per KB
+            const timeoutId = setTimeout(() => controller.abort(), uploadTimeout);
+            
             response = await fetch(uploadParams.url, {
               method: uploadParams.method,
-              body: fileState.file,
+              body: fileToUpload,
               headers: {
-                'Content-Type': fileState.file.type,
+                'Content-Type': fileToUpload.type || 'image/jpeg',
               },
+              signal: controller.signal,
             });
+            
+            clearTimeout(timeoutId);
             
             if (response.ok) {
               break; // Success, exit retry loop
             } else if (uploadAttempts < maxRetries) {
-              console.warn(`Upload attempt ${uploadAttempts} failed, retrying...`);
-              await new Promise(resolve => setTimeout(resolve, 1000 * uploadAttempts)); // Exponential backoff
+              console.warn(`Upload attempt ${uploadAttempts} failed (${response.status}), retrying...`);
+              await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, uploadAttempts - 1))); // Exponential backoff
             }
           } catch (uploadError) {
             if (uploadAttempts >= maxRetries) {
               throw uploadError;
             }
-            console.warn(`Upload attempt ${uploadAttempts} failed with error, retrying...`, uploadError);
-            await new Promise(resolve => setTimeout(resolve, 1000 * uploadAttempts)); // Exponential backoff
+            const errorName = (uploadError as Error).name;
+            if (errorName === 'AbortError') {
+              console.warn(`Upload attempt ${uploadAttempts} timed out, retrying...`);
+            } else {
+              console.warn(`Upload attempt ${uploadAttempts} failed with error, retrying...`, uploadError);
+            }
+            await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, uploadAttempts - 1))); // Exponential backoff
           }
         }
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`Upload failed: ${response.status} ${response.statusText} - ${errorText}`);
+        if (!response || !response.ok) {
+          const errorText = response ? await response.text() : 'No response after retries';
+          throw new Error(`Upload failed: ${response?.status || 'N/A'} ${response?.statusText || ''} - ${errorText}`);
         }
 
         // Update progress
@@ -263,8 +351,8 @@ export function CarbonPhotoUploader({
         return {
           successful: [{
             name: fileState.file.name,
-            size: fileState.file.size,
-            type: fileState.file.type,
+            size: fileToUpload.size,
+            type: fileToUpload.type,
             uploadURL: uploadParams.url,
           }]
         };
@@ -295,7 +383,7 @@ export function CarbonPhotoUploader({
         successful: uploadResults.flatMap(r => r.successful),
         failed: [],
       };
-      const exifDataArray = files.map(f => f.exifData).filter(Boolean);
+      const exifDataArray = files.map(f => f.exifData).filter((exif): exif is PhotoExifData => exif !== undefined);
       onComplete(combinedResult as any, exifDataArray);
     }
   };
@@ -373,8 +461,7 @@ export function CarbonPhotoUploader({
               {files.map((fileState, i) => (
                 <FileUploaderItem
                   key={i}
-                  name={fileState.file.name}
-                  size={fileState.file.size}
+                  name={`${fileState.file.name} (${(fileState.file.size / 1024 / 1024).toFixed(1)} MB)`}
                   status={fileState.status === 'error' ? 'edit' : fileState.status === 'complete' ? 'complete' : 'uploading'}
                   onDelete={() => removeFile(i)}
                 >
@@ -382,7 +469,7 @@ export function CarbonPhotoUploader({
                     <ProgressBar 
                       value={fileState.progress} 
                       label={`${fileState.progress}%`}
-                      size="sm"
+                      size="small"
                     />
                   )}
                   {fileState.status === 'error' && (
