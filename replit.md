@@ -10,6 +10,18 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+**March 24, 2026 - User Authentication:**
+- ✓ Added `users` table (id, username, passwordHash, createdAt) with unique username constraint
+- ✓ Installed bcryptjs for secure password hashing (cost factor 12)
+- ✓ Set up express-session + passport-local for session-based authentication
+- ✓ Auth routes: `POST /api/register`, `POST /api/login`, `POST /api/logout`, `GET /api/user`
+- ✓ All write API routes (field notes, photos, trailcam, video uploads) protected with `requireAuth` middleware
+- ✓ Created `/login` page with username/password form
+- ✓ `AuthProvider` context provides `user`, `isLoading`, `login`, `logout` across the app
+- ✓ `ProtectedRoute` component in App.tsx redirects unauthenticated users to `/login`
+- ✓ Admin and TrailCam Studio pages are protected; home/detail pages remain public
+- ✓ Logout button + username display added to admin page header
+
 **December 14, 2025 - Photo Upload Robustness Enhancement:**
 - ✓ Added server-side upload verification before creating database records
 - ✓ Prevents orphaned DB records when uploads fail by checking object existence

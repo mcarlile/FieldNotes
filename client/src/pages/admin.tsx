@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useParams, useLocation } from "wouter";
 import { Link } from "wouter";
+import { useAuth } from "@/contexts/auth-context";
 import { 
   Grid,
   Column,
@@ -76,6 +77,7 @@ export default function AdminPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { theme, toggleTheme } = useTheme();
+  const { user, logout } = useAuth();
 
   // Form setup
   const form = useForm<FieldNoteFormData>({
@@ -473,7 +475,7 @@ export default function AdminPage() {
                 </Breadcrumb>
               </div>
 
-              {/* Theme Toggle */}
+              {/* Theme Toggle + User */}
               <div className="flex items-center gap-4 ml-4">
                 <Toggle
                   id="theme-toggle"
@@ -488,6 +490,18 @@ export default function AdminPage() {
                 <span className="text-sm text-muted-foreground flex items-center gap-2">
                   {theme === "dark" ? <Asleep size={16} /> : <Light size={16} />}
                 </span>
+                {user && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground hidden sm:block">{user.username}</span>
+                    <CarbonButton
+                      kind="ghost"
+                      size="sm"
+                      onClick={() => logout().then(() => setLocation("/login"))}
+                    >
+                      Sign out
+                    </CarbonButton>
+                  </div>
+                )}
               </div>
             </div>
           </Column>

@@ -6,6 +6,7 @@ import { ObjectStorageService, ObjectNotFoundError, objectStorageService } from 
 import { extractExifData, extractExifFromBuffer } from "./exif-extractor";
 import { startVideoProcessing } from "./videoProcessor";
 import { resolveClipCoordinates } from "@shared/gpx-utils";
+import { requireAuth } from "./auth";
 import multer from 'multer';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -332,7 +333,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create new field note
-  app.post("/api/field-notes", async (req, res) => {
+  app.post("/api/field-notes", requireAuth, async (req, res) => {
     try {
       // Extract photos from the request body
       const { photos: photosData, ...fieldNoteData } = req.body;
@@ -366,7 +367,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update field note
-  app.put("/api/field-notes/:id", async (req, res) => {
+  app.put("/api/field-notes/:id", requireAuth, async (req, res) => {
     try {
       const { id } = req.params;
       
@@ -406,7 +407,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete field note
-  app.delete("/api/field-notes/:id", async (req, res) => {
+  app.delete("/api/field-notes/:id", requireAuth, async (req, res) => {
     try {
       const { id } = req.params;
       const deleted = await storage.deleteFieldNote(id);
@@ -425,7 +426,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Note: objectStorageService is imported from ./objectStorage
 
   // Endpoint to get upload URL for photos (both POST and PUT for compatibility)
-  app.post("/api/photos/upload", async (req, res) => {
+  app.post("/api/photos/upload", requireAuth, async (req, res) => {
     try {
       const uploadURL = await objectStorageService.getObjectEntityUploadURL();
       res.json({ uploadURL });
@@ -436,7 +437,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Generic object storage upload endpoint (for videos and other files)
-  app.post("/api/objects/upload", async (req, res) => {
+  app.post("/api/objects/upload", requireAuth, async (req, res) => {
     try {
       const uploadURL = await objectStorageService.getObjectEntityUploadURL();
       res.json({ uploadURL });
@@ -450,7 +451,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // The POST endpoint above handles upload URL requests
 
   // Endpoint to create photo record after upload and extract EXIF data
-  app.post("/api/photos", async (req, res) => {
+  app.post("/api/photos", requireAuth, async (req, res) => {
     try {
       const validatedData = insertPhotoSchema.parse(req.body);
       
@@ -580,7 +581,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create new TrailCam project
-  app.post("/api/trailcam-projects", async (req, res) => {
+  app.post("/api/trailcam-projects", requireAuth, async (req, res) => {
     try {
       const validatedData = insertTrailcamProjectSchema.parse(req.body);
       const project = await storage.createTrailcamProject(validatedData);
@@ -592,7 +593,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update TrailCam project
-  app.put("/api/trailcam-projects/:id", async (req, res) => {
+  app.put("/api/trailcam-projects/:id", requireAuth, async (req, res) => {
     try {
       const { id } = req.params;
       const validatedData = insertTrailcamProjectSchema.partial().parse(req.body);
@@ -608,7 +609,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete TrailCam project
-  app.delete("/api/trailcam-projects/:id", async (req, res) => {
+  app.delete("/api/trailcam-projects/:id", requireAuth, async (req, res) => {
     try {
       const { id } = req.params;
       const deleted = await storage.deleteTrailcamProject(id);
@@ -653,7 +654,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create new video clip
-  app.post("/api/video-clips", async (req, res) => {
+  app.post("/api/video-clips", requireAuth, async (req, res) => {
     try {
       const validatedData = insertVideoClipSchema.parse(req.body);
       
@@ -692,7 +693,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update video clip
-  app.put("/api/video-clips/:id", async (req, res) => {
+  app.put("/api/video-clips/:id", requireAuth, async (req, res) => {
     try {
       const { id } = req.params;
       const validatedData = insertVideoClipSchema.partial().parse(req.body);
@@ -746,7 +747,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete video clip
-  app.delete("/api/video-clips/:id", async (req, res) => {
+  app.delete("/api/video-clips/:id", requireAuth, async (req, res) => {
     try {
       const { id } = req.params;
       const deleted = await storage.deleteVideoClip(id);
@@ -861,7 +862,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Initialize a chunked video upload and get a signed token
-  app.post("/api/video/init-upload", async (req, res) => {
+  app.post("/api/video/init-upload", requireAuth, async (req, res) => {
     try {
       const ip = req.ip || req.socket.remoteAddress || 'unknown';
       
@@ -911,7 +912,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     },
   });
 
-  app.post("/api/video/upload-chunk", chunkUpload.single('chunk'), async (req, res) => {
+  app.post("/api/video/upload-chunk", requireAuth, chunkUpload.single('chunk'), async (req, res) => {
     try {
       const ip = req.ip || req.socket.remoteAddress || 'unknown';
       const { chunkIndex, totalChunks, uploadKey, token } = req.body;
@@ -1000,7 +1001,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Chunked video upload - complete and assemble
-  app.post("/api/video/complete-upload", async (req, res) => {
+  app.post("/api/video/complete-upload", requireAuth, async (req, res) => {
     try {
       const ip = req.ip || req.socket.remoteAddress || 'unknown';
       const { uploadKey, filename, contentType, token } = req.body;
