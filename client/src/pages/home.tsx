@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useLocation } from "wouter";
-import { useAuth } from "@/contexts/auth-context";
+import { Link } from "wouter";
 import { 
   Grid,
   Column,
@@ -32,8 +31,6 @@ import type { FieldNote } from "@shared/schema";
 
 export default function Home() {
   const { theme, toggleTheme } = useTheme();
-  const { user, logout } = useAuth();
-  const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
   const [tripTypes, setTripTypes] = useState<string[]>([]);
   const [sortOrder, setSortOrder] = useState("recent");
@@ -204,27 +201,6 @@ export default function Home() {
                     Add New
                   </CarbonButton>
                 </Link>
-
-                {user ? (
-                  <div className="flex items-center gap-2 border-l border-border pl-4 ml-2">
-                    <span className="text-sm text-muted-foreground hidden sm:block">{user.username}</span>
-                    <CarbonButton
-                      kind="ghost"
-                      size="sm"
-                      onClick={() => logout().then(() => navigate("/login"))}
-                    >
-                      Sign out
-                    </CarbonButton>
-                  </div>
-                ) : (
-                  <div className="border-l border-border pl-4 ml-2">
-                    <Link href="/login">
-                      <CarbonButton kind="ghost" size="sm">
-                        Sign in
-                      </CarbonButton>
-                    </Link>
-                  </div>
-                )}
               </div>
             </div>
           </div>
@@ -283,27 +259,6 @@ export default function Home() {
                   Add New
                 </CarbonButton>
               </Link>
-
-              {user ? (
-                <div className="flex items-center gap-2 border-l border-border pl-4 ml-2">
-                  <span className="text-sm text-muted-foreground hidden sm:block">{user.username}</span>
-                  <CarbonButton
-                    kind="ghost"
-                    size="sm"
-                    onClick={() => logout().then(() => navigate("/login"))}
-                  >
-                    Sign out
-                  </CarbonButton>
-                </div>
-              ) : (
-                <div className="border-l border-border pl-4 ml-2">
-                  <Link href="/login">
-                    <CarbonButton kind="ghost" size="sm">
-                      Sign in
-                    </CarbonButton>
-                  </Link>
-                </div>
-              )}
             </div>
           </div>
         </div>

@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { CarbonNotificationContainer } from "@/components/carbon-notification";
 import { ThemeProvider } from "@/contexts/theme-context";
 import { AuthProvider, useAuth } from "@/contexts/auth-context";
+import GlobalHeader from "@/components/global-header";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import FieldNoteDetail from "@/pages/field-note-detail";
@@ -32,26 +33,32 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   return <Component />;
 }
 
-function Router() {
+function Layout() {
+  const [location] = useLocation();
+  const hideHeader = location === "/login";
+
   return (
-    <Switch>
-      <Route path="/" component={Home} />
-      <Route path="/login" component={Login} />
-      <Route path="/field-notes/:id" component={FieldNoteDetail} />
-      <Route path="/admin">
-        {() => <ProtectedRoute component={Admin} />}
-      </Route>
-      <Route path="/admin/:id">
-        {() => <ProtectedRoute component={Admin} />}
-      </Route>
-      <Route path="/field-notes/:id/edit">
-        {() => <ProtectedRoute component={Admin} />}
-      </Route>
-      <Route path="/trailcam-studio">
-        {() => <ProtectedRoute component={TrailcamStudio} />}
-      </Route>
-      <Route component={NotFound} />
-    </Switch>
+    <>
+      {!hideHeader && <GlobalHeader />}
+      <Switch>
+        <Route path="/" component={Home} />
+        <Route path="/login" component={Login} />
+        <Route path="/field-notes/:id" component={FieldNoteDetail} />
+        <Route path="/admin">
+          {() => <ProtectedRoute component={Admin} />}
+        </Route>
+        <Route path="/admin/:id">
+          {() => <ProtectedRoute component={Admin} />}
+        </Route>
+        <Route path="/field-notes/:id/edit">
+          {() => <ProtectedRoute component={Admin} />}
+        </Route>
+        <Route path="/trailcam-studio">
+          {() => <ProtectedRoute component={TrailcamStudio} />}
+        </Route>
+        <Route component={NotFound} />
+      </Switch>
+    </>
   );
 }
 
@@ -60,7 +67,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <AuthProvider>
-          <Router />
+          <Layout />
           <CarbonNotificationContainer />
         </AuthProvider>
       </ThemeProvider>
