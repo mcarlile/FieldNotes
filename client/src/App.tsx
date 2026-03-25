@@ -10,61 +10,34 @@ import Home from "@/pages/home";
 import FieldNoteDetail from "@/pages/field-note-detail";
 import Admin from "@/pages/admin";
 import TrailcamStudio from "@/pages/trailcam-studio";
+import Welcome from "@/pages/welcome";
 import { Loader2 } from "lucide-react";
-import { useEffect } from "react";
-import { useToast } from "@/hooks/use-toast";
 
-function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
+function AppContent() {
   const { isAuthenticated, isLoading } = useAuth();
-  const { toast } = useToast();
-
-  useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      toast({
-        title: "Sign in required",
-        description: "Redirecting you to sign in...",
-        variant: "destructive",
-      });
-      setTimeout(() => {
-        window.location.href = "/api/login";
-      }, 500);
-    }
-  }, [isAuthenticated, isLoading]);
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   if (!isAuthenticated) {
-    return null;
+    return <Welcome />;
   }
 
-  return <Component />;
-}
-
-function Router() {
   return (
     <>
       <GlobalHeader />
       <Switch>
         <Route path="/" component={Home} />
         <Route path="/field-notes/:id" component={FieldNoteDetail} />
-        <Route path="/admin">
-          {() => <ProtectedRoute component={Admin} />}
-        </Route>
-        <Route path="/admin/:id">
-          {() => <ProtectedRoute component={Admin} />}
-        </Route>
-        <Route path="/field-notes/:id/edit">
-          {() => <ProtectedRoute component={Admin} />}
-        </Route>
-        <Route path="/trailcam-studio">
-          {() => <ProtectedRoute component={TrailcamStudio} />}
-        </Route>
+        <Route path="/admin" component={Admin} />
+        <Route path="/admin/:id" component={Admin} />
+        <Route path="/field-notes/:id/edit" component={Admin} />
+        <Route path="/trailcam-studio" component={TrailcamStudio} />
         <Route component={NotFound} />
       </Switch>
     </>
@@ -75,7 +48,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <Router />
+        <AppContent />
         <CarbonNotificationContainer />
       </ThemeProvider>
     </QueryClientProvider>
