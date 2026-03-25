@@ -1,13 +1,8 @@
-import { fieldNotes, photos, trailcamProjects, videoClips, users, type FieldNote, type Photo, type InsertFieldNote, type InsertPhoto, type TrailcamProject, type VideoClip, type InsertTrailcamProject, type InsertVideoClip, type User } from "@shared/schema";
+import { fieldNotes, photos, trailcamProjects, videoClips, type FieldNote, type Photo, type InsertFieldNote, type InsertPhoto, type TrailcamProject, type VideoClip, type InsertTrailcamProject, type InsertVideoClip } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, like, ilike, and, or } from "drizzle-orm";
 
 export interface IStorage {
-  // Users
-  getUserByUsername(username: string): Promise<User | undefined>;
-  getUserById(id: string): Promise<User | undefined>;
-  createUser(username: string, passwordHash: string): Promise<User>;
-
   // Field Notes
   getFieldNotes(options?: {
     search?: string;
@@ -46,21 +41,6 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.username, username));
-    return user || undefined;
-  }
-
-  async getUserById(id: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user || undefined;
-  }
-
-  async createUser(username: string, passwordHash: string): Promise<User> {
-    const [user] = await db.insert(users).values({ username, passwordHash }).returning();
-    return user;
-  }
-
   async getFieldNotes(options: {
     search?: string;
     tripType?: string;
@@ -331,27 +311,6 @@ export class DatabaseStorage implements IStorage {
 
 // Temporary in-memory storage with sample data for demonstration
 export class MemStorage implements IStorage {
-  private usersData: User[] = [];
-
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return this.usersData.find(u => u.username === username);
-  }
-
-  async getUserById(id: string): Promise<User | undefined> {
-    return this.usersData.find(u => u.id === id);
-  }
-
-  async createUser(username: string, passwordHash: string): Promise<User> {
-    const user: User = {
-      id: Math.random().toString(36).substr(2, 9),
-      username,
-      passwordHash,
-      createdAt: new Date(),
-    };
-    this.usersData.push(user);
-    return user;
-  }
-
   async updateFieldNote(id: string, updateFieldNote: InsertFieldNote): Promise<FieldNote | undefined> {
     const index = this.fieldNotesData.findIndex(note => note.id === id);
     if (index === -1) return undefined;

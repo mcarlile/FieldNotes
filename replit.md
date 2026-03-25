@@ -10,17 +10,18 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
-**March 24, 2026 - User Authentication:**
-- ✓ Added `users` table (id, username, passwordHash, createdAt) with unique username constraint
-- ✓ Installed bcryptjs for secure password hashing (cost factor 12)
-- ✓ Set up express-session + passport-local for session-based authentication
-- ✓ Auth routes: `POST /api/register`, `POST /api/login`, `POST /api/logout`, `GET /api/user`
-- ✓ All write API routes (field notes, photos, trailcam, video uploads) protected with `requireAuth` middleware
-- ✓ Created `/login` page with username/password form
-- ✓ `AuthProvider` context provides `user`, `isLoading`, `login`, `logout` across the app
-- ✓ `ProtectedRoute` component in App.tsx redirects unauthenticated users to `/login`
-- ✓ Admin and TrailCam Studio pages are protected; home/detail pages remain public
-- ✓ Logout button + username display added to admin page header
+**March 25, 2026 - Replit Auth (OIDC) Integration:**
+- ✓ Replaced custom username/password auth with Replit Auth (OpenID Connect)
+- ✓ Supports Google, Apple, email, and other Replit-connected providers
+- ✓ Auth module at `server/replit_integrations/auth/` (replitAuth.ts, storage.ts, routes.ts)
+- ✓ `users` table migrated to Replit Auth schema (id, email, firstName, lastName, profileImageUrl, updatedAt)
+- ✓ `sessions` table created for server-side session storage via connect-pg-simple
+- ✓ Auth routes: `GET /api/login` (OIDC redirect), `GET /api/callback`, `GET /api/logout`, `GET /api/auth/user`
+- ✓ All write API routes protected with `isAuthenticated` middleware from Replit Auth
+- ✓ `useAuth` hook in `client/src/hooks/use-auth.ts` for React components
+- ✓ `GlobalHeader` shows user avatar/name with sign-in/sign-out, mobile-responsive
+- ✓ Protected routes redirect to `/api/login` (Replit OIDC) when unauthenticated
+- ✓ `shared/models/auth.ts` exports sessions + users tables; re-exported from `shared/schema.ts`
 
 **December 14, 2025 - Photo Upload Robustness Enhancement:**
 - ✓ Added server-side upload verification before creating database records

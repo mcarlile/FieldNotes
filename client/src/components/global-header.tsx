@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { useAuth } from "@/contexts/auth-context";
+import { useAuth } from "@/hooks/use-auth";
 import { useTheme } from "@/contexts/theme-context";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,16 +13,13 @@ import {
 import { MapPin, Menu, X, Sun, Moon, LogIn, LogOut, User } from "lucide-react";
 
 export default function GlobalHeader() {
-  const { user, logout } = useAuth();
+  const { user, logout, isLoggingOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const [, navigate] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const handleLogout = async () => {
-    await logout();
-    setMobileOpen(false);
-    navigate("/login");
-  };
+  const displayName = user?.firstName
+    ? `${user.firstName}${user.lastName ? " " + user.lastName : ""}`
+    : user?.email ?? "Account";
 
   return (
     <header className="bg-card border-b border-border sticky top-0 z-50">
@@ -47,28 +44,36 @@ export default function GlobalHeader() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm" className="gap-2">
-                  <User className="h-4 w-4" />
-                  <span>{user.username}</span>
+                  {user.profileImageUrl ? (
+                    <img src={user.profileImageUrl} alt="" className="h-5 w-5 rounded-full object-cover" />
+                  ) : (
+                    <User className="h-4 w-4" />
+                  )}
+                  <span className="max-w-[120px] truncate">{displayName}</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem disabled className="text-xs text-muted-foreground">
-                  Signed in as {user.username}
+                  Signed in as {displayName}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout} className="gap-2 text-destructive focus:text-destructive">
+                <DropdownMenuItem
+                  onClick={() => logout()}
+                  disabled={isLoggingOut}
+                  className="gap-2 text-destructive focus:text-destructive"
+                >
                   <LogOut className="h-4 w-4" />
                   Sign out
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <Link href="/login">
+            <a href="/api/login">
               <Button variant="ghost" size="sm" className="gap-2">
                 <LogIn className="h-4 w-4" />
                 Sign in
               </Button>
-            </Link>
+            </a>
           )}
         </div>
 
@@ -109,7 +114,7 @@ export default function GlobalHeader() {
 
           <div className="border-t border-border mt-1 pt-2 flex flex-col gap-1">
             <button
-              onClick={() => { toggleTheme(); }}
+              onClick={toggleTheme}
               className="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-foreground hover:bg-accent transition-colors w-full text-left"
             >
               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
@@ -119,11 +124,16 @@ export default function GlobalHeader() {
             {user ? (
               <>
                 <div className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
-                  <User className="h-4 w-4" />
-                  <span>Signed in as <strong>{user.username}</strong></span>
+                  {user.profileImageUrl ? (
+                    <img src={user.profileImageUrl} alt="" className="h-5 w-5 rounded-full object-cover" />
+                  ) : (
+                    <User className="h-4 w-4" />
+                  )}
+                  <span>Signed in as <strong>{displayName}</strong></span>
                 </div>
                 <button
-                  onClick={handleLogout}
+                  onClick={() => { logout(); setMobileOpen(false); }}
+                  disabled={isLoggingOut}
                   className="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-destructive hover:bg-accent transition-colors w-full text-left"
                 >
                   <LogOut className="h-4 w-4" />
@@ -131,14 +141,14 @@ export default function GlobalHeader() {
                 </button>
               </>
             ) : (
-              <Link
-                href="/login"
+              <a
+                href="/api/login"
                 onClick={() => setMobileOpen(false)}
                 className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-foreground hover:bg-accent transition-colors"
               >
                 <LogIn className="h-4 w-4" />
                 Sign in
-              </Link>
+              </a>
             )}
           </div>
         </div>
