@@ -2,13 +2,32 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
+import { pool } from "./db";
 
 const app = express();
 // Increase body size limit to handle large GPX files (50MB limit)
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+async function runStartupMigrations() {
+  const client = await pool.connect();
+  try {
+    // Drop legacy columns left over from the old username/password auth system
+    await client.query(`
+      ALTER TABLE users
+        DROP COLUMN IF EXISTS old_username,
+        DROP COLUMN IF EXISTS old_password_hash;
+    `);
+    log("Startup migrations complete");
+  } catch (err) {
+    log(`Startup migration warning: ${(err as Error).message}`);
+  } finally {
+    client.release();
+  }
+}
+
 (async () => {
+  await runStartupMigrations();
   await setupAuth(app);
   registerAuthRoutes(app);
 
