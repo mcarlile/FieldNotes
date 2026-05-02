@@ -123,6 +123,7 @@ export default function Home() {
     "Cycling", 
     "Running",
     "Backpacking",
+    "Paddling",
     "Motorcycle",
     "Climbing",
     "Skiing",

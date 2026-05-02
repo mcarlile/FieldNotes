@@ -43,6 +43,7 @@ export default function Home() {
     { id: "Cycling", text: "Cycling" },
     { id: "Running", text: "Running" },
     { id: "Backpacking", text: "Backpacking" },
+    { id: "Paddling", text: "Paddling" },
     { id: "Motorcycle", text: "Motorcycle" },
     { id: "Climbing", text: "Climbing" },
     { id: "Skiing", text: "Skiing" },

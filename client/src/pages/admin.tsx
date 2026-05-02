@@ -44,6 +44,7 @@ const tripTypeOptions = [
   { id: "cycling", text: "Cycling" },
   { id: "running", text: "Running" },
   { id: "backpacking", text: "Backpacking" },
+  { id: "paddling", text: "Paddling" },
   { id: "motorcycle", text: "Motorcycle" },
   { id: "climbing", text: "Climbing" },
   { id: "skiing", text: "Skiing" },

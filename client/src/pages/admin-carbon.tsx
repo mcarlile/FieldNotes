@@ -38,6 +38,7 @@ type FieldNoteFormData = z.infer<typeof fieldNoteFormSchema>;
 
 const tripTypeOptions = [
   { id: "hiking", text: "Hiking" },
+  { id: "paddling", text: "Paddling" },
   { id: "cycling", text: "Cycling" },
   { id: "running", text: "Running" },
   { id: "backpacking", text: "Backpacking" },
