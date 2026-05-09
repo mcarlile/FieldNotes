@@ -202,7 +202,7 @@ export default function TrailcamStudio() {
               <div className="flex items-center gap-4">
                 <Link href="/">
                   <CarbonButton kind="ghost" size="sm" renderIcon={ArrowLeft} data-testid="button-back">
-                    Back to Field Notes
+                    Back to Big Miles
                   </CarbonButton>
                 </Link>
                 <h1 className="text-2xl font-semibold text-foreground">TrailCam Studio</h1>

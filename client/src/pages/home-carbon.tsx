@@ -63,7 +63,7 @@ export default function Home() {
         <Grid fullWidth>
           <Column sm={4} md={8} lg={16}>
             <div className="flex justify-between items-center py-6">
-              <h1 className="text-2xl font-semibold text-gray-900">Field Notes</h1>
+              <h1 className="text-2xl font-semibold text-gray-900">Big Miles</h1>
               <div className="flex items-center gap-4">
                 <div className="text-sm text-gray-600">GPX Track Showcase</div>
                 <Link href="/admin">

@@ -125,7 +125,7 @@ export default function FieldNoteDetail() {
             <Breadcrumb>
               <BreadcrumbItem>
                 <Link href="/" className="text-blue-600 hover:text-blue-800">
-                  Field Notes
+                  Big Miles
                 </Link>
               </BreadcrumbItem>
               <BreadcrumbItem isCurrentPage>

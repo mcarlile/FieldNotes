@@ -1033,7 +1033,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
         <div className="absolute inset-0 bg-background flex items-center justify-center">
           <div className="text-center">
             <h3 className="text-lg font-semibold text-foreground mb-2">No routes to display</h3>
-            <p className="text-muted-foreground">Add some field notes with GPX data to see the heat map</p>
+            <p className="text-muted-foreground">Add some trips with GPX data to see the heat map</p>
           </div>
         </div>
       )}

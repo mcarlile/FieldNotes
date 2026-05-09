@@ -163,7 +163,7 @@ export default function Home() {
         <div className="bg-card border-b border-border flex-shrink-0">
           <div className="px-6 py-6">
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
-              <h1 className="text-2xl font-semibold text-foreground">Field Notes</h1>
+              <h1 className="text-2xl font-semibold text-foreground">Big Miles</h1>
               <div className="flex items-center gap-4">
                 <label htmlFor="heat-map-toggle" className="text-sm text-muted-foreground cursor-pointer">
                   Heat Map
@@ -221,7 +221,7 @@ export default function Home() {
       <div className="bg-card border-b border-border flex-shrink-0">
         <div className="px-6 py-6">
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
-            <h1 className="text-2xl font-semibold text-foreground">Field Notes</h1>
+            <h1 className="text-2xl font-semibold text-foreground">Big Miles</h1>
             <div className="flex items-center gap-4">
               <label htmlFor="heat-map-toggle" className="text-sm text-muted-foreground cursor-pointer">
                 Heat Map

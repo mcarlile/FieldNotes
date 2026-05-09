@@ -170,7 +170,7 @@ export default function FieldNoteDetail() {
                 <Breadcrumb>
                   <BreadcrumbItem>
                     <Link href="/" className="text-primary hover:text-primary/80">
-                      Field Notes
+                      Big Miles
                     </Link>
                   </BreadcrumbItem>
                   <BreadcrumbItem isCurrentPage>

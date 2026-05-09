@@ -1,8 +1,8 @@
-# Field Notes GPX Showcase Application
+# Big Miles
 
 ## Overview
 
-This is a full-stack web application designed to showcase outdoor field notes with integrated GPX track visualization and photo management. The application serves as a portfolio/showcase platform for outdoor adventures, combining trip documentation with interactive maps and photo galleries.
+This is a full-stack web application for documenting outdoor adventures with integrated GPX track visualization and photo management. The application serves as a personal journal platform for outdoor trips, combining trip documentation with interactive maps and photo galleries.
 
 ## User Preferences
 

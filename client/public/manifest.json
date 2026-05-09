@@ -1,7 +1,7 @@
 {
-  "name": "Field Notes GPX Showcase",
-  "short_name": "Field Notes",
-  "description": "Outdoor adventure field notes with GPX track visualization and photo management",
+  "name": "Big Miles",
+  "short_name": "Big Miles",
+  "description": "Big Miles — document your outdoor adventures with GPX tracks, photos, and trail footage",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
@@ -65,14 +65,14 @@
       "sizes": "1280x720",
       "type": "image/png",
       "form_factor": "wide",
-      "label": "Field notes with interactive map"
+      "label": "Big Miles with interactive map"
     },
     {
-      "src": "/screenshots/mobile.png", 
+      "src": "/screenshots/mobile.png",
       "sizes": "390x844",
       "type": "image/png",
       "form_factor": "narrow",
-      "label": "Mobile field notes view"
+      "label": "Big Miles mobile view"
     }
   ]
 }

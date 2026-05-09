@@ -9,7 +9,7 @@ export default function Welcome() {
           <div className="flex items-center justify-center h-16 w-16 rounded-2xl bg-green-600/10 dark:bg-green-500/10">
             <MapPin className="h-8 w-8 text-green-600 dark:text-green-400" />
           </div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Field Notes</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">Big Miles</h1>
           <p className="text-muted-foreground text-base leading-relaxed">
             Your personal outdoor trip journal. Document GPX tracks, photos, and trail footage from every adventure.
           </p>

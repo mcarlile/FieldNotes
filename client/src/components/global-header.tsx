@@ -27,7 +27,7 @@ export default function GlobalHeader() {
         {/* Brand */}
         <Link href="/" className="flex items-center gap-2 text-foreground hover:opacity-80 transition-opacity">
           <MapPin className="h-5 w-5 text-green-600 dark:text-green-400 flex-shrink-0" />
-          <span className="font-semibold text-base">Field Notes</span>
+          <span className="font-semibold text-base">Big Miles</span>
         </Link>
 
         {/* Desktop right side */}
