@@ -26,7 +26,12 @@ function AppContent() {
   }
 
   if (!isAuthenticated) {
-    return <Welcome />;
+    return (
+      <>
+        <GlobalHeader />
+        <Welcome />
+      </>
+    );
   }
 
   return (

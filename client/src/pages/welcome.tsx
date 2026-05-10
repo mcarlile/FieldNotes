@@ -1,18 +1,8 @@
 export default function Welcome() {
   return (
-    <div className="min-h-screen flex flex-col bg-background overflow-hidden">
-      {/* Top meta strip */}
-      <div className="px-6 sm:px-10 pt-6 sm:pt-8 flex items-center justify-between">
-        <div className="meta-mono text-muted-foreground">
-          Big Miles &nbsp;·&nbsp; Field Journal
-        </div>
-        <div className="meta-mono text-muted-foreground hidden sm:block">
-          Est. 2025
-        </div>
-      </div>
-
+    <div className="min-h-[calc(100vh-2.75rem)] flex flex-col bg-background overflow-hidden">
       {/* Hero block */}
-      <div className="flex-1 flex flex-col justify-center px-6 sm:px-10 max-w-5xl">
+      <div className="flex-1 flex flex-col justify-center px-5 sm:px-8 max-w-5xl pt-10 sm:pt-16">
         <div className="meta-mono text-muted-foreground mb-6">
           A quiet record of long days outside
         </div>
@@ -54,9 +44,9 @@ export default function Welcome() {
       </div>
 
       {/* Bottom colophon */}
-      <div className="px-6 sm:px-10 pb-6 sm:pb-8 flex flex-wrap items-center justify-between gap-y-2 border-t border-border pt-4">
+      <div className="px-5 sm:px-8 pb-6 sm:pb-8 mt-16 flex flex-wrap items-center justify-between gap-y-2 border-t border-border pt-4">
         <div className="meta-mono text-muted-foreground">
-          GPX &nbsp;·&nbsp; Photos &nbsp;·&nbsp; Maps
+          GPX &nbsp;·&nbsp; Photos &nbsp;·&nbsp; Maps &nbsp;·&nbsp; Est. 2025
         </div>
         <div className="meta-mono text-muted-foreground">
           Fraunces / Inter / JetBrains Mono
