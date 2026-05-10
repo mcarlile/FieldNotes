@@ -10,6 +10,16 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+**May 10, 2026 - GPX Webhook Inbox:**
+- ✓ Added `webhook_tokens` table (userId unique, token unique) and `gpx_inbox` table (userId, filename, rawGpx, gpxStats jsonb, status, sourceIp, receivedAt) via startup migration
+- ✓ Per-user webhook tokens — auto-created on first visit to `/inbox`, regeneratable at any time
+- ✓ Public webhook endpoint `POST /api/webhook/gpx/:token` — accepts GPX as multipart file (`file` field), raw XML body, or JSON `{ gpx, filename }`; validates token and basic GPX structure
+- ✓ Inbox page at `/inbox` — displays webhook URL with copy/regenerate, lists received files with distance/elevation/date stats, pending badge count in header
+- ✓ "Add to journal" flow — promotes any inbox item to a full field note with title, description, and trip type; item marked `promoted` afterward
+- ✓ Inbox nav link added to desktop header and mobile drawer, with live green badge showing pending count (polls every 60s)
+- ✓ New IStorage methods: `getWebhookTokenByUserId`, `getWebhookTokenByToken`, `upsertWebhookToken`, `getInboxItems`, `getInboxItemById`, `createInboxItem`, `updateInboxItemStatus`, `deleteInboxItem`
+- ✓ Example curl: `curl -X POST "https://yourapp.replit.app/api/webhook/gpx/TOKEN" -F "file=@track.gpx"`
+
 **March 25, 2026 - Replit Auth (OIDC) Integration:**
 - ✓ Replaced custom username/password auth with Replit Auth (OpenID Connect)
 - ✓ Supports Google, Apple, email, and other Replit-connected providers
@@ -143,13 +153,19 @@ Preferred communication style: Simple, everyday language.
 #### Database Schema
 - **Field Notes Table**: Stores trip metadata including title, description, trip type, date, distance, elevation gain, and GPX data
 - **Photos Table**: Stores photo metadata with EXIF data, GPS coordinates, and relationships to field notes
-- **Relationships**: One-to-many relationship between field notes and photos
+- **TrailCam Projects Table**: Stores TrailCam Studio video projects with metadata
+- **Video Clips Table**: Stores individual video clips associated with TrailCam projects
+- **Webhook Tokens Table**: One token per user for authenticating incoming GPX webhook pushes
+- **GPX Inbox Table**: Received GPX files pending review, with parsed stats (distance, elevation) stored as JSONB
+- **Relationships**: One-to-many between field notes and photos; one-to-many between TrailCam projects and clips; one-to-one between users and webhook tokens
 
 #### Frontend Components
 - **Field Note Cards**: Grid-based showcase of outdoor adventures
 - **Interactive Map**: Displays GPX tracks and photo locations using Mapbox
 - **Photo Lightbox**: Modal gallery for viewing detailed photo information and EXIF data
 - **Search & Filtering**: Real-time filtering by search terms, trip type, and sorting options
+- **GPX Inbox** (`/inbox`): Webhook URL management, received file list, promote-to-journal dialog
+- **TrailCam Studio** (`/trailcam-studio`): Video clip management and project editor
 
 #### API Endpoints
 - `GET /api/field-notes` - Retrieve field notes with optional filtering and sorting
@@ -157,6 +173,12 @@ Preferred communication style: Simple, everyday language.
 - `GET /api/field-notes/:id` - Get specific field note details
 - `GET /api/field-notes/:id/photos` - Get photos associated with a field note
 - `GET /api/photos/:id` - Get detailed photo information with EXIF data
+- `GET /api/inbox/token` - Get (or auto-create) the user's webhook token
+- `POST /api/inbox/token/regenerate` - Rotate the webhook token
+- `GET /api/inbox` - List all received GPX inbox items for the user
+- `DELETE /api/inbox/:id` - Remove an inbox item
+- `POST /api/inbox/:id/promote` - Promote an inbox item to a field note
+- `POST /api/webhook/gpx/:token` - **Public** — receive a GPX file via webhook (no auth, token in URL)
 
 ## Data Flow
 
