@@ -59,7 +59,7 @@ export default function Welcome() {
           GPX &nbsp;·&nbsp; Photos &nbsp;·&nbsp; Maps
         </div>
         <div className="meta-mono text-muted-foreground">
-          Instrument Serif / Inter / JetBrains Mono
+          Fraunces / Inter / JetBrains Mono
         </div>
       </div>
     </div>

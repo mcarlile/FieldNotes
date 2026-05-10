@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,300..700,0..100,0..1;1,9..144,300..700,0..100,0..1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 @import 'https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css';
 
 @import '@carbon/styles/css/styles.css';
@@ -88,15 +88,17 @@
   }
 
   h1, h2, h3, h4, h5, h6 {
-    font-family: 'Instrument Serif', 'Fraunces', Georgia, serif;
-    font-weight: 400;
-    letter-spacing: -0.01em;
+    font-family: 'Fraunces', 'Source Serif Pro', Georgia, serif;
+    font-weight: 450;
+    font-variation-settings: 'opsz' 144, 'SOFT' 30, 'WONK' 0;
+    letter-spacing: -0.015em;
   }
 }
 
 @layer utilities {
   .font-serif {
-    font-family: 'Instrument Serif', 'Fraunces', Georgia, serif;
+    font-family: 'Fraunces', 'Source Serif Pro', Georgia, serif;
+    font-variation-settings: 'opsz' 144, 'SOFT' 30, 'WONK' 0;
   }
 
   .font-sans {

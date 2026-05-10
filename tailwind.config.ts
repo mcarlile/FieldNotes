@@ -6,7 +6,7 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        serif: ['"Instrument Serif"', 'Fraunces', 'Georgia', 'serif'],
+        serif: ['Fraunces', '"Source Serif Pro"', 'Georgia', 'serif'],
         sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'Menlo', 'Monaco', 'monospace'],
       },
