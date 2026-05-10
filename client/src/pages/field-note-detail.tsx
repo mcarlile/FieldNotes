@@ -65,7 +65,7 @@ export default function FieldNoteDetail() {
     const profile = parsedGpxData?.elevationProfile;
     if (!profile || profile.length === 0) return null;
 
-    const elevations = profile.map((p) => p.elevation).filter((e) => Number.isFinite(e) && e !== 0);
+    const elevations = profile.map((p) => p.elevation).filter((e) => Number.isFinite(e));
     if (elevations.length === 0) return null;
 
     const maxEle = Math.round(Math.max(...elevations));
@@ -83,8 +83,8 @@ export default function FieldNoteDetail() {
       }
     }
 
-    // Moving time: only available when raw GPX string is present
-    let movingTime: string | null = null;
+    // Elapsed time: total timestamp span (start → end), only available when raw GPX is present
+    let elapsedTime: string | null = null;
     if (typeof fieldNote?.gpxData === "string") {
       try {
         const tracked = parseGpxWithTimestamps(fieldNote.gpxData);
@@ -92,12 +92,12 @@ export default function FieldNoteDetail() {
           const total = Math.round(tracked.durationSeconds);
           const h = Math.floor(total / 3600);
           const m = Math.floor((total % 3600) / 60);
-          movingTime = h > 0 ? `${h}h ${m}m` : `${m}m`;
+          elapsedTime = h > 0 ? `${h}h ${m}m` : `${m}m`;
         }
       } catch (_) { /* ignore */ }
     }
 
-    return { maxEle, minEle, peakGrade: Math.round(peakGrade * 10) / 10, movingTime };
+    return { maxEle, minEle, peakGrade: Math.round(peakGrade * 10) / 10, elapsedTime };
   }, [parsedGpxData, fieldNote?.gpxData]);
 
   const deleteFieldNoteMutation = useMutation({
@@ -172,8 +172,8 @@ export default function FieldNoteDetail() {
             {derivedStats.peakGrade > 0 && (
               <span><span className="text-foreground">{derivedStats.peakGrade}%</span> peak grade</span>
             )}
-            {derivedStats.movingTime && (
-              <span><span className="text-foreground">{derivedStats.movingTime}</span> moving</span>
+            {derivedStats.elapsedTime && (
+              <span><span className="text-foreground">{derivedStats.elapsedTime}</span> elapsed</span>
             )}
           </div>
         </div>
@@ -256,7 +256,7 @@ export default function FieldNoteDetail() {
           <div className="columns-2 md:columns-3 lg:columns-4 gap-3 sm:gap-4">
             {photos.map((photo, index) => {
               const captureDate = photo.timestamp
-                ? new Date(photo.timestamp as unknown as string).toLocaleDateString("en-US", {
+                ? new Date(photo.timestamp).toLocaleDateString("en-US", {
                     month: "short",
                     day: "numeric",
                     year: "numeric",
