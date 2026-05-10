@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useTheme } from "@/contexts/theme-context";
-import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 import {
   DropdownMenu,
@@ -11,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MapPin, Menu, X, Sun, Moon, LogIn, LogOut, User, Inbox } from "lucide-react";
+import { Menu, X, Sun, Moon, LogIn, LogOut, User, Inbox } from "lucide-react";
 import type { GpxInboxItem } from "@shared/schema";
 
 export default function GlobalHeader() {
@@ -31,65 +30,94 @@ export default function GlobalHeader() {
   });
   const pendingCount = inboxItems.filter((i: GpxInboxItem) => i.status === "pending").length;
 
-  const navLink = (href: string, label: string, icon?: React.ReactNode) => (
+  const navLink = (href: string, label: string) => (
     <Link
       href={href}
       onClick={() => setMobileOpen(false)}
-      className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-        location === href
-          ? "bg-accent text-foreground"
-          : "text-foreground hover:bg-accent"
+      className={`text-sm transition-opacity hover:opacity-100 ${
+        location === href ? "text-foreground" : "text-muted-foreground hover:text-foreground"
       }`}
     >
-      {icon}
       {label}
     </Link>
   );
 
   return (
-    <header className="bg-card border-b border-border sticky top-0 z-50">
-      <div className="px-4 sm:px-6 h-14 flex items-center justify-between">
-        {/* Brand */}
-        <Link href="/" className="flex items-center gap-2 text-foreground hover:opacity-80 transition-opacity">
-          <MapPin className="h-5 w-5 text-green-600 dark:text-green-400 flex-shrink-0" />
-          <span className="font-semibold text-base">Big Miles</span>
+    <header className="bg-background sticky top-0 z-50 backdrop-blur-sm bg-opacity-90">
+      <div className="px-5 sm:px-8 h-11 flex items-center justify-between">
+        {/* Brand wordmark */}
+        <Link
+          href="/"
+          className="font-serif text-foreground hover:opacity-70 transition-opacity"
+          style={{ fontSize: "1.25rem", letterSpacing: "-0.01em" }}
+        >
+          Big Miles
         </Link>
 
-        {/* Desktop right side */}
-        <div className="hidden sm:flex items-center gap-1">
+        {/* Desktop nav */}
+        <nav className="hidden sm:flex items-center gap-6">
           {user && (
-            <Link href="/inbox">
-              <Button variant="ghost" size="sm" className="gap-1.5 relative">
-                <Inbox className="h-4 w-4" />
+            <>
+              <Link
+                href="/"
+                className={`text-sm transition-colors hover:text-foreground hover:underline underline-offset-4 ${
+                  location === "/" ? "text-foreground" : "text-muted-foreground"
+                }`}
+              >
+                Home
+              </Link>
+              <Link
+                href="/admin"
+                className={`text-sm transition-colors hover:text-foreground hover:underline underline-offset-4 ${
+                  location === "/admin" ? "text-foreground" : "text-muted-foreground"
+                }`}
+              >
+                Add Trip
+              </Link>
+              <Link
+                href="/trailcam-studio"
+                className={`text-sm transition-colors hover:text-foreground hover:underline underline-offset-4 ${
+                  location === "/trailcam-studio" ? "text-foreground" : "text-muted-foreground"
+                }`}
+              >
+                TrailCam
+              </Link>
+              <Link
+                href="/inbox"
+                className={`relative text-sm transition-colors hover:text-foreground hover:underline underline-offset-4 flex items-center gap-1.5 ${
+                  location === "/inbox" ? "text-foreground" : "text-muted-foreground"
+                }`}
+              >
+                <Inbox className="h-3.5 w-3.5" />
                 Inbox
                 {pendingCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-green-600 text-[10px] font-bold text-white">
+                  <span className="ml-0.5 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-foreground px-1 text-[10px] font-medium text-background">
                     {pendingCount > 9 ? "9+" : pendingCount}
                   </span>
                 )}
-              </Button>
-            </Link>
+              </Link>
+            </>
           )}
 
           <button
             onClick={toggleTheme}
-            className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            className="text-muted-foreground hover:text-foreground transition-colors"
             aria-label="Toggle theme"
           >
-            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            {theme === "dark" ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
           </button>
 
           {user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="gap-2">
+                <button className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
                   {user.profileImageUrl ? (
                     <img src={user.profileImageUrl} alt="" className="h-5 w-5 rounded-full object-cover" />
                   ) : (
-                    <User className="h-4 w-4" />
+                    <User className="h-3.5 w-3.5" />
                   )}
                   <span className="max-w-[120px] truncate">{displayName}</span>
-                </Button>
+                </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem disabled className="text-xs text-muted-foreground">
@@ -107,29 +135,28 @@ export default function GlobalHeader() {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <a href="/api/login">
-              <Button variant="ghost" size="sm" className="gap-2">
-                <LogIn className="h-4 w-4" />
-                Sign in
-              </Button>
+            <a
+              href="/api/login"
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
+            >
+              <LogIn className="h-3.5 w-3.5" />
+              Sign in
             </a>
           )}
-        </div>
+        </nav>
 
         {/* Mobile hamburger */}
-        <div className="sm:hidden flex items-center gap-2">
+        <div className="sm:hidden flex items-center gap-3">
           {user && pendingCount > 0 && (
-            <Link href="/inbox">
-              <Button variant="ghost" size="sm" className="relative p-2">
-                <Inbox className="h-5 w-5" />
-                <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-green-600 text-[10px] font-bold text-white">
-                  {pendingCount > 9 ? "9+" : pendingCount}
-                </span>
-              </Button>
+            <Link href="/inbox" className="relative text-muted-foreground">
+              <Inbox className="h-4 w-4" />
+              <span className="absolute -top-1 -right-1.5 inline-flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full bg-foreground px-1 text-[9px] font-medium text-background">
+                {pendingCount > 9 ? "9+" : pendingCount}
+              </span>
             </Link>
           )}
           <button
-            className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            className="text-muted-foreground hover:text-foreground transition-colors"
             onClick={() => setMobileOpen((v) => !v)}
             aria-label="Toggle menu"
           >
@@ -140,37 +167,37 @@ export default function GlobalHeader() {
 
       {/* Mobile drawer */}
       {mobileOpen && (
-        <div className="sm:hidden border-t border-border bg-card px-4 py-3 flex flex-col gap-1">
+        <div className="sm:hidden border-t border-border px-5 py-4 flex flex-col gap-3">
           {navLink("/", "Home")}
-          {navLink("/inbox", "GPX Inbox", <Inbox className="h-4 w-4" />)}
+          {navLink("/inbox", "GPX Inbox")}
           {navLink("/admin", "Add Trip")}
           {navLink("/trailcam-studio", "TrailCam Studio")}
 
-          <div className="border-t border-border mt-1 pt-2 flex flex-col gap-1">
+          <div className="border-t border-border pt-3 flex flex-col gap-3">
             <button
               onClick={toggleTheme}
-              className="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-foreground hover:bg-accent transition-colors w-full text-left"
+              className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors text-left"
             >
-              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              {theme === "dark" ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
               {theme === "dark" ? "Light mode" : "Dark mode"}
             </button>
 
             {user ? (
               <>
-                <div className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   {user.profileImageUrl ? (
                     <img src={user.profileImageUrl} alt="" className="h-5 w-5 rounded-full object-cover" />
                   ) : (
-                    <User className="h-4 w-4" />
+                    <User className="h-3.5 w-3.5" />
                   )}
-                  <span>Signed in as <strong>{displayName}</strong></span>
+                  <span>Signed in as <span className="text-foreground">{displayName}</span></span>
                 </div>
                 <button
                   onClick={() => { logout(); setMobileOpen(false); }}
                   disabled={isLoggingOut}
-                  className="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-destructive hover:bg-accent transition-colors w-full text-left"
+                  className="flex items-center gap-2 text-sm text-destructive hover:opacity-80 transition-opacity text-left"
                 >
-                  <LogOut className="h-4 w-4" />
+                  <LogOut className="h-3.5 w-3.5" />
                   Sign out
                 </button>
               </>
@@ -178,9 +205,9 @@ export default function GlobalHeader() {
               <a
                 href="/api/login"
                 onClick={() => setMobileOpen(false)}
-                className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-foreground hover:bg-accent transition-colors"
+                className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
               >
-                <LogIn className="h-4 w-4" />
+                <LogIn className="h-3.5 w-3.5" />
                 Sign in
               </a>
             )}

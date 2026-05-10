@@ -122,8 +122,8 @@ export default function MapboxRoutePreview({ fieldNote, className = "" }: Mapbox
             'line-cap': 'round'
           },
           paint: {
-            'line-color': '#0f62fe', // IBM Blue
-            'line-width': 3
+            'line-color': '#1a1815',
+            'line-width': 2
           }
         });
 

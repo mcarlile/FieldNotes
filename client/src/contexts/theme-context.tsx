@@ -13,15 +13,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
     // Check localStorage first, then system preference
     const stored = localStorage.getItem("theme") as Theme;
-    if (stored) {
+    if (stored === "light" || stored === "dark") {
       return stored;
     }
-    
-    // Check system preference
-    if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
-      return "dark";
-    }
-    
+    // Light mode is the default and primary experience for the moodboard reskin.
     return "light";
   });
 

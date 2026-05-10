@@ -1,61 +1,78 @@
-import { useState, useEffect } from "react";
+import { useState, forwardRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { 
-  Grid,
-  Column,
-  Search as CarbonSearch,
-  Dropdown,
-  Button as CarbonButton,
-  Loading,
-  Tile,
-  ClickableTile,
-  Tag,
-  SkeletonText,
-  SkeletonPlaceholder,
-  Toggle,
-  Checkbox,
-  RadioButton,
-  RadioButtonGroup,
-  Accordion,
-  AccordionItem,
-  SideNav,
-  SideNavItems,
-  SideNavLink,
-} from "@carbon/react";
-import { Add, Search, Filter, Map, Close, Light, Asleep, Video } from "@carbon/icons-react";
+import { Loading } from "@carbon/react";
 import FieldNoteCard from "@/components/field-note-card";
 import HeatMapView from "@/components/heat-map-view";
-import { useTheme } from "@/contexts/theme-context";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { FieldNote } from "@shared/schema";
 
+const availableTripTypes = [
+  "Hiking",
+  "Cycling",
+  "Running",
+  "Backpacking",
+  "Paddling",
+  "Motorcycle",
+  "Climbing",
+  "Skiing",
+  "Other",
+];
+
+const distanceOptions = [
+  { id: "any", label: "Any" },
+  { id: "0-5", label: "0–5 mi" },
+  { id: "5-15", label: "5–15 mi" },
+  { id: "15-30", label: "15–30 mi" },
+  { id: "30+", label: "30+ mi" },
+];
+
+const elevationOptions = [
+  { id: "any", label: "Any" },
+  { id: "0-500", label: "0–500 ft" },
+  { id: "500-1500", label: "500–1,500 ft" },
+  { id: "1500-3000", label: "1,500–3,000 ft" },
+  { id: "3000+", label: "3,000+ ft" },
+];
+
+const sortOptions = [
+  { id: "recent", label: "Most recent" },
+  { id: "oldest", label: "Oldest first" },
+  { id: "name", label: "By name" },
+];
+
+interface PillProps {
+  label: string;
+  active?: boolean;
+  onClick?: () => void;
+}
+
+const Pill = forwardRef<HTMLButtonElement, PillProps & React.ButtonHTMLAttributes<HTMLButtonElement>>(
+  ({ label, active, className, ...props }, ref) => (
+    <button
+      ref={ref}
+      type="button"
+      className={`meta-mono px-3 py-1.5 rounded-full border transition-colors ${
+        active
+          ? "border-foreground text-foreground bg-muted"
+          : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/40"
+      } ${className ?? ""}`}
+      {...props}
+    >
+      {label}
+    </button>
+  ),
+);
+Pill.displayName = "Pill";
+
 export default function Home() {
-  const { theme, toggleTheme } = useTheme();
   const [search, setSearch] = useState("");
   const [tripTypes, setTripTypes] = useState<string[]>([]);
   const [sortOrder, setSortOrder] = useState("recent");
   const [showHeatMap, setShowHeatMap] = useState(false);
   const [distanceFilter, setDistanceFilter] = useState("any");
   const [elevationFilter, setElevationFilter] = useState("any");
-  const [showFilters, setShowFilters] = useState(false); // Start hidden on mobile
-
-  // Enable responsive logic for mobile-first design
-  useEffect(() => {
-    const handleResize = () => {
-      const isMobile = window.innerWidth < 1024; // lg breakpoint
-      if (isMobile) {
-        setShowFilters(false); // Hide on mobile by default
-      } else {
-        setShowFilters(true); // Show on desktop
-      }
-    };
-
-    // Set initial state
-    handleResize();
-    
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
   const { data: allFieldNotes = [], isLoading } = useQuery<FieldNote[]>({
     queryKey: ["/api/field-notes", { search, sortOrder }],
@@ -63,79 +80,36 @@ export default function Home() {
       const params = new URLSearchParams();
       if (search) params.append("search", search);
       if (sortOrder) params.append("sortOrder", sortOrder);
-      
       const response = await fetch(`/api/field-notes?${params}`);
       if (!response.ok) throw new Error("Failed to fetch field notes");
       return response.json();
     },
   });
 
-  // Apply client-side filters for multiple selections
-  const fieldNotes = allFieldNotes.filter(note => {
-    // Trip type filter - allow multiple selections
-    if (tripTypes.length > 0 && !tripTypes.includes(note.tripType)) {
-      return false;
-    }
+  const fieldNotes = allFieldNotes.filter((note) => {
+    if (tripTypes.length > 0 && !tripTypes.includes(note.tripType)) return false;
 
-    // Distance filter
     if (distanceFilter !== "any") {
-      const distance = note.distance || 0;
-      switch (distanceFilter) {
-        case "0-5":
-          if (distance > 5) return false;
-          break;
-        case "5-15":
-          if (distance <= 5 || distance > 15) return false;
-          break;
-        case "15-30":
-          if (distance <= 15 || distance > 30) return false;
-          break;
-        case "30+":
-          if (distance <= 30) return false;
-          break;
-      }
+      const d = note.distance || 0;
+      if (distanceFilter === "0-5" && d > 5) return false;
+      if (distanceFilter === "5-15" && (d <= 5 || d > 15)) return false;
+      if (distanceFilter === "15-30" && (d <= 15 || d > 30)) return false;
+      if (distanceFilter === "30+" && d <= 30) return false;
     }
 
-    // Elevation filter
     if (elevationFilter !== "any") {
-      const elevation = note.elevationGain || 0;
-      switch (elevationFilter) {
-        case "0-500":
-          if (elevation > 500) return false;
-          break;
-        case "500-1500":
-          if (elevation <= 500 || elevation > 1500) return false;
-          break;
-        case "1500-3000":
-          if (elevation <= 1500 || elevation > 3000) return false;
-          break;
-        case "3000+":
-          if (elevation <= 3000) return false;
-          break;
-      }
+      const e = note.elevationGain || 0;
+      if (elevationFilter === "0-500" && e > 500) return false;
+      if (elevationFilter === "500-1500" && (e <= 500 || e > 1500)) return false;
+      if (elevationFilter === "1500-3000" && (e <= 1500 || e > 3000)) return false;
+      if (elevationFilter === "3000+" && e <= 3000) return false;
     }
 
     return true;
   });
 
-  const availableTripTypes = [
-    "Hiking",
-    "Cycling", 
-    "Running",
-    "Backpacking",
-    "Paddling",
-    "Motorcycle",
-    "Climbing",
-    "Skiing",
-    "Other",
-  ];
-
   const handleTripTypeChange = (tripType: string, checked: boolean) => {
-    if (checked) {
-      setTripTypes(prev => [...prev, tripType]);
-    } else {
-      setTripTypes(prev => prev.filter(t => t !== tripType));
-    }
+    setTripTypes((prev) => (checked ? [...prev, tripType] : prev.filter((t) => t !== tripType)));
   };
 
   const resetFilters = () => {
@@ -145,69 +119,42 @@ export default function Home() {
     setSearch("");
   };
 
-  const activeFilterCount = tripTypes.length + 
-    (distanceFilter !== "any" ? 1 : 0) + 
+  const activeFilterCount =
+    tripTypes.length +
+    (distanceFilter !== "any" ? 1 : 0) +
     (elevationFilter !== "any" ? 1 : 0);
 
-  const sortOrderItems = [
-    { id: "recent", text: "Most Recent" },
-    { id: "oldest", text: "Oldest First" },
-    { id: "name", text: "By Name" },
-  ];
+  const tripTypePillLabel =
+    tripTypes.length === 0
+      ? "Trip type"
+      : tripTypes.length === 1
+      ? tripTypes[0]
+      : `${tripTypes.length} types`;
 
-  // If heat map is enabled, show full-screen heat map
+  const distancePillLabel =
+    distanceFilter === "any"
+      ? "Distance"
+      : distanceOptions.find((o) => o.id === distanceFilter)?.label || "Distance";
+
+  const elevationPillLabel =
+    elevationFilter === "any"
+      ? "Elevation"
+      : elevationOptions.find((o) => o.id === elevationFilter)?.label || "Elevation";
+
+  const sortPillLabel = sortOptions.find((o) => o.id === sortOrder)?.label || "Sort";
+
   if (showHeatMap) {
     return (
-      <div className="h-screen bg-background flex flex-col">
-        {/* Header - Same as list view */}
-        <div className="bg-card border-b border-border flex-shrink-0">
-          <div className="px-6 py-6">
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
-              <h1 className="text-2xl font-semibold text-foreground">Big Miles</h1>
-              <div className="flex items-center gap-4">
-                <label htmlFor="heat-map-toggle" className="text-sm text-muted-foreground cursor-pointer">
-                  Heat Map
-                </label>
-                <Toggle
-                  id="heat-map-toggle"
-                  labelText=""
-                  hideLabel
-                  aria-label="Toggle heat map view"
-                  toggled={showHeatMap}
-                  onToggle={setShowHeatMap}
-                  data-testid="toggle-heat-map"
-                />
-
-                <label htmlFor="dark-mode-toggle" className="text-sm text-muted-foreground cursor-pointer">
-                  Dark Mode
-                </label>
-                <Toggle
-                  id="dark-mode-toggle"
-                  labelText=""
-                  hideLabel
-                  aria-label="Toggle dark mode"
-                  toggled={theme === "dark"}
-                  onToggle={toggleTheme}
-                  data-testid="toggle-dark-mode"
-                />
-
-                <Link href="/trailcam-studio">
-                  <CarbonButton kind="tertiary" size="sm" data-testid="link-trailcam" renderIcon={Video}>
-                    TrailCam Studio
-                  </CarbonButton>
-                </Link>
-                
-                <Link href="/admin">
-                  <CarbonButton size="sm" data-testid="link-admin" renderIcon={Add}>
-                    Add New
-                  </CarbonButton>
-                </Link>
-              </div>
-            </div>
-          </div>
+      <div className="h-[calc(100vh-2.75rem)] bg-background flex flex-col">
+        <div className="px-5 sm:px-8 py-3 flex items-center justify-between border-b border-border">
+          <span className="meta-mono text-muted-foreground">Heat map</span>
+          <button
+            onClick={() => setShowHeatMap(false)}
+            className="meta-mono text-foreground underline underline-offset-4 hover:opacity-70 transition-opacity"
+          >
+            Close
+          </button>
         </div>
-        
-        {/* Full-screen Heat Map */}
         <div className="flex-1">
           <HeatMapView fieldNotes={allFieldNotes} />
         </div>
@@ -216,412 +163,158 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-background flex flex-col" data-layout="sidebar-layout">
-      {/* App Header */}
-      <div className="bg-card border-b border-border flex-shrink-0">
-        <div className="px-6 py-6">
-          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
-            <h1 className="text-2xl font-semibold text-foreground">Big Miles</h1>
-            <div className="flex items-center gap-4">
-              <label htmlFor="heat-map-toggle" className="text-sm text-muted-foreground cursor-pointer">
-                Heat Map
-              </label>
-              <Toggle
-                id="heat-map-toggle"
-                labelText=""
-                hideLabel
-                aria-label="Toggle heat map view"
-                toggled={showHeatMap}
-                onToggle={setShowHeatMap}
-                data-testid="toggle-heat-map"
-              />
+    <div className="min-h-screen bg-background">
+      {/* Filter pill row */}
+      <div className="px-5 sm:px-8 pt-4 pb-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search field notes…"
+            className="meta-mono bg-transparent border-b border-border focus:border-foreground outline-none px-1 py-1.5 text-foreground placeholder:text-muted-foreground transition-colors min-w-0 w-44"
+            data-testid="input-search"
+          />
 
-              <label htmlFor="dark-mode-toggle" className="text-sm text-muted-foreground cursor-pointer">
-                Dark Mode
-              </label>
-              <Toggle
-                id="dark-mode-toggle"
-                labelText=""
-                hideLabel
-                aria-label="Toggle dark mode"
-                toggled={theme === "dark"}
-                onToggle={toggleTheme}
-                data-testid="toggle-dark-mode"
-              />
-
-              <Link href="/trailcam-studio">
-                <CarbonButton kind="tertiary" size="sm" data-testid="link-trailcam" renderIcon={Video}>
-                  TrailCam Studio
-                </CarbonButton>
-              </Link>
-              
-              <Link href="/admin">
-                <CarbonButton size="sm" data-testid="link-admin" renderIcon={Add}>
-                  Add New
-                </CarbonButton>
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col">
-        {/* Desktop Sidebar Filter Panel */}
-        <div className="hidden lg:flex flex-1 overflow-hidden">
-          <div className={`
-            w-[280px]
-            bg-white dark:bg-background
-            border-r 
-            border-gray-200 dark:border-border
-            flex-shrink-0
-            overflow-y-auto
-          `}>
-            <div className="p-4 min-h-0">
-              {/* Filter Header */}
-              <div className="flex items-center gap-2 mb-4">
-                <Filter size={18} />
-                <h2 className="text-base font-semibold text-gray-900">Filters</h2>
-                {activeFilterCount > 0 && (
-                  <Tag type="blue" size="sm" className="ml-1">
-                    {activeFilterCount}
-                  </Tag>
-                )}
-              </div>
-
-              {/* Reset Filters */}
-              {activeFilterCount > 0 && (
-                <div className="mb-4">
-                  <CarbonButton
-                    kind="tertiary"
-                    size="sm"
-                    onClick={resetFilters}
-                    className="text-xs"
-                  >
-                    Reset All
-                  </CarbonButton>
-                </div>
-              )}
-
-              {/* Trip Type Filter */}
-              <div className="mb-4">
-                <h3 className="text-sm font-medium text-gray-900 mb-2">Trip Type</h3>
-                {tripTypes.length > 0 && (
-                  <div className="mb-2 flex items-center gap-1">
-                    <Tag type="blue" size="sm">
-                      {tripTypes.length}
-                    </Tag>
-                    <span className="text-xs text-gray-500">selected</span>
-                  </div>
-                )}
-                <div className="space-y-1 max-h-40 overflow-y-auto">
-                  {availableTripTypes.map(type => (
+          {/* Trip type popover */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Pill label={tripTypePillLabel} active={tripTypes.length > 0} />
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-56 p-3 bg-popover border border-border">
+              <div className="meta-mono text-muted-foreground mb-2">Trip type</div>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {availableTripTypes.map((type) => (
+                  <label key={type} className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
                     <Checkbox
-                      key={type}
-                      id={`trip-type-${type}`}
-                      labelText={type}
                       checked={tripTypes.includes(type)}
-                      onChange={(_, { checked }) => handleTripTypeChange(type, checked)}
+                      onCheckedChange={(c) => handleTripTypeChange(type, !!c)}
                     />
-                  ))}
-                </div>
+                    {type}
+                  </label>
+                ))}
               </div>
+            </PopoverContent>
+          </Popover>
 
-              {/* Distance Filter */}
-              <div className="mb-4">
-                <h3 className="text-sm font-medium text-gray-900 mb-2">Distance (miles)</h3>
-                <div className="space-y-1">
-                  <RadioButtonGroup
-                    name="distance-filter"
-                    valueSelected={distanceFilter}
-                    onChange={(value) => setDistanceFilter(String(value) || "any")}
-                    orientation="vertical"
+          {/* Distance popover */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Pill label={distancePillLabel} active={distanceFilter !== "any"} />
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-44 p-2 bg-popover border border-border">
+              <div className="flex flex-col">
+                {distanceOptions.map((opt) => (
+                  <button
+                    key={opt.id}
+                    onClick={() => setDistanceFilter(opt.id)}
+                    className={`text-left text-sm px-2 py-1.5 rounded hover:bg-muted ${
+                      distanceFilter === opt.id ? "text-foreground" : "text-muted-foreground"
+                    }`}
                   >
-                    <RadioButton labelText="Any" value="any" id="distance-any" />
-                    <RadioButton labelText="0-5" value="0-5" id="distance-0-5" />
-                    <RadioButton labelText="5-15" value="5-15" id="distance-5-15" />
-                    <RadioButton labelText="15-30" value="15-30" id="distance-15-30" />
-                    <RadioButton labelText="30+" value="30+" id="distance-30-plus" />
-                  </RadioButtonGroup>
-                </div>
+                    {opt.label}
+                  </button>
+                ))}
               </div>
+            </PopoverContent>
+          </Popover>
 
-              {/* Elevation Filter */}
-              <div className="mb-4">
-                <h3 className="text-sm font-medium text-gray-900 mb-2">Elevation Gain (ft)</h3>
-                <div className="space-y-1">
-                  <RadioButtonGroup
-                    name="elevation-filter"
-                    valueSelected={elevationFilter}
-                    onChange={(value) => setElevationFilter(String(value) || "any")}
-                    orientation="vertical"
+          {/* Elevation popover */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Pill label={elevationPillLabel} active={elevationFilter !== "any"} />
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-48 p-2 bg-popover border border-border">
+              <div className="flex flex-col">
+                {elevationOptions.map((opt) => (
+                  <button
+                    key={opt.id}
+                    onClick={() => setElevationFilter(opt.id)}
+                    className={`text-left text-sm px-2 py-1.5 rounded hover:bg-muted ${
+                      elevationFilter === opt.id ? "text-foreground" : "text-muted-foreground"
+                    }`}
                   >
-                    <RadioButton labelText="Any" value="any" id="elevation-any" />
-                    <RadioButton labelText="0-500" value="0-500" id="elevation-0-500" />
-                    <RadioButton labelText="500-1,500" value="500-1500" id="elevation-500-1500" />
-                    <RadioButton labelText="1,500-3,000" value="1500-3000" id="elevation-1500-3000" />
-                    <RadioButton labelText="3,000+" value="3000+" id="elevation-3000-plus" />
-                  </RadioButtonGroup>
-                </div>
+                    {opt.label}
+                  </button>
+                ))}
               </div>
-            </div>
-          </div>
+            </PopoverContent>
+          </Popover>
 
-          {/* Desktop Main Content */}
-          <div className="flex-1 flex flex-col">
-            {/* Search and Controls */}
-            <div className="bg-white dark:bg-background border-b border-gray-200 dark:border-border">
-              <div className="px-6 py-4">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-                  <div className="flex-1">
-                    <CarbonSearch
-                      size="lg"
-                      placeholder="Search field notes..."
-                      labelText="Search field notes"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      data-testid="input-search"
-                    />
-                  </div>
-                  <div className="w-48">
-                    <Dropdown
-                      id="sort-order"
-                      titleText=""
-                      label={sortOrderItems.find(item => item.id === sortOrder)?.text || "Most Recent"}
-                      items={sortOrderItems}
-                      itemToString={(item) => item ? item.text : ""}
-                      selectedItem={sortOrderItems.find(item => item.id === sortOrder)}
-                      onChange={({ selectedItem }) => setSortOrder(selectedItem?.id || "recent")}
-                      data-testid="select-sort-order"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Results Count */}
-            {!isLoading && (
-              <div className="bg-gray-50 dark:bg-muted px-6 py-2">
-                <span className="text-sm text-gray-600 dark:text-muted-foreground">
-                  {fieldNotes.length} {fieldNotes.length === 1 ? 'result' : 'results'}
-                </span>
-              </div>
-            )}
-
-            {/* Field Notes Grid */}
-            <div className="flex-1 p-6 bg-gray-50 dark:bg-muted overflow-auto">
-              {isLoading ? (
-                <Grid fullWidth>
-                  {[...Array(6)].map((_, i) => (
-                    <Column key={i} sm={4} md={6} lg={4}>
-                      <Tile className="mb-6">
-                        <SkeletonPlaceholder className="h-48 mb-4" />
-                        <SkeletonText heading />
-                        <SkeletonText paragraph lineCount={2} />
-                      </Tile>
-                    </Column>
-                  ))}
-                </Grid>
-              ) : fieldNotes.length === 0 ? (
-                <div className="text-center py-12">
-                  <p className="text-gray-500 dark:text-muted-foreground text-lg mb-4">No field notes found</p>
-                  <Link href="/admin">
-                    <CarbonButton renderIcon={Add}>
-                      Add your first field note
-                    </CarbonButton>
-                  </Link>
-                </div>
-              ) : (
-                <Grid fullWidth className="mb-6">
-                  {fieldNotes.map((note) => (
-                    <Column key={note.id} sm={4} md={6} lg={4}>
-                      <FieldNoteCard
-                        fieldNote={note}
-                        searchTerm={search}
-                        data-testid={`card-field-note-${note.id}`}
-                      />
-                    </Column>
-                  ))}
-                </Grid>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Mobile Stacked Filter Panel */}
-        <div className="lg:hidden">
-          {/* Mobile Filter Toggle and Stacked Filters */}
-          <div className="bg-white dark:bg-background border-b border-gray-200 dark:border-border">
-            <div className="px-6 py-4">
-              <div className="flex items-center gap-4 mb-4">
-                <CarbonButton
-                  kind="ghost"
-                  size="sm"
-                  onClick={() => setShowFilters(!showFilters)}
-                  renderIcon={Filter}
-                >
-                  Filters
-                  {activeFilterCount > 0 && (
-                    <Tag type="blue" size="sm" className="ml-2">
-                      {activeFilterCount}
-                    </Tag>
-                  )}
-                </CarbonButton>
-                {activeFilterCount > 0 && (
-                  <CarbonButton
-                    kind="tertiary"
-                    size="sm"
-                    onClick={resetFilters}
+          {/* Sort popover */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Pill label={sortPillLabel} />
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-44 p-2 bg-popover border border-border">
+              <div className="flex flex-col">
+                {sortOptions.map((opt) => (
+                  <button
+                    key={opt.id}
+                    onClick={() => setSortOrder(opt.id)}
+                    className={`text-left text-sm px-2 py-1.5 rounded hover:bg-muted ${
+                      sortOrder === opt.id ? "text-foreground" : "text-muted-foreground"
+                    }`}
                   >
-                    Reset All
-                  </CarbonButton>
-                )}
+                    {opt.label}
+                  </button>
+                ))}
               </div>
+            </PopoverContent>
+          </Popover>
 
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-                <div className="flex-1">
-                  <CarbonSearch
-                    size="lg"
-                    placeholder="Search field notes..."
-                    labelText="Search field notes"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    data-testid="input-search"
-                  />
-                </div>
-                <div className="w-48">
-                  <Dropdown
-                    id="sort-order-mobile"
-                    titleText=""
-                    label={sortOrderItems.find(item => item.id === sortOrder)?.text || "Most Recent"}
-                    items={sortOrderItems}
-                    itemToString={(item) => item ? item.text : ""}
-                    selectedItem={sortOrderItems.find(item => item.id === sortOrder)}
-                    onChange={({ selectedItem }) => setSortOrder(selectedItem?.id || "recent")}
-                    data-testid="select-sort-order"
-                  />
-                </div>
-              </div>
-            </div>
+          <Pill label="Heat map" onClick={() => setShowHeatMap(true)} />
 
-            {/* Mobile Stacked Filters */}
-            {showFilters && (
-              <div className="px-6 pb-4 border-t border-gray-100 dark:border-gray-600">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-4">
-                  {/* Trip Type Filter */}
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-900 mb-3">Trip Type</h3>
-                    {tripTypes.length > 0 && (
-                      <div className="mb-2 flex items-center gap-1">
-                        <Tag type="blue" size="sm">
-                          {tripTypes.length}
-                        </Tag>
-                        <span className="text-xs text-gray-500">selected</span>
-                      </div>
-                    )}
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
-                      {availableTripTypes.map(type => (
-                        <Checkbox
-                          key={type}
-                          id={`mobile-trip-type-${type}`}
-                          labelText={type}
-                          checked={tripTypes.includes(type)}
-                          onChange={(_, { checked }) => handleTripTypeChange(type, checked)}
-                        />
-                      ))}
-                    </div>
-                  </div>
+          <Link
+            href="/admin"
+            className="meta-mono px-3 py-1.5 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors"
+          >
+            + Add
+          </Link>
 
-                  {/* Distance Filter */}
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-900 mb-3">Distance (miles)</h3>
-                    <div className="space-y-2">
-                      <RadioButtonGroup
-                        name="mobile-distance-filter"
-                        valueSelected={distanceFilter}
-                        onChange={(value) => setDistanceFilter(String(value) || "any")}
-                        orientation="vertical"
-                      >
-                        <RadioButton labelText="Any" value="any" id="mobile-distance-any" />
-                        <RadioButton labelText="0-5" value="0-5" id="mobile-distance-0-5" />
-                        <RadioButton labelText="5-15" value="5-15" id="mobile-distance-5-15" />
-                        <RadioButton labelText="15-30" value="15-30" id="mobile-distance-15-30" />
-                        <RadioButton labelText="30+" value="30+" id="mobile-distance-30-plus" />
-                      </RadioButtonGroup>
-                    </div>
-                  </div>
-
-                  {/* Elevation Filter */}
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-900 mb-3">Elevation Gain (ft)</h3>
-                    <div className="space-y-2">
-                      <RadioButtonGroup
-                        name="mobile-elevation-filter"
-                        valueSelected={elevationFilter}
-                        onChange={(value) => setElevationFilter(String(value) || "any")}
-                        orientation="vertical"
-                      >
-                        <RadioButton labelText="Any" value="any" id="mobile-elevation-any" />
-                        <RadioButton labelText="0-500" value="0-500" id="mobile-elevation-0-500" />
-                        <RadioButton labelText="500-1,500" value="500-1500" id="mobile-elevation-500-1500" />
-                        <RadioButton labelText="1,500-3,000" value="1500-3000" id="mobile-elevation-1500-3000" />
-                        <RadioButton labelText="3,000+" value="3000+" id="mobile-elevation-3000-plus" />
-                      </RadioButtonGroup>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Mobile Results Count */}
-          {!isLoading && (
-            <div className="bg-gray-50 dark:bg-muted px-6 py-2">
-              <span className="text-sm text-gray-600 dark:text-gray-300">
-                {fieldNotes.length} {fieldNotes.length === 1 ? 'result' : 'results'}
-              </span>
-            </div>
+          {activeFilterCount > 0 && (
+            <button
+              onClick={resetFilters}
+              className="meta-mono text-muted-foreground hover:text-foreground underline underline-offset-4 ml-2"
+            >
+              Reset
+            </button>
           )}
 
-          {/* Mobile Field Notes Grid */}
-          <div className="flex-1 p-6 bg-gray-50 dark:bg-muted overflow-auto">
-            {isLoading ? (
-              <Grid fullWidth>
-                {[...Array(6)].map((_, i) => (
-                  <Column key={i} sm={4} md={4} lg={4}>
-                    <Tile className="mb-6">
-                      <SkeletonPlaceholder className="h-48 mb-4" />
-                      <SkeletonText heading />
-                      <SkeletonText paragraph lineCount={2} />
-                    </Tile>
-                  </Column>
-                ))}
-              </Grid>
-            ) : fieldNotes.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-gray-500 dark:text-gray-400 text-lg mb-4">No field notes found</p>
-                <Link href="/admin">
-                  <CarbonButton renderIcon={Add}>
-                    Add your first field note
-                  </CarbonButton>
-                </Link>
-              </div>
-            ) : (
-              <Grid fullWidth className="mb-6">
-                {fieldNotes.map((note) => (
-                  <Column key={note.id} sm={4} md={4} lg={4}>
-                    <FieldNoteCard
-                      fieldNote={note}
-                      searchTerm={search}
-                      data-testid={`card-field-note-${note.id}`}
-                    />
-                  </Column>
-                ))}
-              </Grid>
-            )}
-          </div>
+          <span className="meta-mono text-muted-foreground ml-auto">
+            {fieldNotes.length} {fieldNotes.length === 1 ? "field note" : "field notes"}
+          </span>
         </div>
       </div>
+
+      {/* Masonry grid */}
+      <main className="px-5 sm:px-8 pb-12">
+        {isLoading ? (
+          <div className="flex justify-center py-20">
+            <Loading withOverlay={false} small />
+          </div>
+        ) : fieldNotes.length === 0 ? (
+          <div className="text-center py-24">
+            <p className="font-serif text-xl text-muted-foreground mb-4">No field notes yet.</p>
+            <Link
+              href="/admin"
+              className="meta-mono text-foreground underline underline-offset-4 hover:opacity-70"
+            >
+              Add your first &rarr;
+            </Link>
+          </div>
+        ) : (
+          <div className="columns-1 sm:columns-2 lg:columns-3 gap-3 sm:gap-4">
+            {fieldNotes.map((note) => (
+              <FieldNoteCard
+                key={note.id}
+                fieldNote={note}
+                searchTerm={search}
+              />
+            ))}
+          </div>
+        )}
+      </main>
     </div>
   );
 }

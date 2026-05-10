@@ -2,22 +2,8 @@ import { useState, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { 
-  Grid,
-  Column,
-  Button,
-  Breadcrumb,
-  BreadcrumbItem,
-  Tag,
-  Tile,
-  Modal,
-  Loading,
-  InlineNotification,
-  SkeletonText,
-  Toggle,
-} from "@carbon/react";
-import { ArrowLeft, Edit, TrashCan, Calendar, Location, ChartLineSmooth, Time, Maximize, Light, Asleep } from "@carbon/icons-react";
-import MapboxRoutePreview from "@/components/mapbox-route-preview";
+import { Modal } from "@carbon/react";
+import { Pencil, Trash2 } from "lucide-react";
 import PhotoLightbox from "@/components/photo-lightbox";
 import MapboxMap from "@/components/mapbox-map";
 import ElevationProfile from "@/components/elevation-profile";
@@ -26,10 +12,7 @@ import { parseGpxData } from "@shared/gpx-utils";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { queryClient } from "@/lib/queryClient";
-import { useTheme } from "@/contexts/theme-context";
 import type { FieldNote, Photo } from "@shared/schema";
-
-type FieldNoteWithPhotos = FieldNote & { photos: Photo[] };
 
 export default function FieldNoteDetail() {
   const { id } = useParams();
@@ -37,12 +20,9 @@ export default function FieldNoteDetail() {
   const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [hoveredElevationPoint, setHoveredElevationPoint] = useState<any>(null);
-  const [hoveredPhotoId, setHoveredPhotoId] = useState<string | null>(null);
 
   const { toast } = useToast();
-  const { theme, toggleTheme } = useTheme();
 
-  // Single query that fetches field note with photos included
   const { data: fieldNoteData, isLoading: isLoadingFieldNote } = useQuery({
     queryKey: ["/api/field-notes", id],
     queryFn: async () => {
@@ -51,302 +31,195 @@ export default function FieldNoteDetail() {
       return response.json();
     },
     enabled: !!id,
-    staleTime: 5 * 60 * 1000, // 5 minutes cache
-    gcTime: 10 * 60 * 1000, // 10 minutes in cache (renamed from cacheTime in v5)
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
   });
 
   const fieldNote = fieldNoteData;
-  const photos = fieldNoteData?.photos || [];
+  const photos: Photo[] = fieldNoteData?.photos || [];
 
-  // Parse GPX data to get elevation profile
   const parsedGpxData = useMemo(() => {
     if (!fieldNote?.gpxData) return null;
-    console.log('FieldNoteDetail - Field Note Title:', fieldNote?.title);
-    console.log('FieldNoteDetail - GPX Data Type:', typeof fieldNote.gpxData);
-    console.log('FieldNoteDetail - GPX Data:', fieldNote.gpxData);
-    
     try {
-      if (typeof fieldNote.gpxData === 'string') {
-        const parsed = parseGpxData(fieldNote.gpxData);
-        console.log('FieldNoteDetail - Parsed from string:', parsed);
-        return parsed;
-      } else if (typeof fieldNote.gpxData === 'object') {
-        // Handle pre-parsed GPX data (coordinates array without elevation)
+      if (typeof fieldNote.gpxData === "string") {
+        return parseGpxData(fieldNote.gpxData);
+      } else if (typeof fieldNote.gpxData === "object") {
         const data = fieldNote.gpxData as any;
-        console.log('FieldNoteDetail - Object data.coordinates length:', data.coordinates?.length);
         if (data.coordinates && Array.isArray(data.coordinates)) {
-          const result = {
+          return {
             coordinates: data.coordinates,
-            elevationProfile: data.elevationProfile || [], // Empty if no elevation data
+            elevationProfile: data.elevationProfile || [],
             distance: fieldNote.distance || 0,
-            elevationGain: fieldNote.elevationGain || 0
+            elevationGain: fieldNote.elevationGain || 0,
           };
-          console.log('FieldNoteDetail - Returning parsed object:', result);
-          return result;
         }
       }
     } catch (error) {
-      console.error('Failed to parse GPX data for elevation profile:', error);
+      console.error("Failed to parse GPX data for elevation profile:", error);
     }
     return null;
   }, [fieldNote?.gpxData, fieldNote?.distance, fieldNote?.elevationGain]);
 
   const deleteFieldNoteMutation = useMutation({
-    mutationFn: async () => {
-      return apiRequest(`/api/field-notes/${id}`, "DELETE");
-    },
+    mutationFn: async () => apiRequest(`/api/field-notes/${id}`, "DELETE"),
     onSuccess: () => {
-      toast({
-        title: "Success",
-        description: "Field note deleted successfully!",
-      });
+      toast({ title: "Success", description: "Field note deleted successfully!" });
       queryClient.invalidateQueries({ queryKey: ["/api/field-notes"] });
       setLocation("/");
     },
     onError: (error) => {
       toast({
-        title: "Delete Error", 
+        title: "Delete Error",
         description: error.message || "Failed to delete field note",
-        variant: "destructive"
+        variant: "destructive",
       });
     },
   });
 
-  // Show loading state only when initially loading
   if (isLoadingFieldNote) {
     return (
-      <Grid fullWidth className="min-h-screen">
-        <Column sm={4} md={8} lg={16} className="py-12">
-          <div className="space-y-6">
-            <SkeletonText heading />
-            <SkeletonText />
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2">
-                <div className="w-full h-96 bg-gray-200 animate-pulse rounded"></div>
-              </div>
-              <div>
-                <div className="w-full h-96 bg-gray-200 animate-pulse rounded"></div>
-              </div>
-            </div>
-          </div>
-        </Column>
-      </Grid>
+      <div className="min-h-screen bg-background">
+        <div className="w-full h-[60vh] bg-muted animate-pulse" />
+        <div className="px-5 sm:px-8 py-8 space-y-3">
+          <div className="h-10 w-2/3 bg-muted animate-pulse rounded" />
+          <div className="h-4 w-1/2 bg-muted animate-pulse rounded" />
+        </div>
+      </div>
     );
   }
 
   if (!fieldNote) {
     return (
-      <Grid fullWidth className="min-h-screen">
-        <Column sm={4} md={8} lg={16} className="flex items-center justify-center py-12">
-          <Tile className="text-center p-8">
-            <h1 className="text-2xl font-semibold text-foreground mb-4">Field Note Not Found</h1>
-            <p className="text-muted-foreground mb-6">The requested field note could not be found.</p>
-            <Link href="/">
-              <Button>Return to Home</Button>
-            </Link>
-          </Tile>
-        </Column>
-      </Grid>
+      <div className="min-h-screen bg-background flex items-center justify-center px-6">
+        <div className="text-center max-w-md">
+          <h1 className="font-serif text-3xl text-foreground mb-3">Field Note Not Found</h1>
+          <p className="text-muted-foreground mb-6">The requested field note could not be found.</p>
+          <Link
+            href="/"
+            className="meta-mono text-foreground underline underline-offset-4 hover:opacity-70"
+          >
+            Return home &rarr;
+          </Link>
+        </div>
+      </div>
     );
   }
 
-  const formatDate = (date: string) => {
-    return new Date(date).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
+  const formatDate = (date: string) =>
+    new Date(date).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
     });
-  };
 
   return (
     <div className="min-h-screen bg-background overflow-x-hidden">
-      {/* Header */}
-      <div className="bg-card border-b border-border sticky top-0 z-50">
-        <Grid fullWidth>
-          <Column sm={4} md={8} lg={16} className="py-4">
-            <div className="flex items-center justify-between">
-              {/* Breadcrumb Navigation */}
-              <div className="flex items-center min-w-0 flex-1">
-                <Breadcrumb>
-                  <BreadcrumbItem>
-                    <Link href="/" className="text-primary hover:text-primary/80">
-                      Big Miles
-                    </Link>
-                  </BreadcrumbItem>
-                  <BreadcrumbItem isCurrentPage>
-                    <span className="text-foreground font-medium break-words">
-                      {fieldNote.title}
-                    </span>
-                  </BreadcrumbItem>
-                </Breadcrumb>
-              </div>
-
-              {/* Theme Toggle */}
-              <div className="flex items-center gap-4 ml-4">
-                <Toggle
-                  id="theme-toggle"
-                  aria-label="Toggle theme"
-                  toggled={theme === "dark"}
-                  onToggle={toggleTheme}
-                  labelA=""
-                  labelB=""
-                  hideLabel
-                  data-testid="toggle-theme"
-                />
-                <span className="text-sm text-muted-foreground flex items-center gap-2">
-                  {theme === "dark" ? <Asleep size={16} /> : <Light size={16} />}
-                </span>
-              </div>
-            </div>
-          </Column>
-        </Grid>
+      {/* Edge-to-edge hero map */}
+      <div className="w-full h-[55vh] sm:h-[65vh] bg-muted">
+        <MapboxMap
+          gpxData={fieldNote.gpxData}
+          hoveredElevationPoint={hoveredElevationPoint}
+          className="w-full h-full"
+        />
       </div>
 
-      {/* Content */}
-      <div className="py-6">
-        <Grid fullWidth>
-          <Column sm={4} md={8} lg={16}>
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-6">
-              <div className="min-w-0 flex-1">
-                <h1 className="text-2xl sm:text-3xl font-semibold text-foreground mb-2 break-words">{fieldNote.title}</h1>
-                <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-sm text-muted-foreground mb-4">
-                  <Tag type="blue" size="sm">{fieldNote.tripType}</Tag>
-                  <span className="flex items-center gap-1 flex-shrink-0">
-                    <Calendar size={16} />
-                    {formatDate(fieldNote.date.toString())}
-                  </span>
-                  {fieldNote.distance && (
-                    <span className="flex items-center gap-1 flex-shrink-0">
-                      <Location size={16} />
-                      {fieldNote.distance} miles
-                    </span>
-                  )}
-                  {fieldNote.elevationGain && (
-                    <span className="flex items-center gap-1 flex-shrink-0">
-                      <ChartLineSmooth size={16} />
-                      {fieldNote.elevationGain} ft elevation
-                    </span>
-                  )}
-                </div>
-              </div>
-              
-              <div className="flex items-center gap-3 flex-shrink-0">
-                <Link href={`/field-notes/${fieldNote.id}/edit`}>
-                  <Button kind="primary" size="md" renderIcon={Edit}>
-                    Edit
-                  </Button>
-                </Link>
-                
-                <Button
-                  kind="ghost"
-                  size="md"
-                  renderIcon={TrashCan}
-                  iconDescription="Delete field note"
-                  hasIconOnly
-                  onClick={() => setShowDeleteModal(true)}
-                  data-testid="button-delete"
+      {/* Title block */}
+      <section className="px-5 sm:px-8 pt-8 pb-6 max-w-5xl">
+        <div className="meta-mono text-muted-foreground mb-3 flex flex-wrap gap-x-3 gap-y-1">
+          <span>{fieldNote.tripType}</span>
+          <span>·</span>
+          <span>{formatDate(fieldNote.date.toString())}</span>
+          {fieldNote.distance != null && (
+            <>
+              <span>·</span>
+              <span>{fieldNote.distance} mi</span>
+            </>
+          )}
+          {fieldNote.elevationGain != null && (
+            <>
+              <span>·</span>
+              <span>{fieldNote.elevationGain} ft</span>
+            </>
+          )}
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
+          <h1
+            className="font-serif text-foreground break-words"
+            style={{ fontSize: "clamp(2.25rem, 5vw, 3.75rem)", lineHeight: 1.05, letterSpacing: "-0.015em" }}
+          >
+            {fieldNote.title}
+          </h1>
+
+          <div className="flex items-center gap-4 flex-shrink-0">
+            <Link
+              href={`/field-notes/${fieldNote.id}/edit`}
+              className="meta-mono text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
+            >
+              <Pencil className="h-3 w-3" />
+              Edit
+            </Link>
+            <button
+              onClick={() => setShowDeleteModal(true)}
+              className="meta-mono text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1.5"
+              data-testid="button-delete"
+            >
+              <Trash2 className="h-3 w-3" />
+              Delete
+            </button>
+          </div>
+        </div>
+
+        {fieldNote.description && (
+          <p className="font-serif text-foreground mt-6 max-w-2xl text-lg leading-relaxed">
+            {fieldNote.description}
+          </p>
+        )}
+      </section>
+
+      {/* Elevation profile */}
+      {parsedGpxData && parsedGpxData.elevationProfile && parsedGpxData.elevationProfile.length > 0 && (
+        <section className="px-5 sm:px-8 pb-10">
+          <div className="meta-mono text-muted-foreground mb-3">Elevation</div>
+          <div className="border-t border-border pt-4">
+            <ElevationProfile
+              elevationProfile={parsedGpxData.elevationProfile}
+              onHoverPoint={setHoveredElevationPoint}
+              className="w-full"
+            />
+          </div>
+        </section>
+      )}
+
+      {/* Photos masonry */}
+      {photos.length > 0 && (
+        <section className="px-5 sm:px-8 pb-16">
+          <div className="meta-mono text-muted-foreground mb-3">
+            Photos · {photos.length}
+          </div>
+          <div className="columns-2 md:columns-3 lg:columns-4 gap-3 sm:gap-4">
+            {photos.map((photo, index) => (
+              <button
+                key={photo.id}
+                onClick={() => setSelectedPhotoId(photo.id)}
+                className="block w-full mb-3 sm:mb-4 break-inside-avoid overflow-hidden bg-muted hover:opacity-90 transition-opacity"
+                data-testid={`photo-thumbnail-${photo.id}`}
+              >
+                <img
+                  src={photo.url}
+                  alt={`Field note photo ${index + 1}`}
+                  className="w-full h-auto block"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = "none";
+                  }}
                 />
-              </div>
-            </div>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
-            <p className="text-foreground mb-8 text-base sm:text-lg break-words">{fieldNote.description}</p>
-
-            {/* Main Content Grid */}
-            <Grid className="gap-y-6">
-              {/* Map and Elevation Profile Column */}
-              <Column sm={4} md={5} lg={10} className="mb-6">
-                <div className="space-y-6">
-                  {/* Interactive Map */}
-                  <Tile className="p-0 overflow-hidden">
-                    <div className="w-full h-64 sm:h-96">
-                      <MapboxMap
-                        gpxData={fieldNote.gpxData}
-                        hoveredElevationPoint={hoveredElevationPoint}
-                        className="w-full h-full"
-                      />
-                    </div>
-                  </Tile>
-                  
-                  {/* Elevation Profile */}
-                  <Tile className="p-6">
-                    {parsedGpxData && parsedGpxData.elevationProfile && parsedGpxData.elevationProfile.length > 0 ? (
-                      <ElevationProfile 
-                        elevationProfile={parsedGpxData.elevationProfile}
-                        onHoverPoint={setHoveredElevationPoint}
-                        className="w-full"
-                      />
-                    ) : (
-                      <div className="flex items-center justify-center h-64 bg-muted rounded">
-                        <p className="text-muted-foreground">No elevation data available</p>
-                      </div>
-                    )}
-                  </Tile>
-                </div>
-              </Column>
-
-              {/* Photos Column */}
-              <Column sm={4} md={3} lg={6}>
-                <Tile className="p-4">
-                  <h3 className="text-lg font-semibold text-foreground mb-4">
-                    Photos ({photos.length})
-                  </h3>
-                  
-                  {isLoadingFieldNote ? (
-                    <div className="grid grid-cols-2 gap-2">
-                      {Array.from({ length: 4 }).map((_, i) => (
-                        <div key={i} className="w-full h-24 bg-muted animate-pulse rounded"></div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 gap-2">
-                      {photos.map((photo: Photo, index: number) => (
-                        <button
-                          key={photo.id}
-                          onClick={() => setSelectedPhotoId(photo.id)}
-                          onMouseEnter={() => setHoveredPhotoId(photo.id)}
-                          onMouseLeave={() => setHoveredPhotoId(null)}
-                          className="relative w-full h-24 bg-muted rounded overflow-hidden hover:opacity-80 transition-all duration-200 hover:scale-105 hover:shadow-lg"
-                          data-testid={`photo-thumbnail-${photo.id}`}
-                        >
-                          {/* Photo Label Overlay */}
-                          <div className="absolute top-2 left-2 bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded">
-                            Photo {index + 1}
-                          </div>
-                          <img
-                            src={photo.url}
-                            alt={`Field note photo ${index + 1}`}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              console.error(`Failed to load photo: ${photo.url}`);
-                              // Show a placeholder or hide the broken image
-                              const target = e.target as HTMLImageElement;
-                              target.style.display = 'none';
-                              const parent = target.parentElement;
-                              if (parent && !parent.querySelector('.error-message')) {
-                                const errorDiv = document.createElement('div');
-                                errorDiv.className = 'error-message flex items-center justify-center w-full h-full text-xs text-muted-foreground bg-muted';
-                                errorDiv.textContent = 'Image not available';
-                                parent.appendChild(errorDiv);
-                              }
-                            }}
-                          />
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {photos.length === 0 && !isLoadingFieldNote && (
-                    <p className="text-muted-foreground text-sm">No photos available</p>
-                  )}
-                </Tile>
-              </Column>
-            </Grid>
-          </Column>
-        </Grid>
-      </div>
-
-      {/* Delete Confirmation Modal */}
       <Modal
         open={showDeleteModal}
         onRequestClose={() => setShowDeleteModal(false)}
@@ -362,9 +235,6 @@ export default function FieldNoteDetail() {
         <p>Are you sure you want to delete "{fieldNote.title}"? This action cannot be undone.</p>
       </Modal>
 
-
-
-      {/* Photo Lightbox */}
       {selectedPhotoId && (
         <PhotoLightbox
           photoId={selectedPhotoId}

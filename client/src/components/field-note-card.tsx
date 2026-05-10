@@ -1,5 +1,4 @@
-import { ClickableTile, Tag } from "@carbon/react";
-import { Camera } from "@carbon/icons-react";
+import { Link } from "wouter";
 import type { FieldNote } from "@shared/schema";
 import MapboxRoutePreview from "./mapbox-route-preview";
 
@@ -12,76 +11,75 @@ interface FieldNoteCardProps {
   searchTerm?: string;
 }
 
-// Utility function to highlight search terms
 const highlightText = (text: string, searchTerm?: string): React.ReactNode => {
   if (!searchTerm || !text) return text;
-  
-  const regex = new RegExp(`(${searchTerm})`, 'gi');
+  const regex = new RegExp(`(${searchTerm})`, "gi");
   const parts = text.split(regex);
-  
-  return parts.map((part, index) => 
+  return parts.map((part, index) =>
     regex.test(part) ? (
-      <span key={index} className="px-0.5 rounded bg-yellow-200 dark:bg-yellow-900 text-yellow-900 dark:text-yellow-200">
+      <span
+        key={index}
+        className="px-0.5"
+        style={{ backgroundColor: "var(--support-warning)", color: "var(--foreground)" }}
+      >
         {part}
       </span>
-    ) : part
+    ) : (
+      part
+    ),
   );
 };
 
+// Slight, deterministic height variation to give the masonry a curated feel.
+const aspectFor = (id: string) => {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  const variants = ["4 / 5", "3 / 4", "1 / 1", "5 / 6", "4 / 3"];
+  return variants[hash % variants.length];
+};
+
 export default function FieldNoteCard({ fieldNote, searchTerm }: FieldNoteCardProps) {
-  const formatDate = (date: string) => {
-    return new Date(date).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
+  const formatDate = (date: string) =>
+    new Date(date).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
     });
-  };
+
+  const aspect = aspectFor(fieldNote.id);
 
   return (
-    <ClickableTile 
-      className="!p-0 !border-0 hover:shadow-lg transition-shadow"
-      onClick={() => window.location.href = `/field-notes/${fieldNote.id}`}
+    <Link
+      href={`/field-notes/${fieldNote.id}`}
+      className="group block break-inside-avoid mb-4 cursor-pointer"
     >
-      {/* Mapbox Route Preview */}
-      <div className="w-full">
-        <MapboxRoutePreview 
-          fieldNote={fieldNote} 
-          className="w-full h-32 rounded-t-sm overflow-hidden"
-        />
+      {/* Map fills the tile, no chrome */}
+      <div
+        className="w-full overflow-hidden bg-muted"
+        style={{ aspectRatio: aspect }}
+      >
+        <MapboxRoutePreview fieldNote={fieldNote} className="w-full h-full" />
       </div>
-      
-      <div className="p-4">
-        {/* iPad horizontal: stack badge below title, desktop: side by side */}
-        <div className="flex justify-between items-start gap-2 mb-2 md:landscape:flex-col md:landscape:gap-1 lg:flex-row lg:gap-2">
-          <h3 className="text-lg font-medium text-foreground break-words min-w-0 flex-1 md:landscape:flex-none lg:flex-1">
-            {highlightText(fieldNote.title, searchTerm)}
-          </h3>
-          <Tag type="blue" size="sm" className="flex-shrink-0 md:landscape:self-start lg:flex-shrink-0">
-            {highlightText(fieldNote.tripType.charAt(0).toUpperCase() + fieldNote.tripType.slice(1), searchTerm)}
-          </Tag>
+
+      {/* Caption: hidden on desktop until hover, always visible on mobile */}
+      <div className="pt-2 pb-1 transition-opacity duration-200 [@media(hover:hover)]:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
+        <div className="meta-mono text-muted-foreground mb-1">
+          {highlightText(fieldNote.tripType, searchTerm)}
         </div>
-        
-        <p className="text-sm text-muted-foreground mb-3 line-clamp-2 break-words">
-          {highlightText(fieldNote.description || "", searchTerm)}
-        </p>
-        
-        <div className="flex justify-between items-center text-xs text-muted-foreground">
-          <span className="flex-shrink-0">{formatDate(fieldNote.date.toString())}</span>
-          <div className="flex items-center gap-2 text-right">
-            {fieldNote.photoCount !== undefined && fieldNote.photoCount > 0 && (
-              <span className="flex items-center gap-1 pointer-events-none">
-                <Camera size={12} className="shrink-0" />
-                {fieldNote.photoCount}
-              </span>
-            )}
-            <span className="break-words">
-              {fieldNote.distance && `${fieldNote.distance} mi`}
-              {fieldNote.distance && fieldNote.elevationGain && " • "}
-              {fieldNote.elevationGain && `${fieldNote.elevationGain} ft`}
-            </span>
-          </div>
+        <h3
+          className="font-serif text-foreground leading-tight"
+          style={{ fontSize: "1.05rem" }}
+        >
+          {highlightText(fieldNote.title, searchTerm)}
+        </h3>
+        <div className="meta-mono text-muted-foreground mt-1 flex flex-wrap gap-x-2">
+          {fieldNote.distance != null && <span>{fieldNote.distance} mi</span>}
+          {fieldNote.distance != null && fieldNote.elevationGain != null && <span>·</span>}
+          {fieldNote.elevationGain != null && <span>{fieldNote.elevationGain} ft</span>}
+          {(fieldNote.distance != null || fieldNote.elevationGain != null) && <span>·</span>}
+          <span>{formatDate(fieldNote.date.toString())}</span>
         </div>
       </div>
-    </ClickableTile>
+    </Link>
   );
 }
