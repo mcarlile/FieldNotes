@@ -11,6 +11,7 @@ import FieldNoteDetail from "@/pages/field-note-detail";
 import Admin from "@/pages/admin";
 import TrailcamStudio from "@/pages/trailcam-studio";
 import Welcome from "@/pages/welcome";
+import InboxPage from "@/pages/inbox";
 import { Loader2 } from "lucide-react";
 
 function AppContent() {
@@ -38,6 +39,7 @@ function AppContent() {
         <Route path="/admin/:id" component={Admin} />
         <Route path="/field-notes/:id/edit" component={Admin} />
         <Route path="/trailcam-studio" component={TrailcamStudio} />
+        <Route path="/inbox" component={InboxPage} />
         <Route component={NotFound} />
       </Switch>
     </>

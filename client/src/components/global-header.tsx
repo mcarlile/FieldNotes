@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useTheme } from "@/contexts/theme-context";
 import { Button } from "@/components/ui/button";
+import { useQuery } from "@tanstack/react-query";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,16 +11,40 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MapPin, Menu, X, Sun, Moon, LogIn, LogOut, User } from "lucide-react";
+import { MapPin, Menu, X, Sun, Moon, LogIn, LogOut, User, Inbox } from "lucide-react";
+import type { GpxInboxItem } from "@shared/schema";
 
 export default function GlobalHeader() {
   const { user, logout, isLoggingOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [location] = useLocation();
 
   const displayName = user?.firstName
     ? `${user.firstName}${user.lastName ? " " + user.lastName : ""}`
     : user?.email ?? "Account";
+
+  const { data: inboxItems = [] } = useQuery<GpxInboxItem[]>({
+    queryKey: ["/api/inbox"],
+    enabled: !!user,
+    refetchInterval: 60000,
+  });
+  const pendingCount = inboxItems.filter((i: GpxInboxItem) => i.status === "pending").length;
+
+  const navLink = (href: string, label: string, icon?: React.ReactNode) => (
+    <Link
+      href={href}
+      onClick={() => setMobileOpen(false)}
+      className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+        location === href
+          ? "bg-accent text-foreground"
+          : "text-foreground hover:bg-accent"
+      }`}
+    >
+      {icon}
+      {label}
+    </Link>
+  );
 
   return (
     <header className="bg-card border-b border-border sticky top-0 z-50">
@@ -31,7 +56,21 @@ export default function GlobalHeader() {
         </Link>
 
         {/* Desktop right side */}
-        <div className="hidden sm:flex items-center gap-3">
+        <div className="hidden sm:flex items-center gap-1">
+          {user && (
+            <Link href="/inbox">
+              <Button variant="ghost" size="sm" className="gap-1.5 relative">
+                <Inbox className="h-4 w-4" />
+                Inbox
+                {pendingCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-green-600 text-[10px] font-bold text-white">
+                    {pendingCount > 9 ? "9+" : pendingCount}
+                  </span>
+                )}
+              </Button>
+            </Link>
+          )}
+
           <button
             onClick={toggleTheme}
             className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
@@ -78,39 +117,34 @@ export default function GlobalHeader() {
         </div>
 
         {/* Mobile hamburger */}
-        <button
-          className="sm:hidden p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-          onClick={() => setMobileOpen((v) => !v)}
-          aria-label="Toggle menu"
-        >
-          {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </button>
+        <div className="sm:hidden flex items-center gap-2">
+          {user && pendingCount > 0 && (
+            <Link href="/inbox">
+              <Button variant="ghost" size="sm" className="relative p-2">
+                <Inbox className="h-5 w-5" />
+                <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-green-600 text-[10px] font-bold text-white">
+                  {pendingCount > 9 ? "9+" : pendingCount}
+                </span>
+              </Button>
+            </Link>
+          )}
+          <button
+            className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            onClick={() => setMobileOpen((v) => !v)}
+            aria-label="Toggle menu"
+          >
+            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+        </div>
       </div>
 
       {/* Mobile drawer */}
       {mobileOpen && (
         <div className="sm:hidden border-t border-border bg-card px-4 py-3 flex flex-col gap-1">
-          <Link
-            href="/"
-            onClick={() => setMobileOpen(false)}
-            className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-foreground hover:bg-accent transition-colors"
-          >
-            Home
-          </Link>
-          <Link
-            href="/admin"
-            onClick={() => setMobileOpen(false)}
-            className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-foreground hover:bg-accent transition-colors"
-          >
-            Add Field Note
-          </Link>
-          <Link
-            href="/trailcam-studio"
-            onClick={() => setMobileOpen(false)}
-            className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-foreground hover:bg-accent transition-colors"
-          >
-            TrailCam Studio
-          </Link>
+          {navLink("/", "Home")}
+          {navLink("/inbox", "GPX Inbox", <Inbox className="h-4 w-4" />)}
+          {navLink("/admin", "Add Trip")}
+          {navLink("/trailcam-studio", "TrailCam Studio")}
 
           <div className="border-t border-border mt-1 pt-2 flex flex-col gap-1">
             <button

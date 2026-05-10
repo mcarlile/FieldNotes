@@ -1,4 +1,4 @@
-import { fieldNotes, photos, trailcamProjects, videoClips, type FieldNote, type Photo, type InsertFieldNote, type InsertPhoto, type TrailcamProject, type VideoClip, type InsertTrailcamProject, type InsertVideoClip } from "@shared/schema";
+import { fieldNotes, photos, trailcamProjects, videoClips, webhookTokens, gpxInbox, type FieldNote, type Photo, type InsertFieldNote, type InsertPhoto, type TrailcamProject, type VideoClip, type InsertTrailcamProject, type InsertVideoClip, type WebhookToken, type GpxInboxItem } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, like, ilike, and, or } from "drizzle-orm";
 
@@ -38,6 +38,18 @@ export interface IStorage {
   createVideoClip(clip: InsertVideoClip): Promise<VideoClip>;
   updateVideoClip(id: string, clip: Partial<InsertVideoClip>): Promise<VideoClip | undefined>;
   deleteVideoClip(id: string): Promise<boolean>;
+
+  // Webhook Tokens
+  getWebhookTokenByUserId(userId: string): Promise<WebhookToken | undefined>;
+  getWebhookTokenByToken(token: string): Promise<WebhookToken | undefined>;
+  upsertWebhookToken(userId: string, token: string): Promise<WebhookToken>;
+
+  // GPX Inbox
+  getInboxItems(userId: string): Promise<GpxInboxItem[]>;
+  getInboxItemById(id: string): Promise<GpxInboxItem | undefined>;
+  createInboxItem(item: { userId: string; filename: string; rawGpx: string; gpxStats?: any; sourceIp?: string }): Promise<GpxInboxItem>;
+  updateInboxItemStatus(id: string, status: string): Promise<GpxInboxItem | undefined>;
+  deleteInboxItem(id: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -306,6 +318,69 @@ export class DatabaseStorage implements IStorage {
   async deleteVideoClip(id: string): Promise<boolean> {
     const result = await db.delete(videoClips).where(eq(videoClips.id, id));
     return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  // Webhook Tokens
+  async getWebhookTokenByUserId(userId: string): Promise<WebhookToken | undefined> {
+    const [row] = await db.select().from(webhookTokens).where(eq(webhookTokens.userId, userId));
+    return row;
+  }
+
+  async getWebhookTokenByToken(token: string): Promise<WebhookToken | undefined> {
+    const [row] = await db.select().from(webhookTokens).where(eq(webhookTokens.token, token));
+    return row;
+  }
+
+  async upsertWebhookToken(userId: string, token: string): Promise<WebhookToken> {
+    const [row] = await db
+      .insert(webhookTokens)
+      .values({ userId, token })
+      .onConflictDoUpdate({
+        target: webhookTokens.userId,
+        set: { token, updatedAt: new Date() },
+      })
+      .returning();
+    return row;
+  }
+
+  // GPX Inbox
+  async getInboxItems(userId: string): Promise<GpxInboxItem[]> {
+    return db
+      .select()
+      .from(gpxInbox)
+      .where(eq(gpxInbox.userId, userId))
+      .orderBy(desc(gpxInbox.receivedAt));
+  }
+
+  async getInboxItemById(id: string): Promise<GpxInboxItem | undefined> {
+    const [row] = await db.select().from(gpxInbox).where(eq(gpxInbox.id, id));
+    return row;
+  }
+
+  async createInboxItem(item: { userId: string; filename: string; rawGpx: string; gpxStats?: any; sourceIp?: string }): Promise<GpxInboxItem> {
+    const [row] = await db.insert(gpxInbox).values({
+      userId: item.userId,
+      filename: item.filename,
+      rawGpx: item.rawGpx,
+      gpxStats: item.gpxStats ?? null,
+      sourceIp: item.sourceIp ?? null,
+      status: 'pending',
+    }).returning();
+    return row;
+  }
+
+  async updateInboxItemStatus(id: string, status: string): Promise<GpxInboxItem | undefined> {
+    const [row] = await db
+      .update(gpxInbox)
+      .set({ status })
+      .where(eq(gpxInbox.id, id))
+      .returning();
+    return row;
+  }
+
+  async deleteInboxItem(id: string): Promise<boolean> {
+    const result = await db.delete(gpxInbox).where(eq(gpxInbox.id, id)).returning();
+    return result.length > 0;
   }
 }
 
@@ -651,6 +726,18 @@ export class MemStorage implements IStorage {
     }
     return false;
   }
+
+  // Webhook Tokens (stubs — MemStorage not used in production)
+  async getWebhookTokenByUserId(_userId: string): Promise<WebhookToken | undefined> { return undefined; }
+  async getWebhookTokenByToken(_token: string): Promise<WebhookToken | undefined> { return undefined; }
+  async upsertWebhookToken(_userId: string, _token: string): Promise<WebhookToken> { throw new Error("Not implemented"); }
+
+  // GPX Inbox (stubs — MemStorage not used in production)
+  async getInboxItems(_userId: string): Promise<GpxInboxItem[]> { return []; }
+  async getInboxItemById(_id: string): Promise<GpxInboxItem | undefined> { return undefined; }
+  async createInboxItem(_item: any): Promise<GpxInboxItem> { throw new Error("Not implemented"); }
+  async updateInboxItemStatus(_id: string, _status: string): Promise<GpxInboxItem | undefined> { return undefined; }
+  async deleteInboxItem(_id: string): Promise<boolean> { return false; }
 }
 
 // Use database storage for permanent data persistence

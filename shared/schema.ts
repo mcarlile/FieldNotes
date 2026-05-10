@@ -7,6 +7,33 @@ import { relations } from "drizzle-orm";
 // Re-export Replit Auth tables (users + sessions)
 export * from "./models/auth";
 
+// Webhook tokens — one per user, used to receive GPX files via webhook
+export const webhookTokens = pgTable("webhook_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: text("user_id").notNull().unique(),
+  token: text("token").notNull().unique(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// GPX Inbox — files received via webhook endpoint
+export const gpxInbox = pgTable("gpx_inbox", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: text("user_id").notNull(),
+  filename: text("filename").notNull(),
+  rawGpx: text("raw_gpx").notNull(),
+  gpxStats: jsonb("gpx_stats"), // { distance, elevationGain, date, coordinates }
+  status: text("status").notNull().default("pending"), // pending | promoted | dismissed
+  sourceIp: text("source_ip"),
+  receivedAt: timestamp("received_at").defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index("gpx_inbox_user_id_idx").on(table.userId),
+  statusIdx: index("gpx_inbox_status_idx").on(table.status),
+}));
+
+export type WebhookToken = typeof webhookTokens.$inferSelect;
+export type GpxInboxItem = typeof gpxInbox.$inferSelect;
+
 export const fieldNotes = pgTable("field_notes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   title: text("title").notNull(),

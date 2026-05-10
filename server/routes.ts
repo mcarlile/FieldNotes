@@ -1204,6 +1204,143 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── GPX Inbox & Webhook ──────────────────────────────────────────────────
+
+  // Get or create the user's webhook token
+  app.get("/api/inbox/token", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      let tokenRow = await storage.getWebhookTokenByUserId(userId);
+      if (!tokenRow) {
+        const token = crypto.randomBytes(24).toString('hex');
+        tokenRow = await storage.upsertWebhookToken(userId, token);
+      }
+      res.json({ token: tokenRow.token });
+    } catch (error) {
+      console.error("Error getting webhook token:", error);
+      res.status(500).json({ message: "Failed to get webhook token" });
+    }
+  });
+
+  // Regenerate the user's webhook token
+  app.post("/api/inbox/token/regenerate", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const token = crypto.randomBytes(24).toString('hex');
+      const tokenRow = await storage.upsertWebhookToken(userId, token);
+      res.json({ token: tokenRow.token });
+    } catch (error) {
+      console.error("Error regenerating webhook token:", error);
+      res.status(500).json({ message: "Failed to regenerate webhook token" });
+    }
+  });
+
+  // Get all inbox items for the authenticated user
+  app.get("/api/inbox", isAuthenticated, async (req: any, res) => {
+    try {
+      const items = await storage.getInboxItems(req.user.id);
+      res.json(items);
+    } catch (error) {
+      console.error("Error fetching inbox:", error);
+      res.status(500).json({ message: "Failed to fetch inbox" });
+    }
+  });
+
+  // Delete an inbox item
+  app.delete("/api/inbox/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const item = await storage.getInboxItemById(req.params.id);
+      if (!item || item.userId !== req.user.id) {
+        return res.status(404).json({ message: "Item not found" });
+      }
+      await storage.deleteInboxItem(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting inbox item:", error);
+      res.status(500).json({ message: "Failed to delete inbox item" });
+    }
+  });
+
+  // Promote an inbox item to a field note
+  app.post("/api/inbox/:id/promote", isAuthenticated, async (req: any, res) => {
+    try {
+      const item = await storage.getInboxItemById(req.params.id);
+      if (!item || item.userId !== req.user.id) {
+        return res.status(404).json({ message: "Item not found" });
+      }
+      const stats = item.gpxStats as any;
+      const fieldNote = await storage.createFieldNote({
+        title: req.body.title || item.filename.replace(/\.gpx$/i, ''),
+        description: req.body.description || '',
+        tripType: req.body.tripType || 'hiking',
+        date: stats?.date ? new Date(stats.date) : new Date(item.receivedAt),
+        distance: stats?.distance ?? null,
+        elevationGain: stats?.elevationGain ?? null,
+        gpxData: stats?.coordinates ? { coordinates: stats.coordinates } : null,
+      });
+      await storage.updateInboxItemStatus(item.id, 'promoted');
+      res.json({ fieldNote });
+    } catch (error) {
+      console.error("Error promoting inbox item:", error);
+      res.status(500).json({ message: "Failed to promote inbox item" });
+    }
+  });
+
+  // PUBLIC webhook endpoint — accepts GPX via multipart or raw body
+  const gpxWebhookMulter = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+
+  app.post("/api/webhook/gpx/:token", gpxWebhookMulter.single('file'), async (req, res) => {
+    try {
+      const { token } = req.params;
+      const tokenRow = await storage.getWebhookTokenByToken(token);
+      if (!tokenRow) {
+        return res.status(401).json({ message: "Invalid webhook token" });
+      }
+
+      let rawGpx: string;
+      let filename: string;
+
+      if (req.file) {
+        // multipart upload
+        rawGpx = req.file.buffer.toString('utf-8');
+        filename = req.file.originalname || 'track.gpx';
+      } else if (req.body && typeof req.body === 'string' && req.body.length > 0) {
+        rawGpx = req.body;
+        filename = (req.headers['x-filename'] as string) || 'track.gpx';
+      } else if (req.body && req.body.gpx) {
+        rawGpx = req.body.gpx;
+        filename = req.body.filename || 'track.gpx';
+      } else {
+        return res.status(400).json({ message: "No GPX data found. Send as multipart file field 'file', raw body, or JSON {gpx, filename}" });
+      }
+
+      if (!rawGpx.includes('<gpx') && !rawGpx.includes('<trk')) {
+        return res.status(400).json({ message: "Content does not appear to be valid GPX" });
+      }
+
+      // Parse basic stats from the GPX
+      let gpxStats: any = null;
+      try {
+        const { parseGpxData } = await import('@shared/gpx-utils');
+        gpxStats = parseGpxData(rawGpx);
+      } catch (_) { /* stats are optional */ }
+
+      const sourceIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket.remoteAddress || '';
+      const item = await storage.createInboxItem({
+        userId: tokenRow.userId,
+        filename,
+        rawGpx,
+        gpxStats,
+        sourceIp,
+      });
+
+      res.status(201).json({ id: item.id, filename: item.filename, receivedAt: item.receivedAt });
+    } catch (error) {
+      console.error("Webhook GPX error:", error);
+      res.status(500).json({ message: "Failed to process GPX" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

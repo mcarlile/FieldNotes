@@ -18,6 +18,28 @@ async function runStartupMigrations() {
         DROP COLUMN IF EXISTS old_username,
         DROP COLUMN IF EXISTS old_password_hash;
     `);
+    // Create GPX inbox tables if they don't exist
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS webhook_tokens (
+        id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id text NOT NULL UNIQUE,
+        token text NOT NULL UNIQUE,
+        created_at timestamp DEFAULT now() NOT NULL,
+        updated_at timestamp DEFAULT now() NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS gpx_inbox (
+        id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id text NOT NULL,
+        filename text NOT NULL,
+        raw_gpx text NOT NULL,
+        gpx_stats jsonb,
+        status text NOT NULL DEFAULT 'pending',
+        source_ip text,
+        received_at timestamp DEFAULT now() NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS gpx_inbox_user_id_idx ON gpx_inbox (user_id);
+      CREATE INDEX IF NOT EXISTS gpx_inbox_status_idx ON gpx_inbox (status);
+    `);
     log("Startup migrations complete");
   } catch (err) {
     log(`Startup migration warning: ${(err as Error).message}`);
