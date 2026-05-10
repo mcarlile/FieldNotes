@@ -7,7 +7,7 @@ import { Pencil, Trash2 } from "lucide-react";
 import PhotoLightbox from "@/components/photo-lightbox";
 import MapboxMap from "@/components/mapbox-map";
 import ElevationProfile from "@/components/elevation-profile";
-import { parseGpxData } from "@shared/gpx-utils";
+import { parseGpxData, parseGpxWithTimestamps } from "@shared/gpx-utils";
 
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -59,6 +59,46 @@ export default function FieldNoteDetail() {
     }
     return null;
   }, [fieldNote?.gpxData, fieldNote?.distance, fieldNote?.elevationGain]);
+
+  // Derived trip stats from elevation profile + (optional) raw GPX timestamps
+  const derivedStats = useMemo(() => {
+    const profile = parsedGpxData?.elevationProfile;
+    if (!profile || profile.length === 0) return null;
+
+    const elevations = profile.map((p) => p.elevation).filter((e) => Number.isFinite(e) && e !== 0);
+    if (elevations.length === 0) return null;
+
+    const maxEle = Math.round(Math.max(...elevations));
+    const minEle = Math.round(Math.min(...elevations));
+
+    // Peak grade: max % grade between adjacent points (over a smoothing window)
+    let peakGrade = 0;
+    const window = Math.max(1, Math.floor(profile.length / 200));
+    for (let i = window; i < profile.length; i++) {
+      const dEle = profile[i].elevation - profile[i - window].elevation; // ft
+      const dDist = (profile[i].distance - profile[i - window].distance) * 5280; // mi → ft
+      if (dDist > 0) {
+        const grade = Math.abs(dEle / dDist) * 100;
+        if (grade > peakGrade && grade < 100) peakGrade = grade;
+      }
+    }
+
+    // Moving time: only available when raw GPX string is present
+    let movingTime: string | null = null;
+    if (typeof fieldNote?.gpxData === "string") {
+      try {
+        const tracked = parseGpxWithTimestamps(fieldNote.gpxData);
+        if (tracked.durationSeconds > 0) {
+          const total = Math.round(tracked.durationSeconds);
+          const h = Math.floor(total / 3600);
+          const m = Math.floor((total % 3600) / 60);
+          movingTime = h > 0 ? `${h}h ${m}m` : `${m}m`;
+        }
+      } catch (_) { /* ignore */ }
+    }
+
+    return { maxEle, minEle, peakGrade: Math.round(peakGrade * 10) / 10, movingTime };
+  }, [parsedGpxData, fieldNote?.gpxData]);
 
   const deleteFieldNoteMutation = useMutation({
     mutationFn: async () => apiRequest(`/api/field-notes/${id}`, "DELETE"),
@@ -122,6 +162,22 @@ export default function FieldNoteDetail() {
           className="w-full h-full"
         />
       </div>
+
+      {/* Derived trip stats — single mono caption strip below the hero map */}
+      {derivedStats && (
+        <div className="px-5 sm:px-8 pt-4 pb-1 border-b border-border">
+          <div className="meta-mono text-muted-foreground flex flex-wrap gap-x-5 gap-y-1">
+            <span><span className="text-foreground">{derivedStats.maxEle.toLocaleString()}</span> ft max</span>
+            <span><span className="text-foreground">{derivedStats.minEle.toLocaleString()}</span> ft min</span>
+            {derivedStats.peakGrade > 0 && (
+              <span><span className="text-foreground">{derivedStats.peakGrade}%</span> peak grade</span>
+            )}
+            {derivedStats.movingTime && (
+              <span><span className="text-foreground">{derivedStats.movingTime}</span> moving</span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Title block */}
       <section className="px-5 sm:px-8 pt-8 pb-6 max-w-5xl">
@@ -198,24 +254,40 @@ export default function FieldNoteDetail() {
             Photos · {photos.length}
           </div>
           <div className="columns-2 md:columns-3 lg:columns-4 gap-3 sm:gap-4">
-            {photos.map((photo, index) => (
-              <button
-                key={photo.id}
-                onClick={() => setSelectedPhotoId(photo.id)}
-                className="block w-full mb-3 sm:mb-4 break-inside-avoid overflow-hidden bg-muted hover:opacity-90 transition-opacity"
-                data-testid={`photo-thumbnail-${photo.id}`}
-              >
-                <img
-                  src={photo.url}
-                  alt={`Field note photo ${index + 1}`}
-                  className="w-full h-auto block"
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement;
-                    target.style.display = "none";
-                  }}
-                />
-              </button>
-            ))}
+            {photos.map((photo, index) => {
+              const captureDate = photo.timestamp
+                ? new Date(photo.timestamp as unknown as string).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })
+                : null;
+              return (
+                <button
+                  key={photo.id}
+                  onClick={() => setSelectedPhotoId(photo.id)}
+                  className="group/photo block w-full mb-3 sm:mb-4 break-inside-avoid overflow-hidden bg-muted text-left"
+                  data-testid={`photo-thumbnail-${photo.id}`}
+                >
+                  <div className="relative overflow-hidden">
+                    <img
+                      src={photo.url}
+                      alt={`Field note photo ${index + 1}`}
+                      className="w-full h-auto block transition-opacity group-hover/photo:opacity-90"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = "none";
+                      }}
+                    />
+                  </div>
+                  {captureDate && (
+                    <div className="meta-mono text-muted-foreground pt-1.5 transition-opacity duration-200 [@media(hover:hover)]:opacity-0 group-hover/photo:opacity-100 group-focus-within/photo:opacity-100">
+                      {captureDate}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </section>
       )}

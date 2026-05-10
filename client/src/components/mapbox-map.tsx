@@ -156,33 +156,33 @@ export default function MapboxMap({
         const elevationEl = document.createElement('div');
         elevationEl.className = 'elevation-marker';
         elevationEl.style.cssText = `
-          width: 16px;
-          height: 16px;
-          background: radial-gradient(circle, #ff3d3d 0%, #ff6b6b 100%);
-          border: 3px solid white;
+          width: 14px;
+          height: 14px;
+          background: #1a1815;
+          border: 2px solid #f4f1ec;
           border-radius: 50%;
-          box-shadow: 0 4px 12px rgba(255, 61, 61, 0.4), 0 0 0 0 rgba(255, 61, 61, 0.3);
+          box-shadow: 0 2px 8px rgba(14, 13, 11, 0.45);
           opacity: 0;
           transform: scale(0.5);
-          transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+          transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
           z-index: 1000;
           position: relative;
         `;
         
-        // Add a pulsing ring animation
+        // Subtle ink-colored pulsing ring
         const ringEl = document.createElement('div');
         ringEl.className = 'elevation-ring';
         ringEl.style.cssText = `
           position: absolute;
-          top: -6px;
-          left: -6px;
-          width: 28px;
-          height: 28px;
-          border: 2px solid rgba(255, 61, 61, 0.4);
+          top: -7px;
+          left: -7px;
+          width: 26px;
+          height: 26px;
+          border: 1.5px solid rgba(26, 24, 21, 0.35);
           border-radius: 50%;
           opacity: 0;
           transform: scale(0.8);
-          transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+          transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
           animation: pulse-ring 2s infinite;
         `;
         
@@ -243,7 +243,7 @@ export default function MapboxMap({
       // Show marker with immediate appearance
       markerEl.style.opacity = '1';
       markerEl.style.transform = 'scale(1.1)';
-      markerEl.style.boxShadow = '0 6px 16px rgba(255, 61, 61, 0.6), 0 0 0 8px rgba(255, 61, 61, 0.1)';
+      markerEl.style.boxShadow = '0 4px 14px rgba(14, 13, 11, 0.55), 0 0 0 6px rgba(26, 24, 21, 0.08)';
       
       // Animate the ring
       if (ringEl) {
@@ -254,7 +254,7 @@ export default function MapboxMap({
       // Hide marker immediately
       markerEl.style.opacity = '0';
       markerEl.style.transform = 'scale(0.5)';
-      markerEl.style.boxShadow = '0 4px 12px rgba(255, 61, 61, 0.4), 0 0 0 0 rgba(255, 61, 61, 0.3)';
+      markerEl.style.boxShadow = '0 2px 8px rgba(14, 13, 11, 0.45)';
       
       // Hide the ring
       if (ringEl) {
