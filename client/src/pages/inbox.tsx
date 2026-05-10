@@ -1,10 +1,8 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -12,28 +10,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Copy,
-  RefreshCw,
-  Trash2,
-  ArrowUpRight,
-  Inbox,
-  CheckCircle,
-  Clock,
-  Link as LinkIcon,
-  MapPin,
-  Mountain,
-  Calendar,
-} from "lucide-react";
+import { Copy, RefreshCw, Trash2, Loader2 } from "lucide-react";
 import type { GpxInboxItem } from "@shared/schema";
 
 const TRIP_TYPES = [
@@ -55,7 +32,7 @@ function formatDistance(km: number | null | undefined) {
 
 function formatElevation(m: number | null | undefined) {
   if (!m) return null;
-  return `${Math.round(m * 3.28084)} ft gain`;
+  return `${Math.round(m * 3.28084)} ft`;
 }
 
 function formatDate(dateStr: string) {
@@ -109,7 +86,7 @@ export default function InboxPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/inbox"] });
       queryClient.invalidateQueries({ queryKey: ["/api/field-notes"] });
       setPromoteItem(null);
-      toast({ title: "Added to Big Miles!", description: "Your trip is now in your journal." });
+      toast({ title: "Added to Big Miles", description: "Your trip is now in your journal." });
       if (data?.fieldNote?.id) {
         setLocation(`/admin/${data.fieldNote.id}`);
       }
@@ -126,222 +103,252 @@ export default function InboxPage() {
   }
 
   function openPromote(item: GpxInboxItem) {
-    const stats = item.gpxStats as any;
     setPromoteTitle(item.filename.replace(/\.gpx$/i, "").replace(/[_-]/g, " "));
     setPromoteDescription("");
     setPromoteTripType("hiking");
     setPromoteItem(item);
   }
 
-  const pendingCount = items.filter(i => i.status === "pending").length;
+  const pendingCount = items.filter((i) => i.status === "pending").length;
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="max-w-3xl mx-auto px-4 py-8 space-y-8">
-
-        {/* Header */}
-        <div className="flex items-center gap-3">
-          <Inbox className="h-6 w-6 text-green-600 dark:text-green-400" />
-          <h1 className="text-2xl font-bold text-foreground">GPX Inbox</h1>
-          {pendingCount > 0 && (
-            <Badge className="bg-green-600 text-white">{pendingCount} new</Badge>
-          )}
+      <main className="px-5 sm:px-8 pt-6 pb-16 max-w-3xl mx-auto">
+        {/* Page header */}
+        <div className="mb-10">
+          <div className="meta-mono text-muted-foreground mb-3 flex flex-wrap gap-x-3">
+            <span>Inbox · GPX webhook</span>
+            {pendingCount > 0 && (
+              <>
+                <span>·</span>
+                <span className="text-foreground">{pendingCount} pending</span>
+              </>
+            )}
+          </div>
+          <h1
+            className="font-serif text-foreground"
+            style={{ fontSize: "clamp(2rem, 4vw, 3rem)", lineHeight: 1.05, letterSpacing: "-0.015em" }}
+          >
+            GPX Inbox
+          </h1>
         </div>
 
-        {/* Webhook URL card */}
-        <div className="rounded-xl border border-border bg-card p-5 space-y-4">
-          <div className="flex items-center gap-2">
-            <LinkIcon className="h-4 w-4 text-muted-foreground" />
-            <h2 className="font-semibold text-foreground">Your webhook URL</h2>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Send GPX files to this URL from any app, device, or automation tool. It accepts multipart
-            file uploads (field name <code className="bg-muted px-1 rounded text-xs">file</code>),
-            raw GPX body, or JSON <code className="bg-muted px-1 rounded text-xs">{"{ gpx, filename }"}</code>.
+        {/* Webhook URL */}
+        <section className="mb-12">
+          <div className="meta-mono text-muted-foreground mb-3">Your webhook URL</div>
+          <p className="font-serif text-lg text-foreground/80 leading-relaxed mb-4 max-w-2xl">
+            Send GPX files to this URL from any app, device, or automation tool. It accepts a
+            multipart file upload (field <span className="font-mono text-sm">file</span>),
+            raw GPX body, or JSON <span className="font-mono text-sm">{"{ gpx, filename }"}</span>.
           </p>
 
           {tokenLoading ? (
             <div className="h-10 bg-muted animate-pulse rounded-md" />
           ) : webhookUrl ? (
-            <div className="flex items-center gap-2">
-              <code className="flex-1 text-xs bg-muted border border-border rounded-md px-3 py-2 text-foreground overflow-x-auto whitespace-nowrap">
-                {webhookUrl}
-              </code>
-              <Button variant="outline" size="sm" onClick={copyUrl} className="gap-1 shrink-0">
-                <Copy className="h-3.5 w-3.5" />
-                Copy
-              </Button>
-            </div>
+            <>
+              <div className="flex items-center gap-2 border border-border rounded-md bg-muted/40">
+                <code className="flex-1 font-mono text-xs px-3 py-2.5 text-foreground overflow-x-auto whitespace-nowrap">
+                  {webhookUrl}
+                </code>
+                <button
+                  type="button"
+                  onClick={copyUrl}
+                  className="meta-mono px-3 py-2.5 text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5 border-l border-border"
+                  data-testid="button-copy-url"
+                >
+                  <Copy className="h-3 w-3" />
+                  Copy
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between mt-3">
+                <p className="meta-mono text-muted-foreground">
+                  Regenerating creates a new URL and invalidates the old one
+                </p>
+                <button
+                  type="button"
+                  onClick={() => regenerateMutation.mutate()}
+                  disabled={regenerateMutation.isPending}
+                  className="meta-mono text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                  data-testid="button-regenerate"
+                >
+                  <RefreshCw className={`h-3 w-3 ${regenerateMutation.isPending ? "animate-spin" : ""}`} />
+                  Regenerate
+                </button>
+              </div>
+
+              <div className="mt-4 pt-4 border-t border-border">
+                <div className="meta-mono text-muted-foreground mb-2">Example · curl</div>
+                <code className="block font-mono text-xs text-foreground/80 break-all">
+                  curl -X POST "{webhookUrl}" -F "file=@mytrack.gpx"
+                </code>
+              </div>
+            </>
           ) : null}
+        </section>
 
-          <div className="pt-1 border-t border-border flex items-center justify-between">
-            <p className="text-xs text-muted-foreground">Regenerating creates a new URL and invalidates the old one.</p>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="gap-1 text-muted-foreground hover:text-destructive"
-              onClick={() => regenerateMutation.mutate()}
-              disabled={regenerateMutation.isPending}
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${regenerateMutation.isPending ? "animate-spin" : ""}`} />
-              Regenerate
-            </Button>
+        {/* Items */}
+        <section>
+          <div className="meta-mono text-muted-foreground mb-4">
+            Received files {items.length > 0 && `· ${items.length}`}
           </div>
-
-          {/* Example curl command */}
-          {webhookUrl && (
-            <div className="rounded-md bg-muted p-3">
-              <p className="text-xs text-muted-foreground mb-1 font-medium">Example — send from terminal:</p>
-              <code className="text-xs text-foreground break-all">
-                curl -X POST "{webhookUrl}" \<br />
-                {"  "}-F "file=@mytrack.gpx"
-              </code>
-            </div>
-          )}
-        </div>
-
-        {/* Inbox items */}
-        <div className="space-y-3">
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-            Received files
-          </h2>
 
           {itemsLoading ? (
             <div className="space-y-2">
-              {[1, 2, 3].map(i => (
-                <div key={i} className="h-20 bg-muted animate-pulse rounded-xl" />
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-16 bg-muted animate-pulse rounded" />
               ))}
             </div>
           ) : items.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-border bg-card p-10 text-center">
-              <Inbox className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
-              <p className="text-foreground font-medium">No GPX files yet</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                Send a GPX file to your webhook URL and it will appear here.
+            <div className="border-t border-border py-16 text-center">
+              <p className="font-serif text-xl text-muted-foreground">
+                No GPX files yet.
+              </p>
+              <p className="meta-mono text-muted-foreground mt-3">
+                Send one to your webhook URL and it'll appear here
               </p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {items.map(item => {
-                const stats = item.gpxStats as any;
+            <div className="border-t border-border divide-y divide-border">
+              {items.map((item) => {
+                const stats = (item.gpxStats ?? {}) as { distance?: number; elevationGain?: number };
                 const isPending = item.status === "pending";
                 const isPromoted = item.status === "promoted";
                 return (
                   <div
                     key={item.id}
-                    className={`rounded-xl border bg-card p-4 flex items-start gap-4 transition-opacity ${!isPending ? "opacity-60" : ""}`}
+                    className={`py-4 flex items-start gap-4 transition-opacity ${!isPending ? "opacity-60" : ""}`}
+                    data-testid={`inbox-item-${item.id}`}
                   >
-                    <div className="flex-1 min-w-0 space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-foreground text-sm truncate">{item.filename}</span>
+                    <div className="flex-1 min-w-0 space-y-1.5">
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <span className="text-foreground text-sm truncate">{item.filename}</span>
                         {isPending && (
-                          <Badge variant="outline" className="text-xs gap-1 text-amber-600 border-amber-300">
-                            <Clock className="h-3 w-3" /> Pending
-                          </Badge>
+                          <span className="meta-mono text-foreground">Pending</span>
                         )}
                         {isPromoted && (
-                          <Badge variant="outline" className="text-xs gap-1 text-green-600 border-green-300">
-                            <CheckCircle className="h-3 w-3" /> Added
-                          </Badge>
+                          <span className="meta-mono text-muted-foreground">Added</span>
                         )}
                       </div>
 
-                      <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-                        <span className="flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          {formatDate(item.receivedAt as unknown as string)}
-                        </span>
+                      <div className="meta-mono text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">
+                        <span>{formatDate(item.receivedAt as unknown as string)}</span>
                         {formatDistance(stats?.distance) && (
-                          <span className="flex items-center gap-1">
-                            <MapPin className="h-3 w-3" />
-                            {formatDistance(stats.distance)}
-                          </span>
+                          <>
+                            <span>·</span>
+                            <span>{formatDistance(stats.distance)}</span>
+                          </>
                         )}
                         {formatElevation(stats?.elevationGain) && (
-                          <span className="flex items-center gap-1">
-                            <Mountain className="h-3 w-3" />
-                            {formatElevation(stats.elevationGain)}
-                          </span>
+                          <>
+                            <span>·</span>
+                            <span>{formatElevation(stats.elevationGain)} gain</span>
+                          </>
                         )}
                         {item.sourceIp && (
-                          <span className="text-muted-foreground/60">from {item.sourceIp}</span>
+                          <>
+                            <span>·</span>
+                            <span>from {item.sourceIp}</span>
+                          </>
                         )}
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex items-center gap-4 shrink-0">
                       {isPending && (
-                        <Button
-                          size="sm"
-                          variant="default"
-                          className="gap-1 bg-green-600 hover:bg-green-700 text-white text-xs"
+                        <button
+                          type="button"
                           onClick={() => openPromote(item)}
+                          className="meta-mono text-foreground underline underline-offset-4 hover:opacity-70 transition-opacity"
+                          data-testid={`button-promote-${item.id}`}
                         >
-                          <ArrowUpRight className="h-3.5 w-3.5" />
-                          Add to journal
-                        </Button>
+                          Add to journal →
+                        </button>
                       )}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-muted-foreground hover:text-destructive"
+                      <button
+                        type="button"
                         onClick={() => deleteMutation.mutate(item.id)}
                         disabled={deleteMutation.isPending}
+                        className="meta-mono text-muted-foreground hover:text-destructive transition-colors"
+                        data-testid={`button-delete-${item.id}`}
                       >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
                     </div>
                   </div>
                 );
               })}
             </div>
           )}
-        </div>
-      </div>
+        </section>
+      </main>
 
       {/* Promote dialog */}
-      <Dialog open={!!promoteItem} onOpenChange={open => !open && setPromoteItem(null)}>
+      <Dialog open={!!promoteItem} onOpenChange={(open) => !open && setPromoteItem(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Add to journal</DialogTitle>
+            <DialogTitle className="font-serif text-2xl font-normal">Add to journal</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="promote-title">Title</Label>
-              <Input
+          <div className="space-y-6 py-2">
+            <div>
+              <label htmlFor="promote-title" className="meta-mono text-muted-foreground block mb-2">
+                Title
+              </label>
+              <input
                 id="promote-title"
+                type="text"
                 value={promoteTitle}
-                onChange={e => setPromoteTitle(e.target.value)}
+                onChange={(e) => setPromoteTitle(e.target.value)}
                 placeholder="Trip name"
+                className="w-full bg-transparent border-b border-border focus:border-foreground outline-none py-2 font-serif text-lg text-foreground placeholder:text-muted-foreground/60 transition-colors"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="promote-desc">Description <span className="text-muted-foreground">(optional)</span></Label>
-              <Input
+            <div>
+              <label htmlFor="promote-desc" className="meta-mono text-muted-foreground block mb-2">
+                Description <span className="normal-case">(optional)</span>
+              </label>
+              <input
                 id="promote-desc"
+                type="text"
                 value={promoteDescription}
-                onChange={e => setPromoteDescription(e.target.value)}
-                placeholder="A quick note about this trip..."
+                onChange={(e) => setPromoteDescription(e.target.value)}
+                placeholder="A quick note about this trip…"
+                className="w-full bg-transparent border-b border-border focus:border-foreground outline-none py-2 font-serif text-base text-foreground placeholder:text-muted-foreground/60 transition-colors"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label>Trip type</Label>
-              <Select value={promoteTripType} onValueChange={setPromoteTripType}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TRIP_TYPES.map(t => (
-                    <SelectItem key={t.id} value={t.id}>{t.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div>
+              <div className="meta-mono text-muted-foreground mb-2">Trip type</div>
+              <div className="flex flex-wrap gap-2">
+                {TRIP_TYPES.map((t) => {
+                  const active = promoteTripType === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setPromoteTripType(t.id)}
+                      className={`meta-mono px-3 py-1.5 rounded-full border transition-colors ${
+                        active
+                          ? "border-foreground text-foreground bg-muted"
+                          : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/40"
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPromoteItem(null)}>Cancel</Button>
-            <Button
-              className="bg-green-600 hover:bg-green-700 text-white"
+          <DialogFooter className="gap-3 sm:gap-6">
+            <button
+              type="button"
+              onClick={() => setPromoteItem(null)}
+              className="meta-mono text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
               disabled={!promoteTitle.trim() || promoteMutation.isPending}
               onClick={() => {
                 if (!promoteItem) return;
@@ -352,9 +359,11 @@ export default function InboxPage() {
                   tripType: promoteTripType,
                 });
               }}
+              className="meta-mono text-foreground underline underline-offset-4 hover:opacity-70 transition-opacity disabled:opacity-50 flex items-center gap-2"
             >
-              {promoteMutation.isPending ? "Adding..." : "Add to journal"}
-            </Button>
+              {promoteMutation.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
+              Add to journal →
+            </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

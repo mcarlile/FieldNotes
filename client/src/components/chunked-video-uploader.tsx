@@ -492,13 +492,14 @@ export function ChunkedVideoUploader({
 
   return (
     <div>
-      <CarbonButton 
-        onClick={() => setShowModal(true)} 
-        className={buttonClassName}
+      <button
+        type="button"
+        onClick={() => setShowModal(true)}
+        className={buttonClassName ?? "meta-mono px-3 py-1.5 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors"}
         data-testid="button-upload-video"
       >
         {children}
-      </CarbonButton>
+      </button>
 
       <Modal
         open={showModal}
