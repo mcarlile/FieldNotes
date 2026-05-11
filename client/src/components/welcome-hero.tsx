@@ -2,7 +2,7 @@ export default function WelcomeHero() {
   return (
     <section className="px-5 sm:px-8 pt-8 sm:pt-12 pb-8 sm:pb-10 border-b border-border">
       <div className="meta-mono text-muted-foreground mb-5">
-        A quiet record of long days outside
+        A personal field notebook and heatmap of long days spent outside
       </div>
 
       <h1
@@ -25,27 +25,17 @@ export default function WelcomeHero() {
             lineHeight: 1.45,
           }}
         >
-          Trails, tracks, and weather. Photographs from the days they were
-          taken. A small archive of where the year went.
+          Start logging big miles today
         </p>
       </div>
 
-      <div className="mt-7 flex flex-wrap items-baseline gap-x-6 gap-y-2">
+      <div className="mt-7 flex flex-wrap items-center gap-3">
         <a
           href="/api/login"
-          className="meta-mono text-foreground border-b border-foreground pb-0.5 hover:opacity-70 transition-opacity"
+          className="meta-mono inline-flex items-center rounded-full border border-foreground bg-foreground px-4 py-2 text-background hover:opacity-80 transition-opacity"
           data-testid="link-sign-in"
         >
           Sign in &rarr;
-        </a>
-        <span className="meta-mono text-muted-foreground">
-          via Replit, Google, Apple, or email
-        </span>
-        <a
-          href="#archive"
-          className="meta-mono text-muted-foreground hover:text-foreground transition-colors ml-auto"
-        >
-          The archive &darr;
         </a>
       </div>
     </section>
