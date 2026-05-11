@@ -189,7 +189,7 @@ export default function Home() {
   if (viewMode === "heatmap") {
     return (
       <div className="bg-background flex flex-col" style={{ minHeight: "calc(100vh - 2.75rem)" }}>
-        {!isAuthenticated && <WelcomeHero />}
+        <WelcomeHero />
         <div className="px-5 sm:px-8 py-4 flex items-center justify-between border-b border-border gap-3 flex-wrap">
           {ModeSwitcher}
           <span className="meta-mono text-muted-foreground">
@@ -205,7 +205,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-background">
-      {!isAuthenticated && <WelcomeHero />}
+      <WelcomeHero />
 
       {/* Section heading + mode switcher */}
       <div id="archive" className="px-5 sm:px-8 pt-6 pb-3 flex items-center justify-between gap-3 flex-wrap scroll-mt-12">
