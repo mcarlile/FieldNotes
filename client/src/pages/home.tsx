@@ -2,10 +2,13 @@ import { useState, forwardRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Loading } from "@carbon/react";
+import { LayoutGrid, Flame } from "lucide-react";
 import FieldNoteCard from "@/components/field-note-card";
 import HeatMapView from "@/components/heat-map-view";
+import WelcomeHero from "@/components/welcome-hero";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useAuth } from "@/hooks/use-auth";
 import type { FieldNote } from "@shared/schema";
 
 const availableTripTypes = [
@@ -67,10 +70,11 @@ const Pill = forwardRef<HTMLButtonElement, PillProps & React.ButtonHTMLAttribute
 Pill.displayName = "Pill";
 
 export default function Home() {
+  const { isAuthenticated } = useAuth();
   const [search, setSearch] = useState("");
   const [tripTypes, setTripTypes] = useState<string[]>([]);
   const [sortOrder, setSortOrder] = useState("recent");
-  const [showHeatMap, setShowHeatMap] = useState(false);
+  const [viewMode, setViewMode] = useState<"notes" | "heatmap">("notes");
   const [distanceFilter, setDistanceFilter] = useState("any");
   const [elevationFilter, setElevationFilter] = useState("any");
 
@@ -143,19 +147,56 @@ export default function Home() {
 
   const sortPillLabel = sortOptions.find((o) => o.id === sortOrder)?.label || "Sort";
 
-  if (showHeatMap) {
+  // Prominent segmented mode switcher (Notes vs Heat map) — visible in both modes
+  const ModeSwitcher = (
+    <div
+      role="tablist"
+      aria-label="View mode"
+      className="inline-flex items-center rounded-full border border-border bg-muted/60 p-0.5"
+      data-testid="view-mode-switcher"
+    >
+      <button
+        role="tab"
+        aria-selected={viewMode === "notes"}
+        onClick={() => setViewMode("notes")}
+        className={`meta-mono flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors ${
+          viewMode === "notes"
+            ? "bg-background text-foreground shadow-[0_1px_2px_rgba(26,24,21,0.08)]"
+            : "text-muted-foreground hover:text-foreground"
+        }`}
+        data-testid="mode-notes"
+      >
+        <LayoutGrid className="h-3 w-3" />
+        Field notes
+      </button>
+      <button
+        role="tab"
+        aria-selected={viewMode === "heatmap"}
+        onClick={() => setViewMode("heatmap")}
+        className={`meta-mono flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors ${
+          viewMode === "heatmap"
+            ? "bg-background text-foreground shadow-[0_1px_2px_rgba(26,24,21,0.08)]"
+            : "text-muted-foreground hover:text-foreground"
+        }`}
+        data-testid="mode-heatmap"
+      >
+        <Flame className="h-3 w-3" />
+        Heat map
+      </button>
+    </div>
+  );
+
+  if (viewMode === "heatmap") {
     return (
-      <div className="h-[calc(100vh-2.75rem)] bg-background flex flex-col">
-        <div className="px-5 sm:px-8 py-3 flex items-center justify-between border-b border-border">
-          <span className="meta-mono text-muted-foreground">Heat map</span>
-          <button
-            onClick={() => setShowHeatMap(false)}
-            className="meta-mono text-foreground underline underline-offset-4 hover:opacity-70 transition-opacity"
-          >
-            Close
-          </button>
+      <div className="bg-background flex flex-col" style={{ minHeight: "calc(100vh - 2.75rem)" }}>
+        {!isAuthenticated && <WelcomeHero />}
+        <div className="px-5 sm:px-8 py-4 flex items-center justify-between border-b border-border gap-3 flex-wrap">
+          {ModeSwitcher}
+          <span className="meta-mono text-muted-foreground">
+            {allFieldNotes.length} {allFieldNotes.length === 1 ? "trip" : "trips"} on the map
+          </span>
         </div>
-        <div className="flex-1">
+        <div className="h-[calc(100vh-2.75rem-3.5rem)] min-h-[60vh]">
           <HeatMapView fieldNotes={allFieldNotes} />
         </div>
       </div>
@@ -164,8 +205,20 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-background">
+      {!isAuthenticated && <WelcomeHero />}
+
+      {/* Section heading + mode switcher */}
+      <div className="px-5 sm:px-8 pt-6 pb-3 flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <div className="meta-mono text-muted-foreground">
+            {isAuthenticated ? "Your field notes" : "Field notes"}
+          </div>
+        </div>
+        {ModeSwitcher}
+      </div>
+
       {/* Filter pill row */}
-      <div className="px-5 sm:px-8 pt-4 pb-3">
+      <div className="px-5 sm:px-8 pb-3">
         <div className="flex flex-wrap items-center gap-2">
           <input
             type="text"
@@ -263,14 +316,14 @@ export default function Home() {
             </PopoverContent>
           </Popover>
 
-          <Pill label="Heat map" onClick={() => setShowHeatMap(true)} />
-
-          <Link
-            href="/admin"
-            className="meta-mono px-3 py-1.5 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors"
-          >
-            + Add
-          </Link>
+          {isAuthenticated && (
+            <Link
+              href="/admin"
+              className="meta-mono px-3 py-1.5 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors"
+            >
+              + Add
+            </Link>
+          )}
 
           {activeFilterCount > 0 && (
             <button
@@ -295,13 +348,17 @@ export default function Home() {
           </div>
         ) : fieldNotes.length === 0 ? (
           <div className="text-center py-24">
-            <p className="font-serif text-xl text-muted-foreground mb-4">No field notes yet.</p>
-            <Link
-              href="/admin"
-              className="meta-mono text-foreground underline underline-offset-4 hover:opacity-70"
-            >
-              Add your first &rarr;
-            </Link>
+            <p className="font-serif text-xl text-muted-foreground mb-4">
+              {isAuthenticated ? "No field notes yet." : "No field notes match those filters."}
+            </p>
+            {isAuthenticated && (
+              <Link
+                href="/admin"
+                className="meta-mono text-foreground underline underline-offset-4 hover:opacity-70"
+              >
+                Add your first &rarr;
+              </Link>
+            )}
           </div>
         ) : (
           <div className="columns-1 sm:columns-2 lg:columns-3 gap-3 sm:gap-4">

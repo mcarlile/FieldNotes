@@ -10,12 +10,28 @@ import Home from "@/pages/home";
 import FieldNoteDetail from "@/pages/field-note-detail";
 import Admin from "@/pages/admin";
 import TrailcamStudio from "@/pages/trailcam-studio";
-import Welcome from "@/pages/welcome";
 import InboxPage from "@/pages/inbox";
 import { Loader2 } from "lucide-react";
+import type { ComponentType } from "react";
+
+function RequireAuth({ component: Component }: { component: ComponentType<any> }) {
+  const { isAuthenticated, isLoading } = useAuth();
+  if (isLoading) {
+    return (
+      <div className="min-h-[calc(100vh-2.75rem)] flex items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+  if (!isAuthenticated) {
+    window.location.href = "/api/login";
+    return null;
+  }
+  return <Component />;
+}
 
 function AppContent() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isLoading } = useAuth();
 
   if (isLoading) {
     return (
@@ -25,26 +41,17 @@ function AppContent() {
     );
   }
 
-  if (!isAuthenticated) {
-    return (
-      <>
-        <GlobalHeader />
-        <Welcome />
-      </>
-    );
-  }
-
   return (
     <>
       <GlobalHeader />
       <Switch>
         <Route path="/" component={Home} />
         <Route path="/field-notes/:id" component={FieldNoteDetail} />
-        <Route path="/admin" component={Admin} />
-        <Route path="/admin/:id" component={Admin} />
-        <Route path="/field-notes/:id/edit" component={Admin} />
-        <Route path="/trailcam-studio" component={TrailcamStudio} />
-        <Route path="/inbox" component={InboxPage} />
+        <Route path="/admin">{() => <RequireAuth component={Admin} />}</Route>
+        <Route path="/admin/:id">{() => <RequireAuth component={Admin} />}</Route>
+        <Route path="/field-notes/:id/edit">{() => <RequireAuth component={Admin} />}</Route>
+        <Route path="/trailcam-studio">{() => <RequireAuth component={TrailcamStudio} />}</Route>
+        <Route path="/inbox">{() => <RequireAuth component={InboxPage} />}</Route>
         <Route component={NotFound} />
       </Switch>
     </>

@@ -10,6 +10,7 @@ import ElevationProfile from "@/components/elevation-profile";
 import { parseGpxData, parseGpxWithTimestamps } from "@shared/gpx-utils";
 
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { queryClient } from "@/lib/queryClient";
 import type { FieldNote, Photo } from "@shared/schema";
@@ -22,6 +23,7 @@ export default function FieldNoteDetail() {
   const [hoveredElevationPoint, setHoveredElevationPoint] = useState<any>(null);
 
   const { toast } = useToast();
+  const { isAuthenticated } = useAuth();
 
   const { data: fieldNoteData, isLoading: isLoadingFieldNote } = useQuery({
     queryKey: ["/api/field-notes", id],
@@ -207,23 +209,25 @@ export default function FieldNoteDetail() {
             {fieldNote.title}
           </h1>
 
-          <div className="flex items-center gap-4 flex-shrink-0">
-            <Link
-              href={`/field-notes/${fieldNote.id}/edit`}
-              className="meta-mono text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
-            >
-              <Pencil className="h-3 w-3" />
-              Edit
-            </Link>
-            <button
-              onClick={() => setShowDeleteModal(true)}
-              className="meta-mono text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1.5"
-              data-testid="button-delete"
-            >
-              <Trash2 className="h-3 w-3" />
-              Delete
-            </button>
-          </div>
+          {isAuthenticated && (
+            <div className="flex items-center gap-4 flex-shrink-0">
+              <Link
+                href={`/field-notes/${fieldNote.id}/edit`}
+                className="meta-mono text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
+              >
+                <Pencil className="h-3 w-3" />
+                Edit
+              </Link>
+              <button
+                onClick={() => setShowDeleteModal(true)}
+                className="meta-mono text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1.5"
+                data-testid="button-delete"
+              >
+                <Trash2 className="h-3 w-3" />
+                Delete
+              </button>
+            </div>
+          )}
         </div>
 
         {fieldNote.description && (
