@@ -208,7 +208,7 @@ export default function Home() {
       {!isAuthenticated && <WelcomeHero />}
 
       {/* Section heading + mode switcher */}
-      <div className="px-5 sm:px-8 pt-6 pb-3 flex items-center justify-between gap-3 flex-wrap">
+      <div id="archive" className="px-5 sm:px-8 pt-6 pb-3 flex items-center justify-between gap-3 flex-wrap scroll-mt-12">
         <div>
           <div className="meta-mono text-muted-foreground">
             {isAuthenticated ? "Your field notes" : "Field notes"}
@@ -367,6 +367,7 @@ export default function Home() {
                 key={note.id}
                 fieldNote={note}
                 searchTerm={search}
+                alwaysShowCaption={!isAuthenticated}
               />
             ))}
           </div>

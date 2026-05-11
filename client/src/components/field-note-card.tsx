@@ -9,6 +9,7 @@ interface FieldNoteWithPhotoCount extends FieldNote {
 interface FieldNoteCardProps {
   fieldNote: FieldNoteWithPhotoCount;
   searchTerm?: string;
+  alwaysShowCaption?: boolean;
 }
 
 const highlightText = (text: string, searchTerm?: string): React.ReactNode => {
@@ -38,7 +39,7 @@ const aspectFor = (id: string) => {
   return variants[hash % variants.length];
 };
 
-export default function FieldNoteCard({ fieldNote, searchTerm }: FieldNoteCardProps) {
+export default function FieldNoteCard({ fieldNote, searchTerm, alwaysShowCaption }: FieldNoteCardProps) {
   const formatDate = (date: string) =>
     new Date(date).toLocaleDateString("en-US", {
       month: "short",
@@ -61,8 +62,14 @@ export default function FieldNoteCard({ fieldNote, searchTerm }: FieldNoteCardPr
         <MapboxRoutePreview fieldNote={fieldNote} className="w-full h-full" />
       </div>
 
-      {/* Caption: hidden on desktop until hover, always visible on mobile */}
-      <div className="pt-2 pb-1 transition-opacity duration-200 [@media(hover:hover)]:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
+      {/* Caption: always visible on mobile; on desktop, hidden until hover unless alwaysShowCaption */}
+      <div
+        className={`pt-2 pb-1 transition-opacity duration-200 ${
+          alwaysShowCaption
+            ? "opacity-100"
+            : "[@media(hover:hover)]:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+        }`}
+      >
         <div className="meta-mono text-muted-foreground mb-1">
           {highlightText(fieldNote.tripType, searchTerm)}
         </div>
