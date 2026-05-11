@@ -30,6 +30,11 @@ export default function GlobalHeader() {
   });
   const pendingCount = inboxItems.filter((i: GpxInboxItem) => i.status === "pending").length;
 
+
+  if (location === "/") {
+    return null;
+  }
+
   const navLink = (href: string, label: string) => (
     <Link
       href={href}
@@ -41,10 +46,6 @@ export default function GlobalHeader() {
       {label}
     </Link>
   );
-
-  if (location === "/") {
-    return null;
-  }
 
   return (
     <header className="bg-background sticky top-0 z-50 backdrop-blur-sm bg-opacity-90">
@@ -140,7 +141,7 @@ export default function GlobalHeader() {
             </DropdownMenu>
           ) : (
             <a
-              href="/api/login"
+              href="/api/login?redirectTo=%2Fadmin"
               className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
             >
               <LogIn className="h-3.5 w-3.5" />
@@ -207,7 +208,7 @@ export default function GlobalHeader() {
               </>
             ) : (
               <a
-                href="/api/login"
+                href="/api/login?redirectTo=%2Fadmin"
                 onClick={() => setMobileOpen(false)}
                 className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
               >

@@ -37,10 +37,15 @@ export function useAuth() {
     },
   });
 
+  const login = (redirectPath = "/") => {
+    window.location.href = `/api/login?redirectTo=${encodeURIComponent(redirectPath)}`;
+  };
+
   return {
     user,
     isLoading,
     isAuthenticated: !!user,
+    login,
     logout: logoutMutation.mutate,
     isLoggingOut: logoutMutation.isPending,
   };
