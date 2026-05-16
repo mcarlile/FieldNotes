@@ -1344,10 +1344,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ── Strava OAuth & Import ─────────────────────────────────────────────────
 
+  // Config check
+  app.get("/api/strava/config", (_req, res) => {
+    res.json({ configured: !!process.env.STRAVA_CLIENT_ID });
+  });
+
   // Step 1: Redirect user to Strava consent page
   app.get("/api/strava/auth", isAuthenticated, (req: any, res) => {
     const clientId = process.env.STRAVA_CLIENT_ID;
-    if (!clientId) return res.status(500).json({ message: "STRAVA_CLIENT_ID not configured" });
+    if (!clientId) return res.status(503).json({ message: "Strava OAuth is not configured on this server." });
 
     const redirectUri = `https://${req.hostname}/api/strava/callback`;
     const params = new URLSearchParams({

@@ -93,6 +93,11 @@ function StravaPanel() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  const { data: config } = useQuery<{ configured: boolean }>({
+    queryKey: ["/api/strava/config"],
+    retry: false,
+  });
+
   const { data: status, isLoading: statusLoading } = useQuery<{ connected: boolean; stravaAthleteId?: number }>({
     queryKey: ["/api/strava/status"],
     retry: false,
@@ -153,20 +158,29 @@ function StravaPanel() {
   }
 
   if (!status?.connected) {
+    const configured = config?.configured ?? true; // default to true until we know
     return (
       <section className="mb-12 pb-12 border-b border-border flex items-start justify-between gap-6">
         <div>
           <div className="meta-mono text-muted-foreground mb-1">Strava</div>
           <p className="font-serif text-lg text-foreground/80 leading-snug">
-            Connect Strava to import activities and routes directly.
+            {configured
+              ? "Connect Strava to import activities and routes directly."
+              : "Strava integration is not set up on this server. Ask the admin to add STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET."}
           </p>
         </div>
-        <a
-          href="/api/strava/auth"
-          className="meta-mono shrink-0 px-4 py-2 rounded-full border border-orange-400 text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-950/30 transition-colors"
-        >
-          Connect Strava →
-        </a>
+        {configured ? (
+          <a
+            href="/api/strava/auth"
+            className="meta-mono shrink-0 px-4 py-2 rounded-full border border-orange-400 text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-950/30 transition-colors"
+          >
+            Connect Strava →
+          </a>
+        ) : (
+          <span className="meta-mono shrink-0 px-4 py-2 rounded-full border border-muted text-muted-foreground opacity-60 cursor-not-allowed">
+            Not available
+          </span>
+        )}
       </section>
     );
   }
