@@ -71,7 +71,7 @@ export default function FieldNoteCard({ fieldNote, searchTerm, alwaysShowCaption
         }`}
       >
         <div className="meta-mono text-muted-foreground mb-1">
-          {highlightText(fieldNote.tripType, searchTerm)}
+          {highlightText(Array.isArray(fieldNote.tripType) ? fieldNote.tripType.join(', ') : fieldNote.tripType, searchTerm)}
         </div>
         <h3
           className="font-serif text-foreground leading-tight"

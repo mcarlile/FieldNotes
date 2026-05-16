@@ -102,8 +102,11 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
   // Get activity type options sorted by count with formatted labels
   const getActivityTypeOptions = () => {
     const activityCounts = fieldNotes.reduce((acc, note) => {
-      const type = note.tripType.toLowerCase(); // Normalize casing
-      acc[type] = (acc[type] || 0) + 1;
+      const types = Array.isArray(note.tripType) ? note.tripType : [note.tripType];
+      types.forEach((type) => {
+        const t = type.toLowerCase();
+        acc[t] = (acc[t] || 0) + 1;
+      });
       return acc;
     }, {} as Record<string, number>);
 
@@ -132,8 +135,8 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
   };
 
   // Filter field notes based on selected activity type
-  const filteredFieldNotes = selectedActivityType 
-    ? fieldNotes.filter(note => note.tripType.toLowerCase() === selectedActivityType)
+  const filteredFieldNotes = selectedActivityType
+    ? fieldNotes.filter(note => (Array.isArray(note.tripType) ? note.tripType : [note.tripType]).map(t => t.toLowerCase()).includes(selectedActivityType))
     : fieldNotes;
 
   useEffect(() => {
@@ -629,7 +632,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
              <a href="/field-notes/${intersectingNotes[0].id}" class="font-semibold underline" style="color: ${colors.primary}; text-decoration: underline;">
                ${intersectingNotes[0].title}
              </a><br/>
-             <span style="color: #6b7280;">${intersectingNotes[0].tripType}</span><br/>
+             <span style="color: #6b7280;">${Array.isArray(intersectingNotes[0].tripType) ? intersectingNotes[0].tripType.join(', ') : intersectingNotes[0].tripType}</span><br/>
              <span class="text-xs" style="color: #6b7280;">${intersectingNotes[0].distance}mi • ${intersectingNotes[0].elevationGain}ft gain</span><br/>
              <span class="text-xs" style="color: ${colors.primary};">Click to view details</span>
            </div>`
@@ -641,7 +644,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
                   <a href="/field-notes/${note!.id}" class="font-semibold underline" style="color: ${colors.primary}; text-decoration: underline;">
                     ${note!.title}
                   </a><br/>
-                  <span class="text-xs" style="color: #6b7280;">${note!.tripType} • ${note!.distance}mi</span>
+                  <span class="text-xs" style="color: #6b7280;">${Array.isArray(note!.tripType) ? note!.tripType.join(', ') : note!.tripType} • ${note!.distance}mi</span>
                 </div>`
              ).join('')}
              <div class="mt-2 text-xs" style="color: ${colors.primary};">Tap any route to view details</div>

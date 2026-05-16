@@ -94,6 +94,16 @@ async function runStartupMigrations() {
         ALTER COLUMN refresh_token DROP NOT NULL,
         ALTER COLUMN expires_at DROP NOT NULL;
     `);
+    // Migrate trip_type column from text to text[] (idempotent)
+    await client.query(`
+      DO $$ BEGIN
+        IF (SELECT data_type FROM information_schema.columns
+            WHERE table_name = 'field_notes' AND column_name = 'trip_type') = 'text' THEN
+          ALTER TABLE field_notes
+            ALTER COLUMN trip_type TYPE text[] USING ARRAY[trip_type];
+        END IF;
+      END $$;
+    `);
     log("Startup migrations complete");
   } catch (err) {
     log(`Startup migration warning: ${(err as Error).message}`);

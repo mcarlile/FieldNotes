@@ -20,6 +20,7 @@ const TRIP_TYPES = [
   { id: "cycling", label: "Cycling" },
   { id: "running", label: "Running" },
   { id: "paddling", label: "Paddling" },
+  { id: "fishing", label: "Fishing" },
   { id: "motorcycle", label: "Motorcycle" },
   { id: "climbing", label: "Climbing" },
   { id: "skiing", label: "Skiing" },
@@ -596,7 +597,7 @@ export default function InboxPage() {
   const [promoteItem, setPromoteItem] = useState<GpxInboxItem | null>(null);
   const [promoteTitle, setPromoteTitle] = useState("");
   const [promoteDescription, setPromoteDescription] = useState("");
-  const [promoteTripType, setPromoteTripType] = useState("hiking");
+  const [promoteTripTypes, setPromoteTripTypes] = useState<string[]>(["hiking"]);
 
   // Handle Strava OAuth redirect result (runs once per query-param change, never during render)
   useEffect(() => {
@@ -645,7 +646,7 @@ export default function InboxPage() {
   });
 
   const promoteMutation = useMutation({
-    mutationFn: ({ id, title, description, tripType }: { id: string; title: string; description: string; tripType: string }) =>
+    mutationFn: ({ id, title, description, tripType }: { id: string; title: string; description: string; tripType: string[] }) =>
       apiRequest(`/api/inbox/${id}/promote`, "POST", { title, description, tripType }),
     onSuccess: async (res) => {
       const data = await res.json();
@@ -674,7 +675,7 @@ export default function InboxPage() {
   function openPromote(item: GpxInboxItem, prefill?: { title?: string; description?: string; tripType?: string }) {
     setPromoteTitle(prefill?.title ?? item.filename.replace(/\.gpx$/i, "").replace(/[_-]/g, " "));
     setPromoteDescription(prefill?.description ?? "");
-    setPromoteTripType(prefill?.tripType ?? "hiking");
+    setPromoteTripTypes(prefill?.tripType ? [prefill.tripType] : ["hiking"]);
     setPromoteItem(item);
   }
 
@@ -964,12 +965,16 @@ export default function InboxPage() {
               <div className="meta-mono text-muted-foreground mb-2">Trip type</div>
               <div className="flex flex-wrap gap-2">
                 {TRIP_TYPES.map((t) => {
-                  const active = promoteTripType === t.id;
+                  const active = promoteTripTypes.includes(t.id);
                   return (
                     <button
                       key={t.id}
                       type="button"
-                      onClick={() => setPromoteTripType(t.id)}
+                      onClick={() =>
+                        setPromoteTripTypes((prev) =>
+                          prev.includes(t.id) ? prev.filter((x) => x !== t.id) : [...prev, t.id]
+                        )
+                      }
                       className={`meta-mono px-3 py-1.5 rounded-full border transition-colors ${
                         active
                           ? "border-foreground text-foreground bg-muted"
@@ -1000,7 +1005,7 @@ export default function InboxPage() {
                   id: promoteItem.id,
                   title: promoteTitle.trim(),
                   description: promoteDescription.trim(),
-                  tripType: promoteTripType,
+                  tripType: promoteTripTypes,
                 });
               }}
               className="meta-mono text-foreground underline underline-offset-4 hover:opacity-70 transition-opacity disabled:opacity-50 flex items-center gap-2"

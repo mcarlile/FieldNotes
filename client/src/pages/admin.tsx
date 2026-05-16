@@ -16,7 +16,6 @@ import { type PhotoExifData } from "@/lib/exif-extractor";
 const fieldNoteFormSchema = z.object({
   title: z.string().min(1, "Title is required"),
   description: z.string().min(1, "Description is required"),
-  tripType: z.string().min(1, "Trip type is required"),
 });
 
 type FieldNoteFormData = z.infer<typeof fieldNoteFormSchema>;
@@ -27,6 +26,7 @@ const tripTypeOptions = [
   { id: "running", text: "Running" },
   { id: "backpacking", text: "Backpacking" },
   { id: "paddling", text: "Paddling" },
+  { id: "fishing", text: "Fishing" },
   { id: "motorcycle", text: "Motorcycle" },
   { id: "climbing", text: "Climbing" },
   { id: "skiing", text: "Skiing" },
@@ -54,13 +54,13 @@ export default function AdminPage() {
     id?: string;
     exifData?: PhotoExifData;
   }>>([]);
-  const [selectedTripType, setSelectedTripType] = useState<string>("hiking");
+  const [selectedTripTypes, setSelectedTripTypes] = useState<string[]>(["hiking"]);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const form = useForm<FieldNoteFormData>({
     resolver: zodResolver(fieldNoteFormSchema),
-    defaultValues: { title: "", description: "", tripType: "hiking" },
+    defaultValues: { title: "", description: "" },
   });
 
   const { data: existingFieldNote, isLoading: isLoadingFieldNote } = useQuery<FieldNote>({
@@ -201,6 +201,7 @@ export default function AdminPage() {
     mutationFn: async (data: FieldNoteFormData) =>
       apiRequest("/api/field-notes", "POST", {
         ...data,
+        tripType: selectedTripTypes,
         gpxData: gpxContent,
         distance: gpxStats?.distance || null,
         elevationGain: gpxStats?.elevationGain || null,
@@ -220,6 +221,7 @@ export default function AdminPage() {
     mutationFn: async (data: FieldNoteFormData) =>
       apiRequest(`/api/field-notes/${id}`, "PUT", {
         ...data,
+        tripType: selectedTripTypes,
         gpxData: gpxContent || existingFieldNote?.gpxData,
         distance: gpxStats?.distance || existingFieldNote?.distance,
         elevationGain: gpxStats?.elevationGain || existingFieldNote?.elevationGain,
@@ -238,6 +240,10 @@ export default function AdminPage() {
   });
 
   const onSubmit = (data: FieldNoteFormData) => {
+    if (selectedTripTypes.length === 0) {
+      toast({ title: "Trip type required", description: "Select at least one trip type", variant: "destructive" });
+      return;
+    }
     if (isEditing) {
       updateMutation.mutate(data);
     } else {
@@ -254,9 +260,8 @@ export default function AdminPage() {
       form.reset({
         title: existingFieldNote.title,
         description: existingFieldNote.description,
-        tripType: existingFieldNote.tripType,
       });
-      setSelectedTripType(existingFieldNote.tripType);
+      setSelectedTripTypes(Array.isArray(existingFieldNote.tripType) ? existingFieldNote.tripType : [existingFieldNote.tripType]);
       setGpxContent(existingFieldNote.gpxData as string);
     }
   }, [existingFieldNote, form]);
@@ -351,14 +356,15 @@ export default function AdminPage() {
             <label className="meta-mono text-muted-foreground block mb-3">Trip type</label>
             <div className="flex flex-wrap gap-2">
               {tripTypeOptions.map((opt) => {
-                const active = selectedTripType === opt.id;
+                const active = selectedTripTypes.includes(opt.id);
                 return (
                   <button
                     key={opt.id}
                     type="button"
                     onClick={() => {
-                      setSelectedTripType(opt.id);
-                      form.setValue("tripType", opt.id);
+                      setSelectedTripTypes((prev) =>
+                        prev.includes(opt.id) ? prev.filter((t) => t !== opt.id) : [...prev, opt.id]
+                      );
                     }}
                     className={`meta-mono px-3 py-1.5 rounded-full border transition-colors ${
                       active
