@@ -102,10 +102,18 @@ export async function setupAuth(app: Express) {
   passport.serializeUser((user: Express.User, cb) => cb(null, user));
   passport.deserializeUser((user: Express.User, cb) => cb(null, user));
 
+  function getRedirectCookie(req: any): string | undefined {
+    if (!req.headers.cookie) return undefined;
+    const match = req.headers.cookie.match(/(?:^|;\s*)auth_redirect=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : undefined;
+  }
+
   app.get("/api/login", (req, res, next) => {
-    if (typeof req.query.redirectTo === "string") {
-      (req.session as any).returnTo = req.query.redirectTo;
-    }
+    const redirectTo = typeof req.query.redirectTo === "string" ? req.query.redirectTo : "/";
+    res.setHeader(
+      "Set-Cookie",
+      `auth_redirect=${encodeURIComponent(redirectTo)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=300`
+    );
     ensureStrategy(req.hostname);
     passport.authenticate(`replitauth:${req.hostname}`, {
       prompt: "login consent",
@@ -123,9 +131,9 @@ export async function setupAuth(app: Express) {
         if (!user) return res.redirect("/api/login");
         req.logIn(user, (err) => {
           if (err) return next(err);
-          const returnTo = (req.session as any)?.returnTo || "/";
-          delete (req.session as any).returnTo;
-          req.session.save(() => res.redirect(returnTo));
+          const returnTo = getRedirectCookie(req) || "/";
+          res.setHeader("Set-Cookie", "auth_redirect=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+          res.redirect(returnTo);
         });
       }
     )(req, res, next);
