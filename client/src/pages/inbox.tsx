@@ -192,55 +192,129 @@ function StravaPanel() {
         <div className="meta-mono text-muted-foreground mb-1">Strava</div>
         <h3 className="font-serif text-2xl text-foreground mb-2">Connect your Strava account</h3>
         <p className="font-serif text-base text-foreground/70 leading-relaxed mb-6 max-w-2xl">
-          Strava requires every app to use its own API credentials. It takes about two minutes —
-          create a personal app and paste your Client ID and Secret below.
+          Strava requires every app to use its own API credentials. The setup is free
+          and takes about three minutes — follow the steps below, then paste your
+          Client ID and Secret into the form.
         </p>
 
-        <ol className="space-y-3 mb-6 max-w-2xl">
+        <ol className="space-y-5 mb-8 max-w-2xl">
           <li className="flex gap-3">
-            <span className="meta-mono text-orange-500 shrink-0">01</span>
-            <div className="text-sm text-foreground/80">
-              Open{" "}
-              <a
-                href="https://www.strava.com/settings/api"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-orange-500 hover:text-orange-600 underline underline-offset-4 inline-flex items-center gap-1"
-              >
-                strava.com/settings/api
-                <ExternalLink className="h-3 w-3" />
-              </a>
-              {" "}and create an app (any name and category works).
-            </div>
-          </li>
-          <li className="flex gap-3">
-            <span className="meta-mono text-orange-500 shrink-0">02</span>
-            <div className="text-sm text-foreground/80">
-              Set the <span className="meta-mono">Authorization Callback Domain</span> to:
-              <div className="mt-2 flex items-center gap-2 p-2 rounded bg-muted/50 border border-border">
-                <code className="meta-mono text-sm flex-1 break-all">
-                  {redirectUri.replace(/^https?:\/\//, "").replace(/\/api\/strava\/callback$/, "")}
-                </code>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const domain = redirectUri.replace(/^https?:\/\//, "").replace(/\/api\/strava\/callback$/, "");
-                    navigator.clipboard.writeText(domain);
-                    setCopiedRedirect(true);
-                    setTimeout(() => setCopiedRedirect(false), 1500);
-                  }}
-                  className="meta-mono text-xs text-orange-500 hover:text-orange-600 flex items-center gap-1 shrink-0"
+            <span className="meta-mono text-orange-500 shrink-0 pt-0.5">01</span>
+            <div className="text-sm text-foreground/80 leading-relaxed">
+              <div className="font-semibold text-foreground mb-1">Sign in to Strava and open the API page</div>
+              <p>
+                Go to{" "}
+                <a
+                  href="https://www.strava.com/settings/api"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-orange-500 hover:text-orange-600 underline underline-offset-4 inline-flex items-center gap-1"
                 >
-                  {copiedRedirect ? <><Check className="h-3 w-3" /> Copied</> : <><Copy className="h-3 w-3" /> Copy</>}
-                </button>
-              </div>
+                  strava.com/settings/api
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+                . If you've never used the Strava API before, you'll see a short form titled
+                "My API Application." If you already have an app, you can reuse it — skip to step 3.
+              </p>
             </div>
           </li>
+
           <li className="flex gap-3">
-            <span className="meta-mono text-orange-500 shrink-0">03</span>
-            <div className="text-sm text-foreground/80">
-              Copy the <strong>Client ID</strong> and <strong>Client Secret</strong> from your Strava app
-              and paste them below.
+            <span className="meta-mono text-orange-500 shrink-0 pt-0.5">02</span>
+            <div className="text-sm text-foreground/80 leading-relaxed w-full">
+              <div className="font-semibold text-foreground mb-1">Fill out the application form</div>
+              <p className="mb-3">
+                Use any values you like for the descriptive fields. The only field that
+                <em> must </em> match exactly is the callback domain at the bottom.
+              </p>
+              <div className="space-y-2 p-3 rounded bg-muted/40 border border-border">
+                <div className="flex gap-3">
+                  <span className="meta-mono text-muted-foreground shrink-0 w-44">Application Name</span>
+                  <span className="text-foreground/80">Anything, e.g. <code className="meta-mono">Big Miles</code></span>
+                </div>
+                <div className="flex gap-3">
+                  <span className="meta-mono text-muted-foreground shrink-0 w-44">Category</span>
+                  <span className="text-foreground/80"><code className="meta-mono">Visualizer</code> works well</span>
+                </div>
+                <div className="flex gap-3">
+                  <span className="meta-mono text-muted-foreground shrink-0 w-44">Club</span>
+                  <span className="text-foreground/80">Leave blank</span>
+                </div>
+                <div className="flex gap-3">
+                  <span className="meta-mono text-muted-foreground shrink-0 w-44">Website</span>
+                  <span className="text-foreground/80 break-all">
+                    {redirectUri.replace(/\/api\/strava\/callback$/, "")}
+                  </span>
+                </div>
+                <div className="flex gap-3">
+                  <span className="meta-mono text-muted-foreground shrink-0 w-44">Application Description</span>
+                  <span className="text-foreground/80">Anything (e.g. "Personal trip journal")</span>
+                </div>
+                <div className="flex flex-col gap-1 pt-2 border-t border-border">
+                  <div className="flex gap-3 items-start">
+                    <span className="meta-mono text-foreground shrink-0 w-44 font-semibold">
+                      Authorization Callback Domain
+                    </span>
+                    <span className="text-foreground/80">Must be exactly:</span>
+                  </div>
+                  <div className="mt-1 flex items-center gap-2 p-2 rounded bg-background border border-orange-300/60 dark:border-orange-700/60">
+                    <code className="meta-mono text-sm flex-1 break-all text-orange-600 dark:text-orange-400">
+                      {redirectUri.replace(/^https?:\/\//, "").replace(/\/api\/strava\/callback$/, "")}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const domain = redirectUri.replace(/^https?:\/\//, "").replace(/\/api\/strava\/callback$/, "");
+                        navigator.clipboard.writeText(domain);
+                        setCopiedRedirect(true);
+                        setTimeout(() => setCopiedRedirect(false), 1500);
+                      }}
+                      className="meta-mono text-xs text-orange-500 hover:text-orange-600 flex items-center gap-1 shrink-0"
+                    >
+                      {copiedRedirect ? <><Check className="h-3 w-3" /> Copied</> : <><Copy className="h-3 w-3" /> Copy</>}
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Just the domain — no <code className="meta-mono">https://</code>, no path, no trailing slash.
+                  </p>
+                </div>
+              </div>
+              <p className="mt-3">
+                You'll also need to upload a small icon (any square image works — Strava
+                requires one to create the app). Then accept the API agreement and click
+                <strong> Create</strong>.
+              </p>
+            </div>
+          </li>
+
+          <li className="flex gap-3">
+            <span className="meta-mono text-orange-500 shrink-0 pt-0.5">03</span>
+            <div className="text-sm text-foreground/80 leading-relaxed">
+              <div className="font-semibold text-foreground mb-1">Copy your Client ID and Client Secret</div>
+              <p className="mb-2">
+                After creating the app, Strava reloads <a
+                  href="https://www.strava.com/settings/api"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-orange-500 hover:text-orange-600 underline underline-offset-4 inline-flex items-center gap-1"
+                >
+                  the same page
+                  <ExternalLink className="h-3 w-3" />
+                </a> and shows your app's details near the top:
+              </p>
+              <ul className="space-y-1.5 pl-4 list-disc marker:text-orange-500">
+                <li>
+                  <strong>Client ID</strong> — a short number (5–6 digits), shown in plain text.
+                </li>
+                <li>
+                  <strong>Client Secret</strong> — a long string. Click
+                  <span className="meta-mono"> Show </span> next to it to reveal the value, then copy it.
+                </li>
+              </ul>
+              <p className="mt-2">
+                Paste both into the form below and click <strong>Save credentials</strong>.
+                Your secret is stored only for your account — nobody else can see it.
+              </p>
             </div>
           </li>
         </ol>
