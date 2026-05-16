@@ -476,7 +476,7 @@ export default function InboxPage() {
                     <div>
                       <span className="meta-mono text-xs text-foreground/70 block">JSON payload</span>
                       <code className="block font-mono text-xs text-foreground/80 break-all mt-0.5">
-                        curl -X POST "{webhookUrl}" -H "Content-Type: application/json" -d '{"{"gpx":"&lt;gpx...&gt;","filename":"track.gpx"}"}'
+                        {`curl -X POST "${webhookUrl}" -H "Content-Type: application/json" -d '{"gpx":"<gpx...>","filename":"track.gpx"}'`}
                       </code>
                     </div>
                   </div>
