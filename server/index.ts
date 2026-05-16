@@ -59,6 +59,25 @@ async function runStartupMigrations() {
       CREATE INDEX IF NOT EXISTS gpx_inbox_user_id_idx ON gpx_inbox (user_id);
       CREATE INDEX IF NOT EXISTS gpx_inbox_status_idx ON gpx_inbox (status);
     `);
+    // Add new columns to gpx_inbox if missing (idempotent)
+    await client.query(`
+      ALTER TABLE gpx_inbox ADD COLUMN IF NOT EXISTS source text;
+      ALTER TABLE gpx_inbox ADD COLUMN IF NOT EXISTS strava_id text;
+    `);
+    // Strava OAuth connections table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS strava_connections (
+        id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id text NOT NULL UNIQUE,
+        strava_athlete_id integer NOT NULL,
+        access_token text NOT NULL,
+        refresh_token text NOT NULL,
+        expires_at integer NOT NULL,
+        scope text,
+        connected_at timestamp DEFAULT now() NOT NULL,
+        updated_at timestamp DEFAULT now() NOT NULL
+      );
+    `);
     log("Startup migrations complete");
   } catch (err) {
     log(`Startup migration warning: ${(err as Error).message}`);

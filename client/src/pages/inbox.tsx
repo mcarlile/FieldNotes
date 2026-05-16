@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -10,7 +10,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Copy, RefreshCw, Trash2, Loader2 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Copy, RefreshCw, Trash2, Loader2, CheckCircle, Unlink, Activity, Route } from "lucide-react";
 import type { GpxInboxItem } from "@shared/schema";
 
 const TRIP_TYPES = [
@@ -41,14 +42,274 @@ function formatDate(dateStr: string) {
   });
 }
 
+function formatStravaDistance(meters: number | undefined) {
+  if (!meters) return null;
+  return `${(meters / 1609.34).toFixed(1)} mi`;
+}
+
+function formatStravaElevation(meters: number | undefined) {
+  if (!meters) return null;
+  return `${Math.round(meters * 3.28084)} ft`;
+}
+
+function SourceBadge({ source }: { source: string | null | undefined }) {
+  if (source === "strava-activity") {
+    return (
+      <span className="meta-mono text-orange-500 dark:text-orange-400 flex items-center gap-1">
+        <Activity className="h-3 w-3" /> Strava Activity
+      </span>
+    );
+  }
+  if (source === "strava-route") {
+    return (
+      <span className="meta-mono text-orange-500 dark:text-orange-400 flex items-center gap-1">
+        <Route className="h-3 w-3" /> Strava Route
+      </span>
+    );
+  }
+  return null;
+}
+
+// ── Strava panel ─────────────────────────────────────────────────────────────
+
+interface StravaActivity {
+  id: number;
+  name: string;
+  sport_type: string;
+  start_date: string;
+  distance: number;
+  total_elevation_gain: number;
+}
+
+interface StravaRoute {
+  id: number;
+  name: string;
+  type: number;
+  distance: number;
+  elevation_gain: number;
+}
+
+function StravaPanel() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: status, isLoading: statusLoading } = useQuery<{ connected: boolean; stravaAthleteId?: number }>({
+    queryKey: ["/api/strava/status"],
+    retry: false,
+  });
+
+  const { data: activities, isLoading: activitiesLoading } = useQuery<StravaActivity[]>({
+    queryKey: ["/api/strava/activities"],
+    enabled: status?.connected === true,
+    retry: false,
+  });
+
+  const { data: routes, isLoading: routesLoading } = useQuery<StravaRoute[]>({
+    queryKey: ["/api/strava/routes"],
+    enabled: status?.connected === true,
+    retry: false,
+  });
+
+  const disconnectMutation = useMutation({
+    mutationFn: () => apiRequest("DELETE", "/api/strava/disconnect"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/strava/status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/strava/activities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/strava/routes"] });
+      toast({ title: "Strava disconnected" });
+    },
+  });
+
+  const [importingId, setImportingId] = useState<string | null>(null);
+  const [importedIds, setImportedIds] = useState<Set<string>>(new Set());
+
+  async function handleImport(type: "activity" | "route", id: number) {
+    const key = `${type}-${id}`;
+    setImportingId(key);
+    try {
+      const resp = await apiRequest("POST", `/api/strava/import/${type}/${id}`);
+      if (resp.status === 409) {
+        toast({ title: "Already in your inbox", description: "This item was imported before." });
+        setImportedIds(prev => new Set([...prev, key]));
+        return;
+      }
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        toast({ title: "Import failed", description: (data as any).message ?? "Unknown error", variant: "destructive" });
+        return;
+      }
+      setImportedIds(prev => new Set([...prev, key]));
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox"] });
+      toast({ title: "Added to inbox", description: "Click 'Add to journal' to import it." });
+    } catch {
+      toast({ title: "Import failed", variant: "destructive" });
+    } finally {
+      setImportingId(null);
+    }
+  }
+
+  if (statusLoading) {
+    return <div className="h-12 bg-muted animate-pulse rounded mb-12" />;
+  }
+
+  if (!status?.connected) {
+    return (
+      <section className="mb-12 pb-12 border-b border-border flex items-start justify-between gap-6">
+        <div>
+          <div className="meta-mono text-muted-foreground mb-1">Strava</div>
+          <p className="font-serif text-lg text-foreground/80 leading-snug">
+            Connect Strava to import activities and routes directly.
+          </p>
+        </div>
+        <a
+          href="/api/strava/auth"
+          className="meta-mono shrink-0 px-4 py-2 rounded-full border border-orange-400 text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-950/30 transition-colors"
+        >
+          Connect Strava →
+        </a>
+      </section>
+    );
+  }
+
+  const routeTypeLabel = (type: number) => type === 1 ? "Ride" : type === 2 ? "Run" : "Route";
+
+  return (
+    <section className="mb-12 pb-12 border-b border-border">
+      <div className="flex items-center justify-between mb-4">
+        <div className="meta-mono text-muted-foreground flex items-center gap-2">
+          <CheckCircle className="h-3 w-3 text-orange-500" />
+          Strava connected · #{status.stravaAthleteId}
+        </div>
+        <button
+          type="button"
+          onClick={() => disconnectMutation.mutate()}
+          disabled={disconnectMutation.isPending}
+          className="meta-mono text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1"
+        >
+          <Unlink className="h-3 w-3" />
+          Disconnect
+        </button>
+      </div>
+
+      <Tabs defaultValue="activities">
+        <TabsList className="mb-4">
+          <TabsTrigger value="activities">Activities</TabsTrigger>
+          <TabsTrigger value="routes">Routes</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="activities" className="mt-0">
+          {activitiesLoading ? (
+            <div className="space-y-3">
+              {[1, 2, 3].map(i => <div key={i} className="h-10 bg-muted animate-pulse rounded" />)}
+            </div>
+          ) : !activities?.length ? (
+            <p className="meta-mono text-muted-foreground py-4">No recent activities found.</p>
+          ) : (
+            <div className="divide-y divide-border border-t border-border">
+              {activities.map(act => {
+                const key = `activity-${act.id}`;
+                const isImported = importedIds.has(key);
+                const isLoading = importingId === key;
+                return (
+                  <div key={act.id} className="py-3 flex items-center gap-4">
+                    <div className="flex-1 min-w-0">
+                      <span className="text-foreground text-sm truncate block">{act.name}</span>
+                      <div className="meta-mono text-muted-foreground flex flex-wrap gap-x-2 mt-0.5">
+                        <span>{act.sport_type}</span>
+                        {formatStravaDistance(act.distance) && <><span>·</span><span>{formatStravaDistance(act.distance)}</span></>}
+                        {formatStravaElevation(act.total_elevation_gain) && <><span>·</span><span>{formatStravaElevation(act.total_elevation_gain)} gain</span></>}
+                        <span>·</span><span>{formatDate(act.start_date)}</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isImported || isLoading}
+                      onClick={() => handleImport("activity", act.id)}
+                      className={`meta-mono shrink-0 flex items-center gap-1 transition-colors ${
+                        isImported
+                          ? "text-muted-foreground"
+                          : "text-orange-500 hover:text-orange-600 underline underline-offset-4"
+                      }`}
+                    >
+                      {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : isImported ? "Imported" : "Import →"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="routes" className="mt-0">
+          {routesLoading ? (
+            <div className="space-y-3">
+              {[1, 2, 3].map(i => <div key={i} className="h-10 bg-muted animate-pulse rounded" />)}
+            </div>
+          ) : !routes?.length ? (
+            <p className="meta-mono text-muted-foreground py-4">No saved routes found.</p>
+          ) : (
+            <div className="divide-y divide-border border-t border-border">
+              {routes.map(route => {
+                const key = `route-${route.id}`;
+                const isImported = importedIds.has(key);
+                const isLoading = importingId === key;
+                return (
+                  <div key={route.id} className="py-3 flex items-center gap-4">
+                    <div className="flex-1 min-w-0">
+                      <span className="text-foreground text-sm truncate block">{route.name}</span>
+                      <div className="meta-mono text-muted-foreground flex flex-wrap gap-x-2 mt-0.5">
+                        <span>{routeTypeLabel(route.type)}</span>
+                        {formatStravaDistance(route.distance) && <><span>·</span><span>{formatStravaDistance(route.distance)}</span></>}
+                        {formatStravaElevation(route.elevation_gain) && <><span>·</span><span>{formatStravaElevation(route.elevation_gain)} gain</span></>}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isImported || isLoading}
+                      onClick={() => handleImport("route", route.id)}
+                      className={`meta-mono shrink-0 flex items-center gap-1 transition-colors ${
+                        isImported
+                          ? "text-muted-foreground"
+                          : "text-orange-500 hover:text-orange-600 underline underline-offset-4"
+                      }`}
+                    >
+                      {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : isImported ? "Imported" : "Import →"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+    </section>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+
 export default function InboxPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
+  const search = useSearch();
   const [promoteItem, setPromoteItem] = useState<GpxInboxItem | null>(null);
   const [promoteTitle, setPromoteTitle] = useState("");
   const [promoteDescription, setPromoteDescription] = useState("");
   const [promoteTripType, setPromoteTripType] = useState("hiking");
+
+  // Handle Strava OAuth redirect result
+  const stravaParam = new URLSearchParams(search).get("strava");
+  if (stravaParam === "connected") {
+    toast({ title: "Strava connected", description: "You can now import activities and routes." });
+    history.replaceState(null, "", "/inbox");
+  } else if (stravaParam === "error") {
+    toast({ title: "Strava connection failed", variant: "destructive" });
+    history.replaceState(null, "", "/inbox");
+  } else if (stravaParam === "denied") {
+    toast({ title: "Strava connection cancelled" });
+    history.replaceState(null, "", "/inbox");
+  }
 
   const { data: tokenData, isLoading: tokenLoading } = useQuery<{ token: string }>({
     queryKey: ["/api/inbox/token"],
@@ -133,6 +394,9 @@ export default function InboxPage() {
           </h1>
         </div>
 
+        {/* Strava */}
+        <StravaPanel />
+
         {/* Webhook URL */}
         <section className="mb-12">
           <div className="meta-mono text-muted-foreground mb-3">Your webhook URL</div>
@@ -205,7 +469,7 @@ export default function InboxPage() {
                 No GPX files yet.
               </p>
               <p className="meta-mono text-muted-foreground mt-3">
-                Send one to your webhook URL and it'll appear here
+                Import from Strava above, or send one to your webhook URL
               </p>
             </div>
           ) : (
@@ -229,6 +493,7 @@ export default function InboxPage() {
                         {isPromoted && (
                           <span className="meta-mono text-muted-foreground">Added</span>
                         )}
+                        <SourceBadge source={item.source} />
                       </div>
 
                       <div className="meta-mono text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">

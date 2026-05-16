@@ -4,6 +4,22 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
 
+// Strava OAuth connections — one per user
+export const stravaConnections = pgTable("strava_connections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: text("user_id").notNull().unique(),
+  stravaAthleteId: integer("strava_athlete_id").notNull(),
+  accessToken: text("access_token").notNull(),
+  refreshToken: text("refresh_token").notNull(),
+  expiresAt: integer("expires_at").notNull(), // Unix epoch seconds
+  scope: text("scope"),
+  connectedAt: timestamp("connected_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type StravaConnection = typeof stravaConnections.$inferSelect;
+export type InsertStravaConnection = typeof stravaConnections.$inferInsert;
+
 // Re-export Replit Auth tables (users + sessions)
 export * from "./models/auth";
 
@@ -16,7 +32,7 @@ export const webhookTokens = pgTable("webhook_tokens", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// GPX Inbox — files received via webhook endpoint
+// GPX Inbox — files received via webhook endpoint or Strava import
 export const gpxInbox = pgTable("gpx_inbox", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: text("user_id").notNull(),
@@ -24,6 +40,8 @@ export const gpxInbox = pgTable("gpx_inbox", {
   rawGpx: text("raw_gpx").notNull(),
   gpxStats: jsonb("gpx_stats"), // { distance, elevationGain, date, coordinates }
   status: text("status").notNull().default("pending"), // pending | promoted | dismissed
+  source: text("source"), // null | 'webhook' | 'strava-activity' | 'strava-route'
+  stravaId: text("strava_id"), // Strava activity/route ID for dedup
   sourceIp: text("source_ip"),
   receivedAt: timestamp("received_at").defaultNow().notNull(),
 }, (table) => ({
