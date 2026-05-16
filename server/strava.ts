@@ -10,20 +10,25 @@ const TOKEN_REFRESH_BUFFER_SECS = 300; // refresh 5 minutes before expiry
 
 export async function getValidStravaToken(userId: string): Promise<string> {
   const conn = await storage.getStravaConnection(userId);
-  if (!conn) throw new Error("Strava account not connected");
+  if (!conn || !conn.accessToken || !conn.refreshToken || !conn.expiresAt) {
+    throw new Error("Strava account not connected");
+  }
+  if (!conn.stravaClientId || !conn.stravaClientSecret) {
+    throw new Error("Strava credentials missing");
+  }
 
   const nowSecs = Math.floor(Date.now() / 1000);
   if (conn.expiresAt > nowSecs + TOKEN_REFRESH_BUFFER_SECS) {
     return conn.accessToken;
   }
 
-  // Token expired or close to expiry — refresh it
+  // Token expired or close to expiry — refresh it using user's credentials
   const resp = await fetch(STRAVA_TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      client_id: process.env.STRAVA_CLIENT_ID,
-      client_secret: process.env.STRAVA_CLIENT_SECRET,
+      client_id: conn.stravaClientId,
+      client_secret: conn.stravaClientSecret,
       grant_type: "refresh_token",
       refresh_token: conn.refreshToken,
     }),

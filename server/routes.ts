@@ -1344,43 +1344,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ── Strava OAuth & Import ─────────────────────────────────────────────────
 
-  // Config check
-  app.get("/api/strava/config", (_req, res) => {
-    res.json({ configured: !!process.env.STRAVA_CLIENT_ID });
+  // Save user's personal Strava Client ID + Secret
+  app.post("/api/strava/credentials", isAuthenticated, async (req: any, res) => {
+    try {
+      const { clientId, clientSecret } = req.body ?? {};
+      if (!clientId || !clientSecret || typeof clientId !== "string" || typeof clientSecret !== "string") {
+        return res.status(400).json({ message: "Client ID and Client Secret are required." });
+      }
+      await storage.updateStravaCredentials(req.user.claims.sub, clientId.trim(), clientSecret.trim());
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Strava credentials save error:", err);
+      res.status(500).json({ message: "Failed to save Strava credentials" });
+    }
   });
 
-  // Step 1: Redirect user to Strava consent page
-  app.get("/api/strava/auth", isAuthenticated, (req: any, res) => {
-    const clientId = process.env.STRAVA_CLIENT_ID;
-    if (!clientId) return res.status(503).json({ message: "Strava OAuth is not configured on this server." });
+  // Step 1: Redirect user to Strava consent page using their personal app credentials
+  app.get("/api/strava/auth", isAuthenticated, async (req: any, res) => {
+    const conn = await storage.getStravaConnection(req.user.claims.sub);
+    if (!conn?.stravaClientId) {
+      return res.redirect("/inbox?strava=needs_credentials");
+    }
+
+    // CSRF protection: generate a one-time state nonce bound to this session
+    const stateNonce = crypto.randomBytes(24).toString("hex");
+    (req.session as any).stravaOAuthState = stateNonce;
 
     const redirectUri = `https://${req.hostname}/api/strava/callback`;
     const params = new URLSearchParams({
-      client_id: clientId,
+      client_id: conn.stravaClientId,
       redirect_uri: redirectUri,
       response_type: "code",
       scope: "read,activity:read_all",
       approval_prompt: "auto",
+      state: stateNonce,
     });
     res.redirect(`https://www.strava.com/oauth/authorize?${params}`);
   });
 
-  // Step 2: Handle OAuth callback, exchange code for tokens
+  // Step 2: Handle OAuth callback, exchange code for tokens using user's credentials
   app.get("/api/strava/callback", isAuthenticated, async (req: any, res) => {
-    const { code, error, scope } = req.query as Record<string, string>;
+    const { code, error, scope, state } = req.query as Record<string, string>;
 
     if (error || !code) {
       return res.redirect("/inbox?strava=denied");
     }
 
+    // Validate one-time state nonce (CSRF protection)
+    const expectedState = (req.session as any).stravaOAuthState;
+    (req.session as any).stravaOAuthState = undefined; // consume regardless of outcome
+    if (!expectedState || !state || expectedState !== state) {
+      console.warn("Strava OAuth state mismatch");
+      return res.redirect("/inbox?strava=error");
+    }
+
     try {
+      const userId = req.user.claims.sub;
+      const conn = await storage.getStravaConnection(userId);
+      if (!conn?.stravaClientId || !conn?.stravaClientSecret) {
+        return res.redirect("/inbox?strava=needs_credentials");
+      }
+
       const redirectUri = `https://${req.hostname}/api/strava/callback`;
       const tokenResp = await fetch("https://www.strava.com/oauth/token", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          client_id: process.env.STRAVA_CLIENT_ID,
-          client_secret: process.env.STRAVA_CLIENT_SECRET,
+          client_id: conn.stravaClientId,
+          client_secret: conn.stravaClientSecret,
           code,
           grant_type: "authorization_code",
           redirect_uri: redirectUri,
@@ -1400,9 +1431,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         athlete: { id: number; firstname: string; lastname: string };
       };
 
-      const userId = req.user.claims.sub;
       await storage.upsertStravaConnection({
         userId,
+        stravaClientId: conn.stravaClientId,
+        stravaClientSecret: conn.stravaClientSecret,
         stravaAthleteId: tokenData.athlete.id,
         accessToken: tokenData.access_token,
         refreshToken: tokenData.refresh_token,
@@ -1417,20 +1449,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Connection status
+  // Connection status — three states: no_credentials, has_credentials_not_connected, connected
   app.get("/api/strava/status", isAuthenticated, async (req: any, res) => {
     try {
       const conn = await storage.getStravaConnection(req.user.claims.sub);
-      if (!conn) return res.json({ connected: false });
+      if (!conn || !conn.stravaClientId) {
+        return res.json({ state: "no_credentials", connected: false, hasCredentials: false });
+      }
+      if (!conn.accessToken || !conn.stravaAthleteId) {
+        return res.json({ state: "has_credentials", connected: false, hasCredentials: true });
+      }
       res.json({
+        state: "connected",
         connected: true,
+        hasCredentials: true,
         stravaAthleteId: conn.stravaAthleteId,
         connectedAt: conn.connectedAt,
+        redirectUri: `https://${req.hostname}/api/strava/callback`,
       });
     } catch (err) {
       console.error("Strava status error:", err);
       res.status(500).json({ message: "Failed to get Strava status" });
     }
+  });
+
+  // Get the OAuth redirect URI the user must whitelist in their Strava app
+  app.get("/api/strava/redirect-uri", isAuthenticated, (req: any, res) => {
+    res.json({ redirectUri: `https://${req.hostname}/api/strava/callback`, domain: req.hostname });
   });
 
   // Disconnect
@@ -1492,8 +1537,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user.claims.sub;
       const { stravaId } = req.params;
 
-      // Dedup check
-      const existing = await storage.getInboxItemByStravaId(userId, stravaId);
+      // Dedup check (scoped to source so activity/route IDs don't collide)
+      const existing = await storage.getInboxItemByStravaId(userId, "strava-activity", stravaId);
       if (existing) {
         return res.status(409).json({ message: "Already in your inbox", inboxItemId: existing.id });
       }
@@ -1540,8 +1585,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user.claims.sub;
       const { stravaId } = req.params;
 
-      // Dedup check
-      const existing = await storage.getInboxItemByStravaId(userId, stravaId);
+      // Dedup check (scoped to source so activity/route IDs don't collide)
+      const existing = await storage.getInboxItemByStravaId(userId, "strava-route", stravaId);
       if (existing) {
         return res.status(409).json({ message: "Already in your inbox", inboxItemId: existing.id });
       }

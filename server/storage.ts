@@ -47,7 +47,7 @@ export interface IStorage {
   // GPX Inbox
   getInboxItems(userId: string): Promise<GpxInboxItem[]>;
   getInboxItemById(id: string): Promise<GpxInboxItem | undefined>;
-  getInboxItemByStravaId(userId: string, stravaId: string): Promise<GpxInboxItem | undefined>;
+  getInboxItemByStravaId(userId: string, source: string, stravaId: string): Promise<GpxInboxItem | undefined>;
   createInboxItem(item: { userId: string; filename: string; rawGpx: string; gpxStats?: any; sourceIp?: string; source?: string; stravaId?: string }): Promise<GpxInboxItem>;
   updateInboxItemStatus(id: string, status: string): Promise<GpxInboxItem | undefined>;
   deleteInboxItem(id: string): Promise<boolean>;
@@ -365,10 +365,14 @@ export class DatabaseStorage implements IStorage {
     return row;
   }
 
-  async getInboxItemByStravaId(userId: string, stravaId: string): Promise<GpxInboxItem | undefined> {
+  async getInboxItemByStravaId(userId: string, source: string, stravaId: string): Promise<GpxInboxItem | undefined> {
     const { and, eq } = await import("drizzle-orm");
     const [row] = await db.select().from(gpxInbox)
-      .where(and(eq(gpxInbox.userId, userId), eq(gpxInbox.stravaId, stravaId)));
+      .where(and(
+        eq(gpxInbox.userId, userId),
+        eq(gpxInbox.source, source),
+        eq(gpxInbox.stravaId, stravaId),
+      ));
     return row;
   }
 
@@ -413,6 +417,8 @@ export class DatabaseStorage implements IStorage {
       .onConflictDoUpdate({
         target: stravaConnections.userId,
         set: {
+          stravaClientId: data.stravaClientId,
+          stravaClientSecret: data.stravaClientSecret,
           stravaAthleteId: data.stravaAthleteId,
           accessToken: data.accessToken,
           refreshToken: data.refreshToken,
@@ -796,7 +802,7 @@ export class MemStorage implements IStorage {
   // GPX Inbox (stubs — MemStorage not used in production)
   async getInboxItems(_userId: string): Promise<GpxInboxItem[]> { return []; }
   async getInboxItemById(_id: string): Promise<GpxInboxItem | undefined> { return undefined; }
-  async getInboxItemByStravaId(_userId: string, _stravaId: string): Promise<GpxInboxItem | undefined> { return undefined; }
+  async getInboxItemByStravaId(_userId: string, _source: string, _stravaId: string): Promise<GpxInboxItem | undefined> { return undefined; }
   async createInboxItem(_item: any): Promise<GpxInboxItem> { throw new Error("Not implemented"); }
   async updateInboxItemStatus(_id: string, _status: string): Promise<GpxInboxItem | undefined> { return undefined; }
   async deleteInboxItem(_id: string): Promise<boolean> { return false; }
