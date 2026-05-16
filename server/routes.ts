@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import * as crypto from 'crypto';
+import { getValidStravaToken, stravaFetch, buildGpxFromActivity, importGpxToInbox } from "./strava";
 
 const CHUNK_UPLOAD_DIR = '/tmp/video-chunks';
 const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB
@@ -1209,7 +1210,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get or create the user's webhook token
   app.get("/api/inbox/token", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = req.user.claims.sub;
       let tokenRow = await storage.getWebhookTokenByUserId(userId);
       if (!tokenRow) {
         const token = crypto.randomBytes(24).toString('hex');
@@ -1225,7 +1226,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Regenerate the user's webhook token
   app.post("/api/inbox/token/regenerate", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.id;
+      const userId = req.user.claims.sub;
       const token = crypto.randomBytes(24).toString('hex');
       const tokenRow = await storage.upsertWebhookToken(userId, token);
       res.json({ token: tokenRow.token });
@@ -1238,7 +1239,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get all inbox items for the authenticated user
   app.get("/api/inbox", isAuthenticated, async (req: any, res) => {
     try {
-      const items = await storage.getInboxItems(req.user.id);
+      const items = await storage.getInboxItems(req.user.claims.sub);
       res.json(items);
     } catch (error) {
       console.error("Error fetching inbox:", error);
@@ -1250,7 +1251,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/inbox/:id", isAuthenticated, async (req: any, res) => {
     try {
       const item = await storage.getInboxItemById(req.params.id);
-      if (!item || item.userId !== req.user.id) {
+      if (!item || item.userId !== req.user.claims.sub) {
         return res.status(404).json({ message: "Item not found" });
       }
       await storage.deleteInboxItem(req.params.id);
@@ -1265,7 +1266,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/inbox/:id/promote", isAuthenticated, async (req: any, res) => {
     try {
       const item = await storage.getInboxItemById(req.params.id);
-      if (!item || item.userId !== req.user.id) {
+      if (!item || item.userId !== req.user.claims.sub) {
         return res.status(404).json({ message: "Item not found" });
       }
       const stats = item.gpxStats as any;
@@ -1338,6 +1339,231 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Webhook GPX error:", error);
       res.status(500).json({ message: "Failed to process GPX" });
+    }
+  });
+
+  // ── Strava OAuth & Import ─────────────────────────────────────────────────
+
+  // Step 1: Redirect user to Strava consent page
+  app.get("/api/strava/auth", isAuthenticated, (req: any, res) => {
+    const clientId = process.env.STRAVA_CLIENT_ID;
+    if (!clientId) return res.status(500).json({ message: "STRAVA_CLIENT_ID not configured" });
+
+    const redirectUri = `https://${req.hostname}/api/strava/callback`;
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: "code",
+      scope: "read,activity:read_all",
+      approval_prompt: "auto",
+    });
+    res.redirect(`https://www.strava.com/oauth/authorize?${params}`);
+  });
+
+  // Step 2: Handle OAuth callback, exchange code for tokens
+  app.get("/api/strava/callback", isAuthenticated, async (req: any, res) => {
+    const { code, error, scope } = req.query as Record<string, string>;
+
+    if (error || !code) {
+      return res.redirect("/inbox?strava=denied");
+    }
+
+    try {
+      const redirectUri = `https://${req.hostname}/api/strava/callback`;
+      const tokenResp = await fetch("https://www.strava.com/oauth/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client_id: process.env.STRAVA_CLIENT_ID,
+          client_secret: process.env.STRAVA_CLIENT_SECRET,
+          code,
+          grant_type: "authorization_code",
+          redirect_uri: redirectUri,
+        }),
+      });
+
+      if (!tokenResp.ok) {
+        const body = await tokenResp.text();
+        console.error("Strava token exchange failed:", body);
+        return res.redirect("/inbox?strava=error");
+      }
+
+      const tokenData = await tokenResp.json() as {
+        access_token: string;
+        refresh_token: string;
+        expires_at: number;
+        athlete: { id: number; firstname: string; lastname: string };
+      };
+
+      const userId = req.user.claims.sub;
+      await storage.upsertStravaConnection({
+        userId,
+        stravaAthleteId: tokenData.athlete.id,
+        accessToken: tokenData.access_token,
+        refreshToken: tokenData.refresh_token,
+        expiresAt: tokenData.expires_at,
+        scope: scope ?? null,
+      });
+
+      res.redirect("/inbox?strava=connected");
+    } catch (err) {
+      console.error("Strava callback error:", err);
+      res.redirect("/inbox?strava=error");
+    }
+  });
+
+  // Connection status
+  app.get("/api/strava/status", isAuthenticated, async (req: any, res) => {
+    try {
+      const conn = await storage.getStravaConnection(req.user.claims.sub);
+      if (!conn) return res.json({ connected: false });
+      res.json({
+        connected: true,
+        stravaAthleteId: conn.stravaAthleteId,
+        connectedAt: conn.connectedAt,
+      });
+    } catch (err) {
+      console.error("Strava status error:", err);
+      res.status(500).json({ message: "Failed to get Strava status" });
+    }
+  });
+
+  // Disconnect
+  app.delete("/api/strava/disconnect", isAuthenticated, async (req: any, res) => {
+    try {
+      await storage.deleteStravaConnection(req.user.claims.sub);
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Strava disconnect error:", err);
+      res.status(500).json({ message: "Failed to disconnect Strava" });
+    }
+  });
+
+  // List recent activities from Strava (proxied, not stored)
+  app.get("/api/strava/activities", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const perPage = 30;
+      const resp = await stravaFetch(userId, `/athlete/activities?per_page=${perPage}`);
+      if (!resp.ok) {
+        const body = await resp.text();
+        console.error("Strava activities fetch failed:", body);
+        return res.status(resp.status).json({ message: "Failed to fetch Strava activities" });
+      }
+      const activities = await resp.json();
+      res.json(activities);
+    } catch (err: any) {
+      if (err.message?.includes("not connected")) return res.status(401).json({ message: "Strava not connected" });
+      console.error("Strava activities error:", err);
+      res.status(500).json({ message: "Failed to fetch activities" });
+    }
+  });
+
+  // List routes from Strava (proxied, not stored)
+  app.get("/api/strava/routes", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const conn = await storage.getStravaConnection(userId);
+      if (!conn) return res.status(401).json({ message: "Strava not connected" });
+
+      const resp = await stravaFetch(userId, `/athletes/${conn.stravaAthleteId}/routes?per_page=30`);
+      if (!resp.ok) {
+        const body = await resp.text();
+        console.error("Strava routes fetch failed:", body);
+        return res.status(resp.status).json({ message: "Failed to fetch Strava routes" });
+      }
+      const routes = await resp.json();
+      res.json(routes);
+    } catch (err: any) {
+      if (err.message?.includes("not connected")) return res.status(401).json({ message: "Strava not connected" });
+      console.error("Strava routes error:", err);
+      res.status(500).json({ message: "Failed to fetch routes" });
+    }
+  });
+
+  // Import a Strava activity into the inbox
+  app.post("/api/strava/import/activity/:stravaId", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { stravaId } = req.params;
+
+      // Dedup check
+      const existing = await storage.getInboxItemByStravaId(userId, stravaId);
+      if (existing) {
+        return res.status(409).json({ message: "Already in your inbox", inboxItemId: existing.id });
+      }
+
+      // Fetch activity metadata
+      const activityResp = await stravaFetch(userId, `/activities/${stravaId}`);
+      if (!activityResp.ok) {
+        return res.status(activityResp.status).json({ message: "Activity not found on Strava" });
+      }
+      const activity = await activityResp.json() as {
+        id: number; name: string; start_date: string; sport_type: string;
+      };
+
+      // Fetch GPS streams
+      const streamsResp = await stravaFetch(
+        userId,
+        `/activities/${stravaId}/streams?keys=latlng,altitude,time&key_by_type=true`
+      );
+      if (!streamsResp.ok) {
+        return res.status(streamsResp.status).json({ message: "Failed to fetch activity streams" });
+      }
+      const streams = await streamsResp.json();
+
+      if (!streams.latlng?.data?.length) {
+        return res.status(422).json({ message: "Activity has no GPS data" });
+      }
+
+      const rawGpx = buildGpxFromActivity(activity, streams);
+      const safeName = activity.name.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 50);
+      const filename = `strava_activity_${safeName}_${stravaId}.gpx`;
+
+      const inboxItem = await importGpxToInbox({ userId, rawGpx, filename, source: "strava-activity", stravaId });
+      res.status(201).json(inboxItem);
+    } catch (err: any) {
+      if (err.message?.includes("not connected")) return res.status(401).json({ message: "Strava not connected" });
+      console.error("Strava activity import error:", err);
+      res.status(500).json({ message: "Failed to import activity" });
+    }
+  });
+
+  // Import a Strava route into the inbox
+  app.post("/api/strava/import/route/:stravaId", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { stravaId } = req.params;
+
+      // Dedup check
+      const existing = await storage.getInboxItemByStravaId(userId, stravaId);
+      if (existing) {
+        return res.status(409).json({ message: "Already in your inbox", inboxItemId: existing.id });
+      }
+
+      // Fetch route metadata for the filename
+      const routeMetaResp = await stravaFetch(userId, `/routes/${stravaId}`);
+      if (!routeMetaResp.ok) {
+        return res.status(routeMetaResp.status).json({ message: "Route not found on Strava" });
+      }
+      const routeMeta = await routeMetaResp.json() as { id: number; name: string };
+
+      // Fetch the GPX export directly from Strava
+      const gpxResp = await stravaFetch(userId, `/routes/${stravaId}/export_gpx`);
+      if (!gpxResp.ok) {
+        return res.status(gpxResp.status).json({ message: "Failed to export route GPX from Strava" });
+      }
+      const rawGpx = await gpxResp.text();
+
+      const safeName = routeMeta.name.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 50);
+      const filename = `strava_route_${safeName}_${stravaId}.gpx`;
+
+      const inboxItem = await importGpxToInbox({ userId, rawGpx, filename, source: "strava-route", stravaId });
+      res.status(201).json(inboxItem);
+    } catch (err: any) {
+      if (err.message?.includes("not connected")) return res.status(401).json({ message: "Strava not connected" });
+      console.error("Strava route import error:", err);
+      res.status(500).json({ message: "Failed to import route" });
     }
   });
 

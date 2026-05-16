@@ -1,4 +1,4 @@
-import { fieldNotes, photos, trailcamProjects, videoClips, webhookTokens, gpxInbox, type FieldNote, type Photo, type InsertFieldNote, type InsertPhoto, type TrailcamProject, type VideoClip, type InsertTrailcamProject, type InsertVideoClip, type WebhookToken, type GpxInboxItem } from "@shared/schema";
+import { fieldNotes, photos, trailcamProjects, videoClips, webhookTokens, gpxInbox, stravaConnections, type FieldNote, type Photo, type InsertFieldNote, type InsertPhoto, type TrailcamProject, type VideoClip, type InsertTrailcamProject, type InsertVideoClip, type WebhookToken, type GpxInboxItem, type StravaConnection, type InsertStravaConnection } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, like, ilike, and, or } from "drizzle-orm";
 
@@ -47,9 +47,16 @@ export interface IStorage {
   // GPX Inbox
   getInboxItems(userId: string): Promise<GpxInboxItem[]>;
   getInboxItemById(id: string): Promise<GpxInboxItem | undefined>;
-  createInboxItem(item: { userId: string; filename: string; rawGpx: string; gpxStats?: any; sourceIp?: string }): Promise<GpxInboxItem>;
+  getInboxItemByStravaId(userId: string, stravaId: string): Promise<GpxInboxItem | undefined>;
+  createInboxItem(item: { userId: string; filename: string; rawGpx: string; gpxStats?: any; sourceIp?: string; source?: string; stravaId?: string }): Promise<GpxInboxItem>;
   updateInboxItemStatus(id: string, status: string): Promise<GpxInboxItem | undefined>;
   deleteInboxItem(id: string): Promise<boolean>;
+
+  // Strava connections
+  getStravaConnection(userId: string): Promise<StravaConnection | undefined>;
+  upsertStravaConnection(data: InsertStravaConnection): Promise<StravaConnection>;
+  updateStravaTokens(userId: string, accessToken: string, refreshToken: string, expiresAt: number): Promise<void>;
+  deleteStravaConnection(userId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -357,13 +364,22 @@ export class DatabaseStorage implements IStorage {
     return row;
   }
 
-  async createInboxItem(item: { userId: string; filename: string; rawGpx: string; gpxStats?: any; sourceIp?: string }): Promise<GpxInboxItem> {
+  async getInboxItemByStravaId(userId: string, stravaId: string): Promise<GpxInboxItem | undefined> {
+    const { and, eq } = await import("drizzle-orm");
+    const [row] = await db.select().from(gpxInbox)
+      .where(and(eq(gpxInbox.userId, userId), eq(gpxInbox.stravaId, stravaId)));
+    return row;
+  }
+
+  async createInboxItem(item: { userId: string; filename: string; rawGpx: string; gpxStats?: any; sourceIp?: string; source?: string; stravaId?: string }): Promise<GpxInboxItem> {
     const [row] = await db.insert(gpxInbox).values({
       userId: item.userId,
       filename: item.filename,
       rawGpx: item.rawGpx,
       gpxStats: item.gpxStats ?? null,
       sourceIp: item.sourceIp ?? null,
+      source: item.source ?? null,
+      stravaId: item.stravaId ?? null,
       status: 'pending',
     }).returning();
     return row;
@@ -381,6 +397,41 @@ export class DatabaseStorage implements IStorage {
   async deleteInboxItem(id: string): Promise<boolean> {
     const result = await db.delete(gpxInbox).where(eq(gpxInbox.id, id)).returning();
     return result.length > 0;
+  }
+
+  // Strava connections
+  async getStravaConnection(userId: string): Promise<StravaConnection | undefined> {
+    const [row] = await db.select().from(stravaConnections).where(eq(stravaConnections.userId, userId));
+    return row;
+  }
+
+  async upsertStravaConnection(data: InsertStravaConnection): Promise<StravaConnection> {
+    const [row] = await db
+      .insert(stravaConnections)
+      .values(data)
+      .onConflictDoUpdate({
+        target: stravaConnections.userId,
+        set: {
+          stravaAthleteId: data.stravaAthleteId,
+          accessToken: data.accessToken,
+          refreshToken: data.refreshToken,
+          expiresAt: data.expiresAt,
+          scope: data.scope,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return row;
+  }
+
+  async updateStravaTokens(userId: string, accessToken: string, refreshToken: string, expiresAt: number): Promise<void> {
+    await db.update(stravaConnections)
+      .set({ accessToken, refreshToken, expiresAt, updatedAt: new Date() })
+      .where(eq(stravaConnections.userId, userId));
+  }
+
+  async deleteStravaConnection(userId: string): Promise<void> {
+    await db.delete(stravaConnections).where(eq(stravaConnections.userId, userId));
   }
 }
 
@@ -735,9 +786,16 @@ export class MemStorage implements IStorage {
   // GPX Inbox (stubs — MemStorage not used in production)
   async getInboxItems(_userId: string): Promise<GpxInboxItem[]> { return []; }
   async getInboxItemById(_id: string): Promise<GpxInboxItem | undefined> { return undefined; }
+  async getInboxItemByStravaId(_userId: string, _stravaId: string): Promise<GpxInboxItem | undefined> { return undefined; }
   async createInboxItem(_item: any): Promise<GpxInboxItem> { throw new Error("Not implemented"); }
   async updateInboxItemStatus(_id: string, _status: string): Promise<GpxInboxItem | undefined> { return undefined; }
   async deleteInboxItem(_id: string): Promise<boolean> { return false; }
+
+  // Strava connections (stubs)
+  async getStravaConnection(_userId: string): Promise<StravaConnection | undefined> { return undefined; }
+  async upsertStravaConnection(_data: InsertStravaConnection): Promise<StravaConnection> { throw new Error("Not implemented"); }
+  async updateStravaTokens(_userId: string, _accessToken: string, _refreshToken: string, _expiresAt: number): Promise<void> {}
+  async deleteStravaConnection(_userId: string): Promise<void> {}
 }
 
 // Use database storage for permanent data persistence
