@@ -69,14 +69,30 @@ async function runStartupMigrations() {
       CREATE TABLE IF NOT EXISTS strava_connections (
         id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id text NOT NULL UNIQUE,
-        strava_athlete_id integer NOT NULL,
-        access_token text NOT NULL,
-        refresh_token text NOT NULL,
-        expires_at integer NOT NULL,
+        strava_client_id text,
+        strava_client_secret text,
+        strava_athlete_id integer,
+        access_token text,
+        refresh_token text,
+        expires_at integer,
         scope text,
         connected_at timestamp DEFAULT now() NOT NULL,
         updated_at timestamp DEFAULT now() NOT NULL
       );
+    `);
+    // Add new columns if missing (idempotent)
+    await client.query(`
+      ALTER TABLE strava_connections
+        ADD COLUMN IF NOT EXISTS strava_client_id text,
+        ADD COLUMN IF NOT EXISTS strava_client_secret text;
+    `);
+    // Make previously-required columns nullable so users can store credentials before connecting
+    await client.query(`
+      ALTER TABLE strava_connections
+        ALTER COLUMN strava_athlete_id DROP NOT NULL,
+        ALTER COLUMN access_token DROP NOT NULL,
+        ALTER COLUMN refresh_token DROP NOT NULL,
+        ALTER COLUMN expires_at DROP NOT NULL;
     `);
     log("Startup migrations complete");
   } catch (err) {

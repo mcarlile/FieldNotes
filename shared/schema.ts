@@ -8,10 +8,12 @@ import { relations } from "drizzle-orm";
 export const stravaConnections = pgTable("strava_connections", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: text("user_id").notNull().unique(),
-  stravaAthleteId: integer("strava_athlete_id").notNull(),
-  accessToken: text("access_token").notNull(),
-  refreshToken: text("refresh_token").notNull(),
-  expiresAt: integer("expires_at").notNull(), // Unix epoch seconds
+  stravaClientId: text("strava_client_id"),
+  stravaClientSecret: text("strava_client_secret"),
+  stravaAthleteId: integer("strava_athlete_id"),
+  accessToken: text("access_token"),
+  refreshToken: text("refresh_token"),
+  expiresAt: integer("expires_at"), // Unix epoch seconds
   scope: text("scope"),
   connectedAt: timestamp("connected_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
