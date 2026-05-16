@@ -11,7 +11,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Copy, RefreshCw, Trash2, Loader2, CheckCircle, Unlink, Activity, Route, Check, Terminal, Globe, Zap, ExternalLink, KeyRound } from "lucide-react";
+import { Copy, RefreshCw, Trash2, Loader2, CheckCircle, Unlink, Activity, Route, Check, Terminal, Globe, Zap, ExternalLink, KeyRound, Search } from "lucide-react";
 import type { GpxInboxItem } from "@shared/schema";
 
 const TRIP_TYPES = [
@@ -89,7 +89,34 @@ interface StravaRoute {
   elevation_gain: number;
 }
 
-function StravaPanel() {
+// Map Strava sport types to our internal trip types
+function mapStravaSportToTripType(sportType: string): string {
+  const s = sportType.toLowerCase();
+  if (s.includes("run")) return "running";
+  if (s.includes("ride") || s.includes("bike") || s.includes("cycl")) return "cycling";
+  if (s.includes("hike")) return "hiking";
+  if (s.includes("walk")) return "hiking";
+  if (s.includes("ski")) return "skiing";
+  if (s.includes("kayak") || s.includes("canoe") || s.includes("paddl") || s.includes("row")) return "paddling";
+  if (s.includes("climb")) return "climbing";
+  if (s.includes("motor")) return "motorcycle";
+  return "other";
+}
+
+function mapStravaRouteTypeToTripType(type: number): string {
+  if (type === 1) return "cycling";
+  if (type === 2) return "running";
+  return "other";
+}
+
+interface ImportedHint {
+  itemId: string;
+  suggestedTitle: string;
+  suggestedDescription: string;
+  suggestedTripType: string;
+}
+
+function StravaPanel({ onImported }: { onImported: (hint: ImportedHint) => void }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -156,7 +183,11 @@ function StravaPanel() {
   const [importingId, setImportingId] = useState<string | null>(null);
   const [importedIds, setImportedIds] = useState<Set<string>>(new Set());
 
-  async function handleImport(type: "activity" | "route", id: number) {
+  async function handleImport(
+    type: "activity" | "route",
+    id: number,
+    meta: { name: string; sportType?: string; routeType?: number },
+  ) {
     const key = `${type}-${id}`;
     setImportingId(key);
     try {
@@ -171,9 +202,25 @@ function StravaPanel() {
         toast({ title: "Import failed", description: (data as any).message ?? "Unknown error", variant: "destructive" });
         return;
       }
+      const item = await resp.json().catch(() => null);
       setImportedIds(prev => new Set([...prev, key]));
       queryClient.invalidateQueries({ queryKey: ["/api/inbox"] });
-      toast({ title: "Added to inbox", description: "Click 'Add to journal' to import it." });
+
+      // Open the "Add to journal" dialog automatically with preloaded fields
+      if (item?.id) {
+        const suggestedTripType = type === "activity"
+          ? mapStravaSportToTripType(meta.sportType ?? "")
+          : mapStravaRouteTypeToTripType(meta.routeType ?? 0);
+        const sourceLabel = type === "activity" ? "Strava activity" : "Strava route";
+        onImported({
+          itemId: item.id,
+          suggestedTitle: meta.name,
+          suggestedDescription: `Imported from ${sourceLabel} on ${new Date().toLocaleDateString()}.`,
+          suggestedTripType,
+        });
+      } else {
+        toast({ title: "Added to inbox", description: "Find it below and click 'Add to journal'." });
+      }
     } catch {
       toast({ title: "Import failed", variant: "destructive" });
     } finally {
