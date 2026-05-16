@@ -11,7 +11,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Copy, RefreshCw, Trash2, Loader2, CheckCircle, Unlink, Activity, Route } from "lucide-react";
+import { Copy, RefreshCw, Trash2, Loader2, CheckCircle, Unlink, Activity, Route, Check, Terminal, Globe, Zap } from "lucide-react";
 import type { GpxInboxItem } from "@shared/schema";
 
 const TRIP_TYPES = [
@@ -357,9 +357,12 @@ export default function InboxPage() {
     },
   });
 
+  const [copied, setCopied] = useState(false);
   function copyUrl() {
     if (!webhookUrl) return;
     navigator.clipboard.writeText(webhookUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
     toast({ title: "Copied to clipboard" });
   }
 
@@ -399,7 +402,10 @@ export default function InboxPage() {
 
         {/* Webhook URL */}
         <section className="mb-12">
-          <div className="meta-mono text-muted-foreground mb-3">Your webhook URL</div>
+          <div className="meta-mono text-muted-foreground mb-3 flex items-center gap-2">
+            <Globe className="h-3 w-3" />
+            Your webhook URL
+          </div>
           <p className="font-serif text-lg text-foreground/80 leading-relaxed mb-4 max-w-2xl">
             Send GPX files to this URL from any app, device, or automation tool. It accepts a
             multipart file upload (field <span className="font-mono text-sm">file</span>),
@@ -410,18 +416,18 @@ export default function InboxPage() {
             <div className="h-10 bg-muted animate-pulse rounded-md" />
           ) : webhookUrl ? (
             <>
-              <div className="flex items-center gap-2 border border-border rounded-md bg-muted/40">
+              <div className="flex items-center gap-0 border border-border rounded-md bg-muted/40 overflow-hidden">
                 <code className="flex-1 font-mono text-xs px-3 py-2.5 text-foreground overflow-x-auto whitespace-nowrap">
                   {webhookUrl}
                 </code>
                 <button
                   type="button"
                   onClick={copyUrl}
-                  className="meta-mono px-3 py-2.5 text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5 border-l border-border"
+                  className={`meta-mono px-3 py-2.5 transition-colors flex items-center gap-1.5 border-l border-border shrink-0 ${copied ? "text-green-600 bg-green-50 dark:bg-green-950/20" : "text-muted-foreground hover:text-foreground"}`}
                   data-testid="button-copy-url"
                 >
-                  <Copy className="h-3 w-3" />
-                  Copy
+                  {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                  {copied ? "Copied!" : "Copy"}
                 </button>
               </div>
 
@@ -441,11 +447,40 @@ export default function InboxPage() {
                 </button>
               </div>
 
-              <div className="mt-4 pt-4 border-t border-border">
-                <div className="meta-mono text-muted-foreground mb-2">Example · curl</div>
-                <code className="block font-mono text-xs text-foreground/80 break-all">
-                  curl -X POST "{webhookUrl}" -F "file=@mytrack.gpx"
-                </code>
+              <div className="mt-5 pt-5 border-t border-border space-y-3">
+                <div className="meta-mono text-muted-foreground mb-2 flex items-center gap-1.5">
+                  <Terminal className="h-3 w-3" />
+                  Quick examples
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-start gap-2">
+                    <Zap className="h-3 w-3 text-orange-500 mt-0.5 shrink-0" />
+                    <div>
+                      <span className="meta-mono text-xs text-foreground/70 block">cURL file upload</span>
+                      <code className="block font-mono text-xs text-foreground/80 break-all mt-0.5">
+                        curl -X POST "{webhookUrl}" -F "file=@mytrack.gpx"
+                      </code>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Zap className="h-3 w-3 text-orange-500 mt-0.5 shrink-0" />
+                    <div>
+                      <span className="meta-mono text-xs text-foreground/70 block">Raw GPX body</span>
+                      <code className="block font-mono text-xs text-foreground/80 break-all mt-0.5">
+                        curl -X POST "{webhookUrl}" -H "Content-Type: application/gpx+xml" --data-binary @track.gpx
+                      </code>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Zap className="h-3 w-3 text-orange-500 mt-0.5 shrink-0" />
+                    <div>
+                      <span className="meta-mono text-xs text-foreground/70 block">JSON payload</span>
+                      <code className="block font-mono text-xs text-foreground/80 break-all mt-0.5">
+                        curl -X POST "{webhookUrl}" -H "Content-Type: application/json" -d '{"{"gpx":"&lt;gpx...&gt;","filename":"track.gpx"}"}'
+                      </code>
+                    </div>
+                  </div>
+                </div>
               </div>
             </>
           ) : null}

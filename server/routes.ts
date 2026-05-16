@@ -1466,7 +1466,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const conn = await storage.getStravaConnection(userId);
       if (!conn) return res.status(401).json({ message: "Strava not connected" });
 
-      const resp = await stravaFetch(userId, `/athletes/${conn.stravaAthleteId}/routes?per_page=30`);
+      const resp = await stravaFetch(userId, `/athlete/routes?per_page=30`);
       if (!resp.ok) {
         const body = await resp.text();
         console.error("Strava routes fetch failed:", body);
