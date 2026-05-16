@@ -113,7 +113,7 @@ function StravaPanel() {
 
   const saveCredentialsMutation = useMutation({
     mutationFn: (vars: { clientId: string; clientSecret: string }) =>
-      apiRequest("POST", "/api/strava/credentials", vars),
+      apiRequest("/api/strava/credentials", "POST", vars),
     onSuccess: async (resp) => {
       if (!resp.ok) {
         const data = await resp.json().catch(() => ({}));
@@ -144,7 +144,7 @@ function StravaPanel() {
   });
 
   const disconnectMutation = useMutation({
-    mutationFn: () => apiRequest("DELETE", "/api/strava/disconnect"),
+    mutationFn: () => apiRequest("/api/strava/disconnect", "DELETE"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/strava/status"] });
       queryClient.invalidateQueries({ queryKey: ["/api/strava/activities"] });
@@ -160,7 +160,7 @@ function StravaPanel() {
     const key = `${type}-${id}`;
     setImportingId(key);
     try {
-      const resp = await apiRequest("POST", `/api/strava/import/${type}/${id}`);
+      const resp = await apiRequest(`/api/strava/import/${type}/${id}`, "POST");
       if (resp.status === 409) {
         toast({ title: "Already in your inbox", description: "This item was imported before." });
         setImportedIds(prev => new Set([...prev, key]));
@@ -561,7 +561,7 @@ export default function InboxPage() {
     : null;
 
   const regenerateMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/inbox/token/regenerate"),
+    mutationFn: () => apiRequest("/api/inbox/token/regenerate", "POST"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/inbox/token"] });
       toast({ title: "Webhook URL regenerated", description: "Your old URL is no longer valid." });
@@ -569,7 +569,7 @@ export default function InboxPage() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("DELETE", `/api/inbox/${id}`),
+    mutationFn: (id: string) => apiRequest(`/api/inbox/${id}`, "DELETE"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/inbox"] });
       toast({ title: "Removed from inbox" });
@@ -578,7 +578,7 @@ export default function InboxPage() {
 
   const promoteMutation = useMutation({
     mutationFn: ({ id, title, description, tripType }: { id: string; title: string; description: string; tripType: string }) =>
-      apiRequest("POST", `/api/inbox/${id}/promote`, { title, description, tripType }),
+      apiRequest(`/api/inbox/${id}/promote`, "POST", { title, description, tripType }),
     onSuccess: async (res) => {
       const data = await res.json();
       queryClient.invalidateQueries({ queryKey: ["/api/inbox"] });
