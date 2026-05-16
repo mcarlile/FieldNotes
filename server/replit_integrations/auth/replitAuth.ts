@@ -103,6 +103,9 @@ export async function setupAuth(app: Express) {
   passport.deserializeUser((user: Express.User, cb) => cb(null, user));
 
   app.get("/api/login", (req, res, next) => {
+    if (typeof req.query.redirectTo === "string") {
+      (req.session as any).returnTo = req.query.redirectTo;
+    }
     ensureStrategy(req.hostname);
     passport.authenticate(`replitauth:${req.hostname}`, {
       prompt: "login consent",
@@ -112,10 +115,20 @@ export async function setupAuth(app: Express) {
 
   app.get("/api/callback", (req, res, next) => {
     ensureStrategy(req.hostname);
-    passport.authenticate(`replitauth:${req.hostname}`, {
-      successReturnToOrRedirect: "/",
-      failureRedirect: "/api/login",
-    })(req, res, next);
+    passport.authenticate(
+      `replitauth:${req.hostname}`,
+      { failureRedirect: "/api/login" },
+      (err: any, user: Express.User) => {
+        if (err) return next(err);
+        if (!user) return res.redirect("/api/login");
+        req.logIn(user, (err) => {
+          if (err) return next(err);
+          const returnTo = (req.session as any)?.returnTo || "/";
+          delete (req.session as any).returnTo;
+          req.session.save(() => res.redirect(returnTo));
+        });
+      }
+    )(req, res, next);
   });
 
   app.get("/api/logout", (req, res) => {
