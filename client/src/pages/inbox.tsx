@@ -110,7 +110,7 @@ function mapStravaRouteTypeToTripType(type: number): string {
 }
 
 interface ImportedHint {
-  itemId: string;
+  item: GpxInboxItem;
   suggestedTitle: string;
   suggestedDescription: string;
   suggestedTripType: string;
@@ -192,35 +192,52 @@ function StravaPanel({ onImported }: { onImported: (hint: ImportedHint) => void 
     setImportingId(key);
     try {
       const resp = await apiRequest(`/api/strava/import/${type}/${id}`, "POST");
-      if (resp.status === 409) {
-        toast({ title: "Already in your inbox", description: "This item was imported before." });
-        setImportedIds(prev => new Set([...prev, key]));
-        return;
-      }
-      if (!resp.ok) {
+      let item: GpxInboxItem | null = null;
+      const isDuplicate = resp.status === 409;
+
+      if (isDuplicate) {
+        // Server returns { message, inboxItemId } — look up the existing item
+        const data = await resp.json().catch(() => ({} as any));
+        if (data?.inboxItemId) {
+          const listResp = await fetch("/api/inbox", { credentials: "include" });
+          if (listResp.ok) {
+            const list: GpxInboxItem[] = await listResp.json();
+            item = list.find(i => i.id === data.inboxItemId) ?? null;
+          }
+        }
+      } else if (!resp.ok) {
         const data = await resp.json().catch(() => ({}));
         toast({ title: "Import failed", description: (data as any).message ?? "Unknown error", variant: "destructive" });
         return;
+      } else {
+        item = await resp.json().catch(() => null);
       }
-      const item = await resp.json().catch(() => null);
+
       setImportedIds(prev => new Set([...prev, key]));
       queryClient.invalidateQueries({ queryKey: ["/api/inbox"] });
 
-      // Open the "Add to journal" dialog automatically with preloaded fields
-      if (item?.id) {
-        const suggestedTripType = type === "activity"
-          ? mapStravaSportToTripType(meta.sportType ?? "")
-          : mapStravaRouteTypeToTripType(meta.routeType ?? 0);
-        const sourceLabel = type === "activity" ? "Strava activity" : "Strava route";
-        onImported({
-          itemId: item.id,
-          suggestedTitle: meta.name,
-          suggestedDescription: `Imported from ${sourceLabel} on ${new Date().toLocaleDateString()}.`,
-          suggestedTripType,
-        });
-      } else {
-        toast({ title: "Added to inbox", description: "Find it below and click 'Add to journal'." });
+      if (!item?.id) {
+        toast({ title: isDuplicate ? "Already in your inbox" : "Added to inbox", description: "Find it below to add it to your journal." });
+        return;
       }
+
+      // If it's already promoted, just notify — don't reopen the dialog
+      if (item.status === "promoted") {
+        toast({ title: "Already in your journal", description: "This Strava item has already been added." });
+        return;
+      }
+
+      // Open the "Add to journal" dialog automatically with preloaded fields
+      const suggestedTripType = type === "activity"
+        ? mapStravaSportToTripType(meta.sportType ?? "")
+        : mapStravaRouteTypeToTripType(meta.routeType ?? 0);
+      const sourceLabel = type === "activity" ? "Strava activity" : "Strava route";
+      onImported({
+        item,
+        suggestedTitle: meta.name,
+        suggestedDescription: `Imported from ${sourceLabel} on ${new Date().toLocaleDateString()}.`,
+        suggestedTripType,
+      });
     } catch {
       toast({ title: "Import failed", variant: "destructive" });
     } finally {
@@ -503,7 +520,7 @@ function StravaPanel({ onImported }: { onImported: (hint: ImportedHint) => void 
                     <button
                       type="button"
                       disabled={isImported || isLoading}
-                      onClick={() => handleImport("activity", act.id)}
+                      onClick={() => handleImport("activity", act.id, { name: act.name, sportType: act.sport_type })}
                       className={`meta-mono shrink-0 flex items-center gap-1 transition-colors ${
                         isImported
                           ? "text-muted-foreground"
@@ -545,7 +562,7 @@ function StravaPanel({ onImported }: { onImported: (hint: ImportedHint) => void 
                     <button
                       type="button"
                       disabled={isImported || isLoading}
-                      onClick={() => handleImport("route", route.id)}
+                      onClick={() => handleImport("route", route.id, { name: route.name, routeType: route.type })}
                       className={`meta-mono shrink-0 flex items-center gap-1 transition-colors ${
                         isImported
                           ? "text-muted-foreground"
@@ -650,11 +667,33 @@ export default function InboxPage() {
     toast({ title: "Copied to clipboard" });
   }
 
-  function openPromote(item: GpxInboxItem) {
-    setPromoteTitle(item.filename.replace(/\.gpx$/i, "").replace(/[_-]/g, " "));
-    setPromoteDescription("");
-    setPromoteTripType("hiking");
+  function openPromote(item: GpxInboxItem, prefill?: { title?: string; description?: string; tripType?: string }) {
+    setPromoteTitle(prefill?.title ?? item.filename.replace(/\.gpx$/i, "").replace(/[_-]/g, " "));
+    setPromoteDescription(prefill?.description ?? "");
+    setPromoteTripType(prefill?.tripType ?? "hiking");
     setPromoteItem(item);
+  }
+
+  // Search + filtered items
+  const [searchQuery, setSearchQuery] = useState("");
+  const filteredItems = items.filter((item) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    const stats = (item.gpxStats ?? {}) as { name?: string; description?: string };
+    return (
+      item.filename.toLowerCase().includes(q) ||
+      (stats.name ?? "").toLowerCase().includes(q) ||
+      (stats.description ?? "").toLowerCase().includes(q)
+    );
+  });
+
+  // Handle the import → preloaded promote dialog flow.
+  function handleStravaImported(hint: ImportedHint) {
+    openPromote(hint.item, {
+      title: hint.suggestedTitle,
+      description: hint.suggestedDescription,
+      tripType: hint.suggestedTripType,
+    });
   }
 
   const pendingCount = items.filter((i) => i.status === "pending").length;
@@ -682,7 +721,7 @@ export default function InboxPage() {
         </div>
 
         {/* Strava */}
-        <StravaPanel />
+        <StravaPanel onImported={handleStravaImported} />
 
         {/* Webhook URL */}
         <section className="mb-12">
@@ -772,8 +811,23 @@ export default function InboxPage() {
 
         {/* Items */}
         <section>
-          <div className="meta-mono text-muted-foreground mb-4">
-            Received files {items.length > 0 && `· ${items.length}`}
+          <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
+            <div className="meta-mono text-muted-foreground">
+              Received files {items.length > 0 && `· ${items.length}`}
+            </div>
+            {items.length > 0 && (
+              <div className="relative flex-1 max-w-xs min-w-[180px]">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search name or description"
+                  className="w-full pl-8 pr-3 py-1.5 rounded-md border border-border bg-background text-foreground meta-mono text-xs focus:outline-none focus:ring-2 focus:ring-orange-400"
+                  data-testid="input-inbox-search"
+                />
+              </div>
+            )}
           </div>
 
           {itemsLoading ? (
@@ -791,26 +845,39 @@ export default function InboxPage() {
                 Import from Strava above, or send one to your webhook URL
               </p>
             </div>
+          ) : filteredItems.length === 0 ? (
+            <div className="border-t border-border py-12 text-center">
+              <p className="meta-mono text-muted-foreground">
+                No files match "{searchQuery}"
+              </p>
+            </div>
           ) : (
             <div className="border-t border-border divide-y divide-border">
-              {items.map((item) => {
+              {filteredItems.map((item) => {
                 const stats = (item.gpxStats ?? {}) as { distance?: number; elevationGain?: number };
                 const isPending = item.status === "pending";
                 const isPromoted = item.status === "promoted";
                 return (
                   <div
                     key={item.id}
-                    className={`py-4 flex items-start gap-4 transition-opacity ${!isPending ? "opacity-60" : ""}`}
+                    className="py-4 flex items-start gap-4"
                     data-testid={`inbox-item-${item.id}`}
                   >
-                    <div className="flex-1 min-w-0 space-y-1.5">
+                    {isPromoted && (
+                      <div className="shrink-0 mt-0.5 text-green-600 dark:text-green-500" aria-label="Imported">
+                        <CheckCircle className="h-5 w-5" />
+                      </div>
+                    )}
+                    <div className={`flex-1 min-w-0 space-y-1.5 ${isPromoted ? "opacity-70" : ""}`}>
                       <div className="flex items-center gap-3 flex-wrap">
                         <span className="text-foreground text-sm truncate">{item.filename}</span>
                         {isPending && (
                           <span className="meta-mono text-foreground">Pending</span>
                         )}
                         {isPromoted && (
-                          <span className="meta-mono text-muted-foreground">Added</span>
+                          <span className="meta-mono inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400 text-[10px] uppercase tracking-wider">
+                            <Check className="h-3 w-3" /> Imported
+                          </span>
                         )}
                         <SourceBadge source={item.source} />
                       </div>
