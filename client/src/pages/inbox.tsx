@@ -191,7 +191,11 @@ function StravaPanel({ onImported }: { onImported: (hint: ImportedHint) => void 
     const key = `${type}-${id}`;
     setImportingId(key);
     try {
-      const resp = await apiRequest(`/api/strava/import/${type}/${id}`, "POST");
+      // Use raw fetch — apiRequest throws on non-2xx, which swallows our 409 handling
+      const resp = await fetch(`/api/strava/import/${type}/${id}`, {
+        method: "POST",
+        credentials: "include",
+      });
       let item: GpxInboxItem | null = null;
       const isDuplicate = resp.status === 409;
 
@@ -696,7 +700,6 @@ export default function InboxPage() {
     });
   }
 
-  const pendingCount = items.filter((i) => i.status === "pending").length;
 
   return (
     <div className="min-h-screen bg-background">
@@ -705,12 +708,6 @@ export default function InboxPage() {
         <div className="mb-10">
           <div className="meta-mono text-muted-foreground mb-3 flex flex-wrap gap-x-3">
             <span>Inbox · GPX webhook</span>
-            {pendingCount > 0 && (
-              <>
-                <span>·</span>
-                <span className="text-foreground">{pendingCount} pending</span>
-              </>
-            )}
           </div>
           <h1
             className="font-serif text-foreground"
@@ -855,7 +852,6 @@ export default function InboxPage() {
             <div className="border-t border-border divide-y divide-border">
               {filteredItems.map((item) => {
                 const stats = (item.gpxStats ?? {}) as { distance?: number; elevationGain?: number };
-                const isPending = item.status === "pending";
                 const isPromoted = item.status === "promoted";
                 return (
                   <div
@@ -871,9 +867,6 @@ export default function InboxPage() {
                     <div className={`flex-1 min-w-0 space-y-1.5 ${isPromoted ? "opacity-70" : ""}`}>
                       <div className="flex items-center gap-3 flex-wrap">
                         <span className="text-foreground text-sm truncate">{item.filename}</span>
-                        {isPending && (
-                          <span className="meta-mono text-foreground">Pending</span>
-                        )}
                         {isPromoted && (
                           <span className="meta-mono inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400 text-[10px] uppercase tracking-wider">
                             <Check className="h-3 w-3" /> Imported
@@ -906,7 +899,7 @@ export default function InboxPage() {
                     </div>
 
                     <div className="flex items-center gap-4 shrink-0">
-                      {isPending && (
+                      {!isPromoted && (
                         <button
                           type="button"
                           onClick={() => openPromote(item)}

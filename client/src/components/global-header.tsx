@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useTheme } from "@/contexts/theme-context";
-import { useQuery } from "@tanstack/react-query";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,7 +10,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Menu, X, Sun, Moon, LogIn, LogOut, User, Inbox } from "lucide-react";
-import type { GpxInboxItem } from "@shared/schema";
 
 export default function GlobalHeader() {
   const { user, logout, isLoggingOut } = useAuth();
@@ -23,12 +21,6 @@ export default function GlobalHeader() {
     ? `${user.firstName}${user.lastName ? " " + user.lastName : ""}`
     : user?.email ?? "Account";
 
-  const { data: inboxItems = [] } = useQuery<GpxInboxItem[]>({
-    queryKey: ["/api/inbox"],
-    enabled: !!user,
-    refetchInterval: 60000,
-  });
-  const pendingCount = inboxItems.filter((i: GpxInboxItem) => i.status === "pending").length;
 
 
   if (location === "/") {
@@ -95,11 +87,6 @@ export default function GlobalHeader() {
               >
                 <Inbox className="h-3.5 w-3.5" />
                 Inbox
-                {pendingCount > 0 && (
-                  <span className="ml-0.5 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-foreground px-1 text-[10px] font-medium text-background">
-                    {pendingCount > 9 ? "9+" : pendingCount}
-                  </span>
-                )}
               </Link>
             </>
           )}
@@ -152,14 +139,6 @@ export default function GlobalHeader() {
 
         {/* Mobile hamburger */}
         <div className="sm:hidden flex items-center gap-3">
-          {user && pendingCount > 0 && (
-            <Link href="/inbox" className="relative text-muted-foreground">
-              <Inbox className="h-4 w-4" />
-              <span className="absolute -top-1 -right-1.5 inline-flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full bg-foreground px-1 text-[9px] font-medium text-background">
-                {pendingCount > 9 ? "9+" : pendingCount}
-              </span>
-            </Link>
-          )}
           <button
             className="text-muted-foreground hover:text-foreground transition-colors"
             onClick={() => setMobileOpen((v) => !v)}
