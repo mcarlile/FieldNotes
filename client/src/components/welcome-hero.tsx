@@ -31,7 +31,7 @@ export default function WelcomeHero() {
 
       <div className="mt-7 flex flex-wrap items-center gap-3">
         <a
-          href="/api/login?redirectTo=%2Fadmin"
+          href="/api/login?redirectTo=%2Fdashboard"
           className="meta-mono inline-flex items-center rounded-full border border-foreground bg-foreground px-4 py-2 text-background hover:opacity-80 transition-opacity"
           data-testid="link-sign-in"
         >

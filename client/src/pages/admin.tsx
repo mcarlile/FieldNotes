@@ -210,7 +210,7 @@ export default function AdminPage() {
     onSuccess: () => {
       toast({ title: "Field note created", variant: "success" });
       queryClient.invalidateQueries({ queryKey: ["/api/field-notes"] });
-      setLocation("/");
+      setLocation("/dashboard");
     },
     onError: (error) =>
       toast({ title: "Create error", description: error.message || "Failed to create field note", variant: "destructive" }),

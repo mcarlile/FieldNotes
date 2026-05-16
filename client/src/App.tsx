@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/use-auth";
 import GlobalHeader from "@/components/global-header";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
+import Dashboard from "@/pages/dashboard";
 import FieldNoteDetail from "@/pages/field-note-detail";
 import Admin from "@/pages/admin";
 import TrailcamStudio from "@/pages/trailcam-studio";
@@ -32,7 +33,7 @@ function RequireAuth({ component: Component }: { component: ComponentType<any> }
 }
 
 function AppContent() {
-  const { isLoading } = useAuth();
+  const { isLoading, isAuthenticated } = useAuth();
   const [location] = useLocation();
 
   if (isLoading) {
@@ -48,6 +49,7 @@ function AppContent() {
       {location !== "/" && <GlobalHeader />}
       <Switch>
         <Route path="/" component={Home} />
+        <Route path="/dashboard">{() => <RequireAuth component={Dashboard} />}</Route>
         <Route path="/field-notes/:id" component={FieldNoteDetail} />
         <Route path="/admin">{() => <RequireAuth component={Admin} />}</Route>
         <Route path="/admin/:id">{() => <RequireAuth component={Admin} />}</Route>

@@ -107,7 +107,7 @@ export default function FieldNoteDetail() {
     onSuccess: () => {
       toast({ title: "Success", description: "Field note deleted successfully!" });
       queryClient.invalidateQueries({ queryKey: ["/api/field-notes"] });
-      setLocation("/");
+      setLocation("/dashboard");
     },
     onError: (error) => {
       toast({
@@ -137,7 +137,7 @@ export default function FieldNoteDetail() {
           <h1 className="font-serif text-3xl text-foreground mb-3">Field Note Not Found</h1>
           <p className="text-muted-foreground mb-6">The requested field note could not be found.</p>
           <Link
-            href="/"
+            href="/dashboard"
             className="meta-mono text-foreground underline underline-offset-4 hover:opacity-70"
           >
             Return home &rarr;

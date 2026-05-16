@@ -64,12 +64,12 @@ export default function GlobalHeader() {
           {user && (
             <>
               <Link
-                href="/"
+                href="/dashboard"
                 className={`text-sm transition-colors hover:text-foreground hover:underline underline-offset-4 ${
-                  location === "/" ? "text-foreground" : "text-muted-foreground"
+                  location === "/dashboard" ? "text-foreground" : "text-muted-foreground"
                 }`}
               >
-                Home
+                Dashboard
               </Link>
               <Link
                 href="/admin"
@@ -141,7 +141,7 @@ export default function GlobalHeader() {
             </DropdownMenu>
           ) : (
             <a
-              href="/api/login?redirectTo=%2Fadmin"
+              href="/api/login?redirectTo=%2Fdashboard"
               className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
             >
               <LogIn className="h-3.5 w-3.5" />
@@ -173,7 +173,7 @@ export default function GlobalHeader() {
       {/* Mobile drawer */}
       {mobileOpen && (
         <div className="sm:hidden border-t border-border px-5 py-4 flex flex-col gap-3">
-          {navLink("/", "Home")}
+          {navLink("/dashboard", "Dashboard")}
           {navLink("/inbox", "GPX Inbox")}
           {navLink("/admin", "Add Trip")}
           {navLink("/trailcam-studio", "TrailCam Studio")}
@@ -208,7 +208,7 @@ export default function GlobalHeader() {
               </>
             ) : (
               <a
-                href="/api/login?redirectTo=%2Fadmin"
+                href="/api/login?redirectTo=%2Fdashboard"
                 onClick={() => setMobileOpen(false)}
                 className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
               >
