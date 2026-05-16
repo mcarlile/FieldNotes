@@ -24,7 +24,8 @@ function RequireAuth({ component: Component }: { component: ComponentType<any> }
     );
   }
   if (!isAuthenticated) {
-    window.location.href = "/api/login";
+    const returnTo = encodeURIComponent(window.location.pathname + window.location.search);
+    window.location.href = `/api/login?redirectTo=${returnTo}`;
     return null;
   }
   return <Component />;
