@@ -12,6 +12,25 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 async function runStartupMigrations() {
   const client = await pool.connect();
   try {
+    // Ensure core auth tables exist before anything else runs
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id varchar PRIMARY KEY,
+        email varchar UNIQUE,
+        first_name varchar,
+        last_name varchar,
+        profile_image_url varchar,
+        created_at timestamp DEFAULT now(),
+        updated_at timestamp DEFAULT now()
+      );
+      CREATE TABLE IF NOT EXISTS sessions (
+        sid varchar PRIMARY KEY,
+        sess jsonb NOT NULL,
+        expire timestamp NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS IDX_session_expire ON sessions (expire);
+    `);
+
     // Drop legacy columns left over from the old username/password auth system
     await client.query(`
       ALTER TABLE users
