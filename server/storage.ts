@@ -1,6 +1,6 @@
 import { fieldNotes, photos, trailcamProjects, videoClips, webhookTokens, gpxInbox, stravaConnections, type FieldNote, type Photo, type InsertFieldNote, type InsertPhoto, type TrailcamProject, type VideoClip, type InsertTrailcamProject, type InsertVideoClip, type WebhookToken, type GpxInboxItem, type StravaConnection, type InsertStravaConnection } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, asc, like, ilike, and, or } from "drizzle-orm";
+import { eq, desc, asc, like, ilike, and, or, sql } from "drizzle-orm";
 
 export interface IStorage {
   // Field Notes
@@ -77,14 +77,14 @@ export class DatabaseStorage implements IStorage {
           or(
             ilike(fieldNotes.title, `%${searchTerm}%`),
             ilike(fieldNotes.description, `%${searchTerm}%`),
-            ilike(fieldNotes.tripType, `%${searchTerm}%`)
+            sql`EXISTS (SELECT 1 FROM unnest(${fieldNotes.tripType}) AS t WHERE lower(t) LIKE ${`%${searchTerm.toLowerCase()}%`})`
           )
         );
       }
     }
     
     if (options.tripType) {
-      conditions.push(eq(fieldNotes.tripType, options.tripType));
+      conditions.push(sql`${fieldNotes.tripType} @> ARRAY[${options.tripType}]::text[]`);
     }
     
     if (conditions.length > 0) {
@@ -484,7 +484,7 @@ export class MemStorage implements IStorage {
       id: "1",
       title: "Mount Whitney Summit Trail",
       description: "A challenging 22-mile round trip hike to the highest peak in the contiguous United States. The trail offers stunning alpine scenery, crystal-clear mountain lakes, and breathtaking views from the summit at 14,505 feet.",
-      tripType: "Hiking",
+      tripType: ["Hiking"],
       date: new Date("2024-07-15T06:00:00Z"),
       distance: 22.0,
       elevationGain: 6100,
@@ -503,7 +503,7 @@ export class MemStorage implements IStorage {
       id: "2",
       title: "Yosemite Valley Loop",
       description: "A scenic bike ride through the iconic Yosemite Valley, passing by El Capitan, Bridalveil Fall, and Half Dome. Perfect for families and offering incredible photographic opportunities.",
-      tripType: "Cycling",
+      tripType: ["Cycling"],
       date: new Date("2024-06-20T08:30:00Z"),
       distance: 12.5,
       elevationGain: 200,
@@ -592,13 +592,13 @@ export class MemStorage implements IStorage {
         filtered = filtered.filter(note => 
           note.title.toLowerCase().includes(searchLower) ||
           note.description.toLowerCase().includes(searchLower) ||
-          note.tripType.toLowerCase().includes(searchLower)
+          note.tripType.some(t => t.toLowerCase().includes(searchLower))
         );
       }
     }
 
     if (options.tripType) {
-      filtered = filtered.filter(note => note.tripType === options.tripType);
+      filtered = filtered.filter(note => note.tripType.includes(options.tripType!));
     }
 
     // Apply sorting

@@ -15,6 +15,7 @@ const availableTripTypes = [
   "Running",
   "Backpacking",
   "Paddling",
+  "Fishing",
   "Motorcycle",
   "Climbing",
   "Skiing",
@@ -88,7 +89,7 @@ export default function Dashboard() {
   });
 
   const fieldNotes = allFieldNotes.filter((note) => {
-    if (tripTypes.length > 0 && !tripTypes.includes(note.tripType)) return false;
+    if (tripTypes.length > 0 && !tripTypes.some((t) => note.tripType.map((x) => x.toLowerCase()).includes(t.toLowerCase()))) return false;
 
     if (distanceFilter !== "any") {
       const d = note.distance || 0;

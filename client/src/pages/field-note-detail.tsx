@@ -184,7 +184,7 @@ export default function FieldNoteDetail() {
       {/* Title block */}
       <section className="px-5 sm:px-8 pt-8 pb-6 max-w-5xl">
         <div className="meta-mono text-muted-foreground mb-3 flex flex-wrap gap-x-3 gap-y-1">
-          <span>{fieldNote.tripType}</span>
+          <span>{Array.isArray(fieldNote.tripType) ? fieldNote.tripType.join(', ') : fieldNote.tripType}</span>
           <span>·</span>
           <span>{formatDate(fieldNote.date.toString())}</span>
           {fieldNote.distance != null && (

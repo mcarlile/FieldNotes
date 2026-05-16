@@ -58,7 +58,7 @@ export const fieldNotes = pgTable("field_notes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   title: text("title").notNull(),
   description: text("description").notNull(),
-  tripType: text("trip_type").notNull(), // hiking, cycling, photography, running
+  tripType: text("trip_type").array().notNull(),
   date: timestamp("date").notNull(),
   distance: real("distance"), // in kilometers
   elevationGain: real("elevation_gain"), // in meters
@@ -143,7 +143,8 @@ export const insertFieldNoteSchema = createInsertSchema(fieldNotes).omit({
   id: true,
   createdAt: true,
 }).extend({
-  date: z.coerce.date(), // Allow string to date conversion
+  date: z.coerce.date(),
+  tripType: z.array(z.string()).min(1),
 });
 
 export const insertPhotoSchema = createInsertSchema(photos).omit({

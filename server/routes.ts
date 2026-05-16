@@ -1273,7 +1273,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const fieldNote = await storage.createFieldNote({
         title: req.body.title || item.filename.replace(/\.gpx$/i, ''),
         description: req.body.description || '',
-        tripType: req.body.tripType || 'hiking',
+        tripType: Array.isArray(req.body.tripType) ? req.body.tripType : (req.body.tripType ? [req.body.tripType] : ['hiking']),
         date: stats?.date ? new Date(stats.date) : new Date(item.receivedAt),
         distance: stats?.distance ?? null,
         elevationGain: stats?.elevationGain ?? null,
