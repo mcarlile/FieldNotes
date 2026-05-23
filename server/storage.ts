@@ -58,6 +58,11 @@ export interface IStorage {
   updateStravaTokens(userId: string, accessToken: string, refreshToken: string, expiresAt: number): Promise<void>;
   updateStravaCredentials(userId: string, clientId: string, clientSecret: string): Promise<void>;
   deleteStravaConnection(userId: string): Promise<void>;
+
+  // Mobile tokens
+  getMobileToken(token: string): Promise<{ userId: string; expiresAt: Date } | undefined>;
+  createMobileToken(userId: string, token: string, expiresAt: Date): Promise<void>;
+  deleteMobileTokensByUser(userId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -449,6 +454,30 @@ export class DatabaseStorage implements IStorage {
   async deleteStravaConnection(userId: string): Promise<void> {
     await db.delete(stravaConnections).where(eq(stravaConnections.userId, userId));
   }
+
+  // Mobile tokens — raw SQL since this table isn't in Drizzle schema
+  async getMobileToken(token: string): Promise<{ userId: string; expiresAt: Date } | undefined> {
+    const { pool } = await import("./db");
+    const result = await pool.query(
+      "SELECT user_id, expires_at FROM mobile_tokens WHERE token = $1",
+      [token]
+    );
+    if (!result.rows[0]) return undefined;
+    return { userId: result.rows[0].user_id, expiresAt: new Date(result.rows[0].expires_at) };
+  }
+
+  async createMobileToken(userId: string, token: string, expiresAt: Date): Promise<void> {
+    const { pool } = await import("./db");
+    await pool.query(
+      "INSERT INTO mobile_tokens (user_id, token, expires_at) VALUES ($1, $2, $3) ON CONFLICT (token) DO NOTHING",
+      [userId, token, expiresAt]
+    );
+  }
+
+  async deleteMobileTokensByUser(userId: string): Promise<void> {
+    const { pool } = await import("./db");
+    await pool.query("DELETE FROM mobile_tokens WHERE user_id = $1", [userId]);
+  }
 }
 
 // Temporary in-memory storage with sample data for demonstration
@@ -813,6 +842,11 @@ export class MemStorage implements IStorage {
   async updateStravaTokens(_userId: string, _accessToken: string, _refreshToken: string, _expiresAt: number): Promise<void> {}
   async updateStravaCredentials(_userId: string, _clientId: string, _clientSecret: string): Promise<void> {}
   async deleteStravaConnection(_userId: string): Promise<void> {}
+
+  // Mobile tokens (stubs)
+  async getMobileToken(_token: string): Promise<{ userId: string; expiresAt: Date } | undefined> { return undefined; }
+  async createMobileToken(_userId: string, _token: string, _expiresAt: Date): Promise<void> {}
+  async deleteMobileTokensByUser(_userId: string): Promise<void> {}
 }
 
 // Use database storage for permanent data persistence

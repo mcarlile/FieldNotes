@@ -11,7 +11,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Copy, RefreshCw, Trash2, Loader2, CheckCircle, Unlink, Activity, Route, Check, Terminal, Globe, Zap, ExternalLink, KeyRound, Search } from "lucide-react";
+import { Copy, RefreshCw, Trash2, Loader2, CheckCircle, Unlink, Activity, Route, Check, Terminal, Globe, Zap, Search } from "lucide-react";
 import type { GpxInboxItem } from "@shared/schema";
 
 const TRIP_TYPES = [
@@ -122,41 +122,12 @@ function StravaPanel({ onImported }: { onImported: (hint: ImportedHint) => void 
   const queryClient = useQueryClient();
 
   const { data: status, isLoading: statusLoading } = useQuery<{
-    state: "no_credentials" | "has_credentials" | "connected";
+    state: "not_configured" | "disconnected" | "connected";
     connected: boolean;
-    hasCredentials: boolean;
     stravaAthleteId?: number;
-    redirectUri?: string;
   }>({
     queryKey: ["/api/strava/status"],
     retry: false,
-  });
-
-  const redirectUri =
-    status?.redirectUri ?? (typeof window !== "undefined" ? `${window.location.origin}/api/strava/callback` : "");
-
-  const [clientId, setClientId] = useState("");
-  const [clientSecret, setClientSecret] = useState("");
-  const [copiedRedirect, setCopiedRedirect] = useState(false);
-
-  const saveCredentialsMutation = useMutation({
-    mutationFn: (vars: { clientId: string; clientSecret: string }) =>
-      apiRequest("/api/strava/credentials", "POST", vars),
-    onSuccess: async (resp) => {
-      if (!resp.ok) {
-        const data = await resp.json().catch(() => ({}));
-        toast({
-          title: "Couldn't save credentials",
-          description: (data as any).message ?? "Please check your inputs.",
-          variant: "destructive",
-        });
-        return;
-      }
-      setClientId("");
-      setClientSecret("");
-      queryClient.invalidateQueries({ queryKey: ["/api/strava/status"] });
-      toast({ title: "Credentials saved", description: "Now click Connect Strava to authorize." });
-    },
   });
 
   const { data: activities, isLoading: activitiesLoading } = useQuery<StravaActivity[]>({
@@ -254,220 +225,36 @@ function StravaPanel({ onImported }: { onImported: (hint: ImportedHint) => void 
     return <div className="h-12 bg-muted animate-pulse rounded mb-12" />;
   }
 
-  // State 1: No credentials yet — show setup form
-  if (status?.state === "no_credentials") {
+  // App not configured (STRAVA_CLIENT_ID/SECRET not set in env)
+  if (status?.state === "not_configured") {
     return (
       <section className="mb-12 pb-12 border-b border-border">
         <div className="meta-mono text-muted-foreground mb-1">Strava</div>
-        <h3 className="font-serif text-2xl text-foreground mb-2">Connect your Strava account</h3>
-        <p className="font-serif text-base text-foreground/70 leading-relaxed mb-6 max-w-2xl">
-          Strava requires every app to use its own API credentials. The setup is free
-          and takes about three minutes — follow the steps below, then paste your
-          Client ID and Secret into the form.
+        <p className="font-serif text-base text-foreground/70">
+          Strava integration is not configured yet. Check back soon.
         </p>
-
-        <ol className="space-y-5 mb-8 max-w-2xl">
-          <li className="flex gap-3">
-            <span className="meta-mono text-orange-500 shrink-0 pt-0.5">01</span>
-            <div className="text-sm text-foreground/80 leading-relaxed">
-              <div className="font-semibold text-foreground mb-1">Sign in to Strava and open the API page</div>
-              <p>
-                Go to{" "}
-                <a
-                  href="https://www.strava.com/settings/api"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-orange-500 hover:text-orange-600 underline underline-offset-4 inline-flex items-center gap-1"
-                >
-                  strava.com/settings/api
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-                . If you've never used the Strava API before, you'll see a short form titled
-                "My API Application." If you already have an app, you can reuse it — skip to step 3.
-              </p>
-            </div>
-          </li>
-
-          <li className="flex gap-3">
-            <span className="meta-mono text-orange-500 shrink-0 pt-0.5">02</span>
-            <div className="text-sm text-foreground/80 leading-relaxed w-full">
-              <div className="font-semibold text-foreground mb-1">Fill out the application form</div>
-              <p className="mb-3">
-                Use any values you like for the descriptive fields. The only field that
-                <em> must </em> match exactly is the callback domain at the bottom.
-              </p>
-              <div className="space-y-2 p-3 rounded bg-muted/40 border border-border">
-                <div className="flex gap-3">
-                  <span className="meta-mono text-muted-foreground shrink-0 w-44">Application Name</span>
-                  <span className="text-foreground/80">Anything, e.g. <code className="meta-mono">Big Miles</code></span>
-                </div>
-                <div className="flex gap-3">
-                  <span className="meta-mono text-muted-foreground shrink-0 w-44">Category</span>
-                  <span className="text-foreground/80"><code className="meta-mono">Visualizer</code> works well</span>
-                </div>
-                <div className="flex gap-3">
-                  <span className="meta-mono text-muted-foreground shrink-0 w-44">Club</span>
-                  <span className="text-foreground/80">Leave blank</span>
-                </div>
-                <div className="flex gap-3">
-                  <span className="meta-mono text-muted-foreground shrink-0 w-44">Website</span>
-                  <span className="text-foreground/80 break-all">
-                    {redirectUri.replace(/\/api\/strava\/callback$/, "")}
-                  </span>
-                </div>
-                <div className="flex gap-3">
-                  <span className="meta-mono text-muted-foreground shrink-0 w-44">Application Description</span>
-                  <span className="text-foreground/80">Anything (e.g. "Personal trip journal")</span>
-                </div>
-                <div className="flex flex-col gap-1 pt-2 border-t border-border">
-                  <div className="flex gap-3 items-start">
-                    <span className="meta-mono text-foreground shrink-0 w-44 font-semibold">
-                      Authorization Callback Domain
-                    </span>
-                    <span className="text-foreground/80">Must be exactly:</span>
-                  </div>
-                  <div className="mt-1 flex items-center gap-2 p-2 rounded bg-background border border-orange-300/60 dark:border-orange-700/60">
-                    <code className="meta-mono text-sm flex-1 break-all text-orange-600 dark:text-orange-400">
-                      {redirectUri.replace(/^https?:\/\//, "").replace(/\/api\/strava\/callback$/, "")}
-                    </code>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const domain = redirectUri.replace(/^https?:\/\//, "").replace(/\/api\/strava\/callback$/, "");
-                        navigator.clipboard.writeText(domain);
-                        setCopiedRedirect(true);
-                        setTimeout(() => setCopiedRedirect(false), 1500);
-                      }}
-                      className="meta-mono text-xs text-orange-500 hover:text-orange-600 flex items-center gap-1 shrink-0"
-                    >
-                      {copiedRedirect ? <><Check className="h-3 w-3" /> Copied</> : <><Copy className="h-3 w-3" /> Copy</>}
-                    </button>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Just the domain — no <code className="meta-mono">https://</code>, no path, no trailing slash.
-                  </p>
-                </div>
-              </div>
-              <p className="mt-3">
-                You'll also need to upload a small icon (any square image works — Strava
-                requires one to create the app). Then accept the API agreement and click
-                <strong> Create</strong>.
-              </p>
-            </div>
-          </li>
-
-          <li className="flex gap-3">
-            <span className="meta-mono text-orange-500 shrink-0 pt-0.5">03</span>
-            <div className="text-sm text-foreground/80 leading-relaxed">
-              <div className="font-semibold text-foreground mb-1">Copy your Client ID and Client Secret</div>
-              <p className="mb-2">
-                After creating the app, Strava reloads <a
-                  href="https://www.strava.com/settings/api"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-orange-500 hover:text-orange-600 underline underline-offset-4 inline-flex items-center gap-1"
-                >
-                  the same page
-                  <ExternalLink className="h-3 w-3" />
-                </a> and shows your app's details near the top:
-              </p>
-              <ul className="space-y-1.5 pl-4 list-disc marker:text-orange-500">
-                <li>
-                  <strong>Client ID</strong> — a short number (5–6 digits), shown in plain text.
-                </li>
-                <li>
-                  <strong>Client Secret</strong> — a long string. Click
-                  <span className="meta-mono"> Show </span> next to it to reveal the value, then copy it.
-                </li>
-              </ul>
-              <p className="mt-2">
-                Paste both into the form below and click <strong>Save credentials</strong>.
-                Your secret is stored only for your account — nobody else can see it.
-              </p>
-            </div>
-          </li>
-        </ol>
-
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!clientId.trim() || !clientSecret.trim()) {
-              toast({ title: "Both fields are required", variant: "destructive" });
-              return;
-            }
-            saveCredentialsMutation.mutate({ clientId: clientId.trim(), clientSecret: clientSecret.trim() });
-          }}
-          className="max-w-xl space-y-4 p-5 rounded-lg border border-border bg-card"
-        >
-          <div className="flex items-center gap-2 meta-mono text-muted-foreground mb-1">
-            <KeyRound className="h-3 w-3" /> Your Strava app credentials
-          </div>
-          <div>
-            <label htmlFor="strava-client-id" className="meta-mono text-foreground/80 block mb-1.5">
-              Client ID
-            </label>
-            <input
-              id="strava-client-id"
-              type="text"
-              value={clientId}
-              onChange={(e) => setClientId(e.target.value)}
-              placeholder="123456"
-              className="w-full px-3 py-2 rounded border border-border bg-background text-foreground meta-mono focus:outline-none focus:ring-2 focus:ring-orange-400"
-              autoComplete="off"
-            />
-          </div>
-          <div>
-            <label htmlFor="strava-client-secret" className="meta-mono text-foreground/80 block mb-1.5">
-              Client Secret
-            </label>
-            <input
-              id="strava-client-secret"
-              type="password"
-              value={clientSecret}
-              onChange={(e) => setClientSecret(e.target.value)}
-              placeholder="••••••••••••••••••••••••••"
-              className="w-full px-3 py-2 rounded border border-border bg-background text-foreground meta-mono focus:outline-none focus:ring-2 focus:ring-orange-400"
-              autoComplete="off"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={saveCredentialsMutation.isPending}
-            className="meta-mono px-4 py-2 rounded-full bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-50 transition-colors flex items-center gap-2"
-          >
-            {saveCredentialsMutation.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
-            Save credentials
-          </button>
-        </form>
       </section>
     );
   }
 
-  // State 2: Credentials saved but not yet authorized
-  if (status?.state === "has_credentials") {
+  // Not connected — show connect button
+  if (!status?.connected) {
     return (
       <section className="mb-12 pb-12 border-b border-border">
-        <div className="flex items-start justify-between gap-6 mb-4">
+        <div className="flex items-center justify-between">
           <div>
             <div className="meta-mono text-muted-foreground mb-1">Strava</div>
             <p className="font-serif text-lg text-foreground/80 leading-snug">
-              Credentials saved. Authorize Strava to start importing activities and routes.
+              Connect Strava to import activities and routes directly into your inbox.
             </p>
           </div>
           <a
             href="/api/strava/auth"
-            className="meta-mono shrink-0 px-4 py-2 rounded-full bg-orange-500 text-white hover:bg-orange-600 transition-colors"
+            className="meta-mono shrink-0 text-orange-500 hover:text-orange-600 underline underline-offset-4 transition-colors"
           >
             Connect Strava →
           </a>
         </div>
-        <button
-          type="button"
-          onClick={() => disconnectMutation.mutate()}
-          className="meta-mono text-xs text-muted-foreground hover:text-destructive transition-colors"
-        >
-          Reset credentials
-        </button>
       </section>
     );
   }
@@ -609,8 +396,6 @@ export default function InboxPage() {
       toast({ title: "Strava connection failed", variant: "destructive" });
     } else if (stravaParam === "denied") {
       toast({ title: "Strava connection cancelled" });
-    } else if (stravaParam === "needs_credentials") {
-      toast({ title: "Add your Strava credentials first", description: "Enter your Client ID and Secret below to continue." });
     }
     history.replaceState(null, "", "/inbox");
     queryClient.invalidateQueries({ queryKey: ["/api/strava/status"] });
