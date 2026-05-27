@@ -12,10 +12,19 @@ export interface ClipMarker {
   color?: string;
 }
 
+export interface PhotoMarker {
+  id: string;
+  latitude: number;
+  longitude: number;
+  thumbnailUrl: string;
+}
+
 interface MapboxMapProps {
   gpxData: any;
   hoveredElevationPoint?: ElevationPoint | null;
   clipMarkers?: ClipMarker[];
+  photoMarkers?: PhotoMarker[];
+  onPhotoMarkerClick?: (photoId: string) => void;
   className?: string;
 }
 
@@ -23,12 +32,17 @@ export default function MapboxMap({
   gpxData, 
   hoveredElevationPoint, 
   clipMarkers,
+  photoMarkers,
+  onPhotoMarkerClick,
   className 
 }: MapboxMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const elevationMarker = useRef<mapboxgl.Marker | null>(null);
   const clipMarkersRef = useRef<Map<string, mapboxgl.Marker>>(new Map());
+  const photoMarkersRef = useRef<Map<string, mapboxgl.Marker>>(new Map());
+  const onPhotoMarkerClickRef = useRef(onPhotoMarkerClick);
+  useEffect(() => { onPhotoMarkerClickRef.current = onPhotoMarkerClick; }, [onPhotoMarkerClick]);
   const animationFrameRef = useRef<number | null>(null);
   const coordinatesRef = useRef<[number, number][]>([]);
   const [webglError, setWebglError] = useState(false);
@@ -219,6 +233,11 @@ export default function MapboxMap({
         elevationMarker.current.remove();
         elevationMarker.current = null;
       }
+      // Clear marker refs so they get re-added when a new map is created
+      clipMarkersRef.current.forEach((m) => m.remove());
+      clipMarkersRef.current.clear();
+      photoMarkersRef.current.forEach((m) => m.remove());
+      photoMarkersRef.current.clear();
       if (map.current) {
         map.current.remove();
         map.current = null;
@@ -343,6 +362,71 @@ export default function MapboxMap({
       // Cleanup is handled in the main useEffect for map initialization
     };
   }, [clipMarkers]);
+
+  // Handle photo markers (thumbnail dots at photo GPS locations)
+  useEffect(() => {
+    if (!map.current) return;
+
+    const apply = () => {
+      if (!map.current) return;
+
+      const wantedIds = new Set((photoMarkers ?? []).map(p => p.id));
+
+      // Remove markers that are no longer present
+      photoMarkersRef.current.forEach((marker, id) => {
+        if (!wantedIds.has(id)) {
+          marker.remove();
+          photoMarkersRef.current.delete(id);
+        }
+      });
+
+      // Add or update markers
+      (photoMarkers ?? []).forEach((pm) => {
+        const existing = photoMarkersRef.current.get(pm.id);
+        if (existing) {
+          existing.setLngLat([pm.longitude, pm.latitude]);
+          return;
+        }
+
+        const el = document.createElement('button');
+        el.type = 'button';
+        el.setAttribute('aria-label', 'View photo');
+        el.dataset.testid = `map-photo-marker-${pm.id}`;
+        el.style.cssText = `
+          width: 36px;
+          height: 36px;
+          padding: 0;
+          background: #fff url("${pm.thumbnailUrl}") center/cover no-repeat;
+          border: 2px solid #fff;
+          border-radius: 50%;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.35), 0 0 0 1px rgba(0,0,0,0.15);
+          cursor: pointer;
+          transition: transform 120ms ease;
+          touch-action: manipulation;
+        `;
+        el.addEventListener('mouseenter', () => { el.style.transform = 'scale(1.12)'; });
+        el.addEventListener('mouseleave', () => { el.style.transform = 'scale(1)'; });
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          onPhotoMarkerClickRef.current?.(pm.id);
+        });
+
+        const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+          .setLngLat([pm.longitude, pm.latitude])
+          .addTo(map.current!);
+
+        photoMarkersRef.current.set(pm.id, marker);
+      });
+    };
+
+    if (!map.current.loaded()) {
+      const onLoad = () => apply();
+      map.current.on('load', onLoad);
+      return () => { map.current?.off('load', onLoad); };
+    }
+
+    apply();
+  }, [photoMarkers]);
 
   // Show fallback UI if WebGL is not supported
   if (webglError) {

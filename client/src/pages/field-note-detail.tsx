@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
@@ -39,6 +39,22 @@ export default function FieldNoteDetail() {
 
   const fieldNote = fieldNoteData;
   const photos: Photo[] = fieldNoteData?.photos || [];
+
+  // Memoize so the marker effect doesn't rerun on every elevation hover
+  const photoMarkers = useMemo(
+    () => photos
+      .filter((p) => p.latitude != null && p.longitude != null)
+      .map((p) => ({
+        id: p.id,
+        latitude: p.latitude as number,
+        longitude: p.longitude as number,
+        thumbnailUrl: p.url,
+      })),
+    [photos],
+  );
+  const handlePhotoMarkerClick = useCallback((photoId: string) => {
+    setSelectedPhotoId(photoId);
+  }, []);
 
   const parsedGpxData = useMemo(() => {
     if (!fieldNote?.gpxData) return null;
@@ -161,6 +177,8 @@ export default function FieldNoteDetail() {
         <MapboxMap
           gpxData={fieldNote.gpxData}
           hoveredElevationPoint={hoveredElevationPoint}
+          photoMarkers={photoMarkers}
+          onPhotoMarkerClick={handlePhotoMarkerClick}
           className="w-full h-full"
         />
       </div>
