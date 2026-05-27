@@ -17,7 +17,7 @@ interface CarbonPhotoUploaderProps {
     method: "PUT";
     url: string;
   }>;
-  onComplete?: (result: UploadResult<Record<string, unknown>, Record<string, unknown>>, exifData?: PhotoExifData[]) => void;
+  onComplete?: (result: UploadResult<Record<string, unknown>, Record<string, unknown>>, exifData?: (PhotoExifData | null)[]) => void;
   buttonClassName?: string;
   children: React.ReactNode;
 }
@@ -383,7 +383,7 @@ export function CarbonPhotoUploader({
         successful: uploadResults.flatMap(r => r.successful),
         failed: [],
       };
-      const exifDataArray = files.map(f => f.exifData).filter((exif): exif is PhotoExifData => exif !== undefined);
+      const exifDataArray = files.map(f => f.exifData ?? null);
       onComplete(combinedResult as any, exifDataArray);
     }
   };
