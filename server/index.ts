@@ -104,6 +104,17 @@ async function runStartupMigrations() {
         END IF;
       END $$;
     `);
+    // Mobile API tokens table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS mobile_tokens (
+        id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id text NOT NULL,
+        token text NOT NULL UNIQUE,
+        created_at timestamp DEFAULT now() NOT NULL,
+        expires_at timestamp NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS mobile_tokens_token_idx ON mobile_tokens (token);
+    `);
     log("Startup migrations complete");
   } catch (err) {
     log(`Startup migration warning: ${(err as Error).message}`);

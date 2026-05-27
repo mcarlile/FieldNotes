@@ -114,8 +114,8 @@ export default function PhotoLightbox({ photoId, photos, onClose, onPhotoChange 
   };
 
   const formatCoordinates = (lat: number | null, lng: number | null) => {
-    if (!lat || !lng) return "Unknown";
-    return `${lat.toFixed(4)}°${lat >= 0 ? 'N' : 'S'}, ${lng.toFixed(4)}°${lng >= 0 ? 'E' : 'W'}`;
+    if (lat == null || lng == null) return "Unknown";
+    return `${Math.abs(lat).toFixed(4)}°${lat >= 0 ? 'N' : 'S'}, ${Math.abs(lng).toFixed(4)}°${lng >= 0 ? 'E' : 'W'}`;
   };
 
   const modalHeading = (
@@ -254,7 +254,7 @@ export default function PhotoLightbox({ photoId, photos, onClose, onPhotoChange 
                   {photo.elevation && (
                     <div>
                       <span className="text-gray-600">Elevation:</span>
-                      <span className="ml-2">{Math.round(photo.elevation)} ft</span>
+                      <span className="ml-2">{Math.round((photo.elevation ?? 0) * 3.28084)} ft</span>
                     </div>
                   )}
                   <div>

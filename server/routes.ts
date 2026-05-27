@@ -131,6 +131,33 @@ function cleanupStaleUploads() {
 setInterval(cleanupStaleUploads, 5 * 60 * 1000); // Run every 5 minutes
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Current user profile — works for both web sessions and mobile Bearer tokens
+  app.get("/api/me", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { pool } = await import("./db");
+      const result = await pool.query(
+        "SELECT id, email, first_name, last_name, profile_image_url FROM users WHERE id = $1",
+        [userId]
+      );
+      if (!result.rows[0]) return res.status(404).json({ message: "User not found" });
+      res.json(result.rows[0]);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+
+  // Mobile logout — revokes the Bearer token
+  app.delete("/api/auth/mobile-logout", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      await storage.deleteMobileTokensByUser(userId);
+      res.json({ message: "Logged out" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to logout" });
+    }
+  });
+
   // Get all field notes with optional filters (includes photo count)
   app.get("/api/field-notes", async (req, res) => {
     try {
@@ -1344,35 +1371,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ── Strava OAuth & Import ─────────────────────────────────────────────────
 
-  // Save user's personal Strava Client ID + Secret
-  app.post("/api/strava/credentials", isAuthenticated, async (req: any, res) => {
-    try {
-      const { clientId, clientSecret } = req.body ?? {};
-      if (!clientId || !clientSecret || typeof clientId !== "string" || typeof clientSecret !== "string") {
-        return res.status(400).json({ message: "Client ID and Client Secret are required." });
-      }
-      await storage.updateStravaCredentials(req.user.claims.sub, clientId.trim(), clientSecret.trim());
-      res.json({ success: true });
-    } catch (err) {
-      console.error("Strava credentials save error:", err);
-      res.status(500).json({ message: "Failed to save Strava credentials" });
-    }
-  });
-
-  // Step 1: Redirect user to Strava consent page using their personal app credentials
+  // Step 1: Redirect user to Strava consent page using app-level credentials
   app.get("/api/strava/auth", isAuthenticated, async (req: any, res) => {
-    const conn = await storage.getStravaConnection(req.user.claims.sub);
-    if (!conn?.stravaClientId) {
-      return res.redirect("/inbox?strava=needs_credentials");
+    const clientId = process.env.STRAVA_CLIENT_ID;
+    if (!clientId) {
+      return res.redirect("/inbox?strava=error");
     }
 
-    // CSRF protection: generate a one-time state nonce bound to this session
     const stateNonce = crypto.randomBytes(24).toString("hex");
     (req.session as any).stravaOAuthState = stateNonce;
 
     const redirectUri = `https://${req.hostname}/api/strava/callback`;
     const params = new URLSearchParams({
-      client_id: conn.stravaClientId,
+      client_id: clientId,
       redirect_uri: redirectUri,
       response_type: "code",
       scope: "read,activity:read_all",
@@ -1382,7 +1393,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.redirect(`https://www.strava.com/oauth/authorize?${params}`);
   });
 
-  // Step 2: Handle OAuth callback, exchange code for tokens using user's credentials
+  // Step 2: Handle OAuth callback using app-level credentials
   app.get("/api/strava/callback", isAuthenticated, async (req: any, res) => {
     const { code, error, scope, state } = req.query as Record<string, string>;
 
@@ -1390,28 +1401,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.redirect("/inbox?strava=denied");
     }
 
-    // Validate one-time state nonce (CSRF protection)
     const expectedState = (req.session as any).stravaOAuthState;
-    (req.session as any).stravaOAuthState = undefined; // consume regardless of outcome
+    (req.session as any).stravaOAuthState = undefined;
     if (!expectedState || !state || expectedState !== state) {
       console.warn("Strava OAuth state mismatch");
       return res.redirect("/inbox?strava=error");
     }
 
+    const clientId = process.env.STRAVA_CLIENT_ID;
+    const clientSecret = process.env.STRAVA_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+      return res.redirect("/inbox?strava=error");
+    }
+
     try {
       const userId = req.user.claims.sub;
-      const conn = await storage.getStravaConnection(userId);
-      if (!conn?.stravaClientId || !conn?.stravaClientSecret) {
-        return res.redirect("/inbox?strava=needs_credentials");
-      }
-
       const redirectUri = `https://${req.hostname}/api/strava/callback`;
       const tokenResp = await fetch("https://www.strava.com/oauth/token", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          client_id: conn.stravaClientId,
-          client_secret: conn.stravaClientSecret,
+          client_id: clientId,
+          client_secret: clientSecret,
           code,
           grant_type: "authorization_code",
           redirect_uri: redirectUri,
@@ -1419,8 +1430,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       if (!tokenResp.ok) {
-        const body = await tokenResp.text();
-        console.error("Strava token exchange failed:", body);
+        console.error("Strava token exchange failed:", await tokenResp.text());
         return res.redirect("/inbox?strava=error");
       }
 
@@ -1428,13 +1438,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         access_token: string;
         refresh_token: string;
         expires_at: number;
-        athlete: { id: number; firstname: string; lastname: string };
+        athlete: { id: number };
       };
 
       await storage.upsertStravaConnection({
         userId,
-        stravaClientId: conn.stravaClientId,
-        stravaClientSecret: conn.stravaClientSecret,
         stravaAthleteId: tokenData.athlete.id,
         accessToken: tokenData.access_token,
         refreshToken: tokenData.refresh_token,
@@ -1449,23 +1457,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Connection status — three states: no_credentials, has_credentials_not_connected, connected
+  // Connection status
   app.get("/api/strava/status", isAuthenticated, async (req: any, res) => {
     try {
+      const appConfigured = !!(process.env.STRAVA_CLIENT_ID && process.env.STRAVA_CLIENT_SECRET);
       const conn = await storage.getStravaConnection(req.user.claims.sub);
-      if (!conn || !conn.stravaClientId) {
-        return res.json({ state: "no_credentials", connected: false, hasCredentials: false });
+      if (!appConfigured) {
+        return res.json({ state: "not_configured", connected: false });
       }
-      if (!conn.accessToken || !conn.stravaAthleteId) {
-        return res.json({ state: "has_credentials", connected: false, hasCredentials: true });
+      if (!conn?.accessToken || !conn.stravaAthleteId) {
+        return res.json({ state: "disconnected", connected: false });
       }
       res.json({
         state: "connected",
         connected: true,
-        hasCredentials: true,
         stravaAthleteId: conn.stravaAthleteId,
         connectedAt: conn.connectedAt,
-        redirectUri: `https://${req.hostname}/api/strava/callback`,
       });
     } catch (err) {
       console.error("Strava status error:", err);

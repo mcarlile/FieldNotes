@@ -140,7 +140,7 @@ export default function AdminPage() {
 
   const handlePhotoUploadComplete = (
     result: UploadResult<Record<string, unknown>, Record<string, unknown>>,
-    exifDataArray?: PhotoExifData[],
+    exifDataArray?: (PhotoExifData | null)[],
   ) => {
     if (result.successful && result.successful.length > 0) {
       const normalize = (url: string) => {

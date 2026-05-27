@@ -6,7 +6,9 @@ import session from "express-session";
 import type { Express, RequestHandler } from "express";
 import memoize from "memoizee";
 import connectPg from "connect-pg-simple";
+import { randomBytes } from "crypto";
 import { authStorage } from "./storage";
+import { storage } from "../../storage";
 
 const getOidcConfig = memoize(
   async () => {
@@ -79,10 +81,8 @@ export async function setupAuth(app: Express) {
     verified(null, user);
   };
 
-  // Keep track of registered strategies
   const registeredStrategies = new Set<string>();
 
-  // Helper function to ensure strategy exists for a domain
   const ensureStrategy = (domain: string) => {
     const strategyName = `replitauth:${domain}`;
     if (!registeredStrategies.has(strategyName)) {
@@ -130,10 +130,25 @@ export async function setupAuth(app: Express) {
       (err: any, user: Express.User) => {
         if (err) return next(err);
         if (!user) return res.redirect("/api/login");
-        req.logIn(user, (err) => {
+        req.logIn(user, async (err) => {
           if (err) return next(err);
           const returnTo = getRedirectCookie(req) || "/";
           res.setHeader("Set-Cookie", "auth_redirect=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+
+          // Mobile deep-link auth: issue a long-lived token and redirect to app scheme
+          if (returnTo === "mobile") {
+            try {
+              const userId = (user as any).claims?.sub;
+              if (!userId) return res.redirect("/");
+              const token = randomBytes(32).toString("hex");
+              const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000); // 1 year
+              await storage.createMobileToken(userId, token, expiresAt);
+              return res.redirect(`bigmiles://auth?token=${token}`);
+            } catch (e) {
+              return res.redirect("bigmiles://auth?error=token_failed");
+            }
+          }
+
           res.redirect(returnTo);
         });
       }
@@ -153,6 +168,27 @@ export async function setupAuth(app: Express) {
 }
 
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
+  // Mobile clients send Bearer tokens
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.slice(7);
+    try {
+      const mobileToken = await storage.getMobileToken(token);
+      if (mobileToken && mobileToken.expiresAt > new Date()) {
+        // Inject a synthetic user object compatible with existing session-based route handlers
+        (req as any).user = {
+          claims: { sub: mobileToken.userId },
+          expires_at: Math.floor(mobileToken.expiresAt.getTime() / 1000),
+        };
+        return next();
+      }
+    } catch {
+      // fall through to session check
+    }
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
+  // Web session auth
   const user = req.user as any;
 
   if (!req.isAuthenticated() || !user.expires_at) {
