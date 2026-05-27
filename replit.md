@@ -10,6 +10,15 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+**May 27, 2026 - Interactive Photo Markers & Geotag Pipeline Fix:**
+- ✓ Re-added interactive photo markers to the field-note detail map (36px circular HTML markers using the photo URL as a thumbnail background)
+- ✓ Markers rendered with `mapboxgl.Marker` rather than symbol layer for reliable mobile tap targets and easy thumbnail previews
+- ✓ Clicking a photo marker opens the existing photo lightbox at that photo
+- ✓ Marker lifecycle: diff by id (add/update/remove), cleared on map teardown, re-attaches after map rebuild
+- ✓ Fixed critical geotag propagation bug: AutoPhotoUploader extracted EXIF client-side but passed it through stale React state, so GPS coordinates were silently dropped before reaching the server
+- ✓ Fixed server-side background EXIF fallback that could overwrite client-supplied lat/lng with `undefined` when the 64KB extraction window missed GPS data
+- ✓ Hardened storage layer to use nullish coalescing (`??`) instead of `||` for numeric EXIF fields so valid `0` coordinates (equator/prime meridian) aren't treated as null
+
 **May 10, 2026 - GPX Webhook Inbox:**
 - ✓ Added `webhook_tokens` table (userId unique, token unique) and `gpx_inbox` table (userId, filename, rawGpx, gpxStats jsonb, status, sourceIp, receivedAt) via startup migration
 - ✓ Per-user webhook tokens — auto-created on first visit to `/inbox`, regeneratable at any time
@@ -81,11 +90,12 @@ Preferred communication style: Simple, everyday language.
 
 **August 17, 2025 - Photo Marker Removal & GPS Fixes:**
 - ✓ Removed photo marker indicators from map as requested by user
-- ✓ Fixed GPS coordinate extraction from iPhone photos for accurate positioning  
+- ✓ Fixed GPS coordinate extraction from iPhone photos for accurate positioning
 - ✓ Updated EXIF extraction to properly parse GPS latitude/longitude with field translation
 - ✓ Enhanced field note detail page with primary Edit button and secondary delete icon
 - ✓ Improved auto-upload photo experience with better progress indicators
 - ✓ Fixed ProgressBar label warning in photo uploader component
+- ✓ *Re-added* in May 2026: see "Interactive Photo Markers & Geotag Pipeline Fix" above
 
 **August 17, 2025 - Left Sidebar Filtering System:**
 - ✓ Implemented Carbon Design System left navigation filtering pattern  
@@ -161,7 +171,7 @@ Preferred communication style: Simple, everyday language.
 
 #### Frontend Components
 - **Field Note Cards**: Grid-based showcase of outdoor adventures
-- **Interactive Map**: Displays GPX tracks and photo locations using Mapbox
+- **Interactive Map**: Displays GPX tracks and photo locations using Mapbox; photo thumbnails rendered as clickable HTML markers at GPS coordinates
 - **Photo Lightbox**: Modal gallery for viewing detailed photo information and EXIF data
 - **Search & Filtering**: Real-time filtering by search terms, trip type, and sorting options
 - **GPX Inbox** (`/inbox`): Webhook URL management, received file list, promote-to-journal dialog
@@ -186,7 +196,7 @@ Preferred communication style: Simple, everyday language.
 2. **Database Storage**: PostgreSQL database provides permanent data persistence with proper migrations
 3. **API Layer**: Express server provides RESTful endpoints for data retrieval and creation with filtering capabilities
 4. **Frontend Queries**: React Query manages API calls with caching and background updates
-5. **Map Visualization**: GPX data is rendered on Mapbox maps with photo markers showing precise locations
+5. **Map Visualization**: GPX data is rendered on Mapbox maps with clickable HTML photo markers at precise GPS locations; markers open the photo lightbox on tap
 6. **User Interaction**: Search, filter, and navigation interactions update the display in real-time with highlighted search terms
 7. **Admin Interface**: Built-in admin page at `/admin` allows adding new field notes with GPX file upload
 
