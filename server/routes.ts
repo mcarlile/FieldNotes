@@ -518,21 +518,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           if (Object.keys(exifData).length > 0) {
             console.log(`Background EXIF data found for ${photo.id}:`, exifData);
-            
-            await storage.updatePhoto(photo.id, {
-              latitude: exifData.latitude,
-              longitude: exifData.longitude,
-              elevation: exifData.elevation,
-              timestamp: exifData.timestamp,
-              camera: exifData.camera,
-              lens: exifData.lens,
-              aperture: exifData.aperture,
-              shutterSpeed: exifData.shutterSpeed,
-              iso: exifData.iso,
-              focalLength: exifData.focalLength,
-              fileSize: exifData.fileSize
-            });
-            
+
+            // Only update fields the server actually extracted, so we don't
+            // overwrite client-supplied EXIF (e.g. lat/lng) with undefined
+            // when the 64KB EXIF window misses some values.
+            const updates: Record<string, unknown> = {};
+            for (const [key, value] of Object.entries(exifData)) {
+              if (value !== undefined && value !== null) {
+                updates[key] = value;
+              }
+            }
+
+            if (Object.keys(updates).length > 0) {
+              await storage.updatePhoto(photo.id, updates);
+            }
+
             console.log(`Background EXIF processing complete for photo: ${photo.id}`);
           }
         } catch (exifError: unknown) {

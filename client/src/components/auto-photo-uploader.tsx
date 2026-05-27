@@ -144,7 +144,8 @@ export function AutoPhotoUploader({
           size: fileState.file.size,
           type: fileState.file.type,
           uploadURL: uploadParams.url,
-        }]
+        }],
+        exifData: exifData || null,
       };
 
     } catch (error) {
@@ -203,11 +204,10 @@ export function AutoPhotoUploader({
     const results = await Promise.all(uploadPromises);
     const successfulResults = results.filter(result => result !== null);
 
-    // Get all EXIF data for successful uploads
-    const allExifData = files
-      .concat(newFileStates)
-      .map(f => f.exifData)
-      .filter((exif): exif is PhotoExifData => exif !== undefined);
+    // EXIF data aligned with each successful upload, in order
+    const allExifData: PhotoExifData[] = successfulResults.map(
+      (r) => (r.exifData as PhotoExifData) ?? ({} as PhotoExifData),
+    );
 
     if (successfulResults.length > 0 && onComplete) {
       const combinedResult = {
