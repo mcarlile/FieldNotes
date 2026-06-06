@@ -4,6 +4,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Modal } from "@carbon/react";
 import { Pencil, Trash2 } from "lucide-react";
+import PublishButton from "@/components/publish-button";
 import PhotoLightbox from "@/components/photo-lightbox";
 import MapboxMap from "@/components/mapbox-map";
 import ElevationProfile from "@/components/elevation-profile";
@@ -211,6 +212,14 @@ export default function FieldNoteDetail() {
 
           {isAuthenticated && (
             <div className="flex items-center gap-4 flex-shrink-0">
+              <PublishButton
+                id={fieldNote.id}
+                isPublished={fieldNote.isPublished ?? false}
+                slug={fieldNote.slug ?? null}
+                publishPath="/notes"
+                apiPath="/api/field-notes"
+                queryKey={["/api/field-notes", id]}
+              />
               <Link
                 href={`/field-notes/${fieldNote.id}/edit`}
                 className="meta-mono text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"

@@ -12,6 +12,10 @@ import FieldNoteDetail from "@/pages/field-note-detail";
 import Admin from "@/pages/admin";
 import TrailcamStudio from "@/pages/trailcam-studio";
 import InboxPage from "@/pages/inbox";
+import Expeditions from "@/pages/expeditions";
+import ExpeditionAdmin from "@/pages/expedition-admin";
+import PublicExpeditionPage from "@/pages/public-expedition";
+import PublicFieldNotePage from "@/pages/public-field-note";
 import { Loader2 } from "lucide-react";
 import type { ComponentType } from "react";
 
@@ -56,6 +60,12 @@ function AppContent() {
         <Route path="/field-notes/:id/edit">{() => <RequireAuth component={Admin} />}</Route>
         <Route path="/trailcam-studio">{() => <RequireAuth component={TrailcamStudio} />}</Route>
         <Route path="/inbox">{() => <RequireAuth component={InboxPage} />}</Route>
+        <Route path="/expeditions">{() => <RequireAuth component={Expeditions} />}</Route>
+        <Route path="/expeditions/new">{() => <RequireAuth component={ExpeditionAdmin} />}</Route>
+        <Route path="/expeditions/:id/edit">{() => <RequireAuth component={ExpeditionAdmin} />}</Route>
+        {/* Public routes — no auth required */}
+        <Route path="/trips/:slug" component={PublicExpeditionPage} />
+        <Route path="/notes/:slug" component={PublicFieldNotePage} />
         <Route component={NotFound} />
       </Switch>
     </>

@@ -153,6 +153,7 @@ export default function GlobalHeader() {
       {mobileOpen && (
         <div className="sm:hidden border-t border-border px-5 py-4 flex flex-col gap-3">
           {navLink("/dashboard", "Dashboard")}
+          {navLink("/expeditions", "Expeditions")}
           {navLink("/inbox", "GPX Inbox")}
           {navLink("/admin", "Add Trip")}
           {navLink("/trailcam-studio", "TrailCam Studio")}

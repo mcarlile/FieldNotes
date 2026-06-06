@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, real, jsonb, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, real, jsonb, integer, index, boolean, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -63,8 +63,35 @@ export const fieldNotes = pgTable("field_notes", {
   distance: real("distance"), // in kilometers
   elevationGain: real("elevation_gain"), // in meters
   gpxData: jsonb("gpx_data"), // stored GPX track data
+  isPublished: boolean("is_published").notNull().default(false),
+  publishedAt: timestamp("published_at"),
+  slug: text("slug").unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export const expeditions = pgTable("expeditions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: text("user_id").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  coverPhotoUrl: text("cover_photo_url"),
+  slug: text("slug").unique(),
+  isPublished: boolean("is_published").notNull().default(false),
+  publishedAt: timestamp("published_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index("expeditions_user_id_idx").on(table.userId),
+}));
+
+export const expeditionFieldNotes = pgTable("expedition_field_notes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  expeditionId: varchar("expedition_id").notNull().references(() => expeditions.id, { onDelete: "cascade" }),
+  fieldNoteId: varchar("field_note_id").notNull().references(() => fieldNotes.id, { onDelete: "cascade" }),
+  position: integer("position").notNull().default(0),
+}, (table) => ({
+  uniqueIdx: uniqueIndex("expedition_field_notes_unique").on(table.expeditionId, table.fieldNoteId),
+  expeditionIdx: index("expedition_field_notes_expedition_idx").on(table.expeditionId),
+}));
 
 export const photos = pgTable("photos", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -90,11 +117,27 @@ export const photos = pgTable("photos", {
 
 export const fieldNotesRelations = relations(fieldNotes, ({ many }) => ({
   photos: many(photos),
+  expeditionFieldNotes: many(expeditionFieldNotes),
 }));
 
 export const photosRelations = relations(photos, ({ one }) => ({
   fieldNote: one(fieldNotes, {
     fields: [photos.fieldNoteId],
+    references: [fieldNotes.id],
+  }),
+}));
+
+export const expeditionsRelations = relations(expeditions, ({ many }) => ({
+  expeditionFieldNotes: many(expeditionFieldNotes),
+}));
+
+export const expeditionFieldNotesRelations = relations(expeditionFieldNotes, ({ one }) => ({
+  expedition: one(expeditions, {
+    fields: [expeditionFieldNotes.expeditionId],
+    references: [expeditions.id],
+  }),
+  fieldNote: one(fieldNotes, {
+    fields: [expeditionFieldNotes.fieldNoteId],
     references: [fieldNotes.id],
   }),
 }));
@@ -178,11 +221,22 @@ export const insertVideoClipSchema = createInsertSchema(videoClips).omit({
   createdAt: true,
 });
 
+export const insertExpeditionSchema = createInsertSchema(expeditions).omit({
+  id: true,
+  createdAt: true,
+  isPublished: true,
+  publishedAt: true,
+  slug: true,
+});
+
 export type InsertFieldNote = z.infer<typeof insertFieldNoteSchema>;
 export type InsertPhoto = z.infer<typeof insertPhotoSchema>;
 export type InsertTrailcamProject = z.infer<typeof insertTrailcamProjectSchema>;
 export type InsertVideoClip = z.infer<typeof insertVideoClipSchema>;
+export type InsertExpedition = z.infer<typeof insertExpeditionSchema>;
 export type FieldNote = typeof fieldNotes.$inferSelect;
 export type Photo = typeof photos.$inferSelect;
 export type TrailcamProject = typeof trailcamProjects.$inferSelect;
 export type VideoClip = typeof videoClips.$inferSelect;
+export type Expedition = typeof expeditions.$inferSelect;
+export type ExpeditionFieldNote = typeof expeditionFieldNotes.$inferSelect;

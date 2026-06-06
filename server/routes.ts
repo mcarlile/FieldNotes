@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertFieldNoteSchema, insertPhotoSchema, insertTrailcamProjectSchema, insertVideoClipSchema } from "@shared/schema";
+import { insertFieldNoteSchema, insertPhotoSchema, insertTrailcamProjectSchema, insertVideoClipSchema, insertExpeditionSchema } from "@shared/schema";
 import { ObjectStorageService, ObjectNotFoundError, objectStorageService } from "./objectStorage";
 import { extractExifData, extractExifFromBuffer } from "./exif-extractor";
 import { startVideoProcessing } from "./videoProcessor";
@@ -1621,6 +1621,172 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (err.message?.includes("not connected")) return res.status(401).json({ message: "Strava not connected" });
       console.error("Strava route import error:", err);
       res.status(500).json({ message: "Failed to import route" });
+    }
+  });
+
+  // ── Publishing ────────────────────────────────────────────────────────────
+
+  function slugify(title: string): string {
+    return title
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .trim()
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .slice(0, 60);
+  }
+
+  async function uniqueSlug(base: string, check: (s: string) => Promise<boolean>): Promise<string> {
+    let slug = base || "untitled";
+    if (await check(slug)) return slug;
+    for (let i = 2; i <= 99; i++) {
+      const candidate = `${slug}-${i}`;
+      if (await check(candidate)) return candidate;
+    }
+    return `${slug}-${Date.now()}`;
+  }
+
+  // Publish a field note
+  app.post("/api/field-notes/:id/publish", isAuthenticated, async (req, res) => {
+    try {
+      const note = await storage.getFieldNoteById(req.params.id);
+      if (!note) return res.status(404).json({ message: "Field note not found" });
+
+      const baseSlug = slugify(note.title);
+      const slug = note.slug ?? await uniqueSlug(baseSlug, async (s) => !await storage.getPublishedFieldNoteBySlug(s));
+      const updated = await storage.publishFieldNote(note.id, slug);
+      res.json(updated);
+    } catch (err) {
+      console.error("Publish field note error:", err);
+      res.status(500).json({ message: "Failed to publish" });
+    }
+  });
+
+  app.post("/api/field-notes/:id/unpublish", isAuthenticated, async (req, res) => {
+    try {
+      const updated = await storage.unpublishFieldNote(req.params.id);
+      if (!updated) return res.status(404).json({ message: "Field note not found" });
+      res.json(updated);
+    } catch (err) {
+      console.error("Unpublish field note error:", err);
+      res.status(500).json({ message: "Failed to unpublish" });
+    }
+  });
+
+  // ── Expeditions ───────────────────────────────────────────────────────────
+
+  app.get("/api/expeditions", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req as any).user.claims.sub;
+      const exps = await storage.getExpeditionsByUser(userId);
+      res.json(exps);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to fetch expeditions" });
+    }
+  });
+
+  app.get("/api/expeditions/:id", isAuthenticated, async (req, res) => {
+    try {
+      const exp = await storage.getExpeditionById(req.params.id);
+      if (!exp) return res.status(404).json({ message: "Expedition not found" });
+      const fieldNotes = await storage.getExpeditionFieldNotes(exp.id);
+      res.json({ ...exp, fieldNotes });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to fetch expedition" });
+    }
+  });
+
+  app.post("/api/expeditions", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req as any).user.claims.sub;
+      const { fieldNoteIds, ...body } = req.body;
+      const parsed = insertExpeditionSchema.safeParse({ ...body, userId });
+      if (!parsed.success) return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
+      const exp = await storage.createExpedition(parsed.data);
+      if (Array.isArray(fieldNoteIds) && fieldNoteIds.length > 0) {
+        await storage.setExpeditionFieldNotes(exp.id, fieldNoteIds);
+      }
+      res.status(201).json(exp);
+    } catch (err) {
+      console.error("Create expedition error:", err);
+      res.status(500).json({ message: "Failed to create expedition" });
+    }
+  });
+
+  app.put("/api/expeditions/:id", isAuthenticated, async (req, res) => {
+    try {
+      const { fieldNoteIds, ...body } = req.body;
+      const exp = await storage.updateExpedition(req.params.id, body);
+      if (!exp) return res.status(404).json({ message: "Expedition not found" });
+      if (Array.isArray(fieldNoteIds)) {
+        await storage.setExpeditionFieldNotes(exp.id, fieldNoteIds);
+      }
+      res.json(exp);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to update expedition" });
+    }
+  });
+
+  app.delete("/api/expeditions/:id", isAuthenticated, async (req, res) => {
+    try {
+      const deleted = await storage.deleteExpedition(req.params.id);
+      if (!deleted) return res.status(404).json({ message: "Expedition not found" });
+      res.status(204).send();
+    } catch (err) {
+      res.status(500).json({ message: "Failed to delete expedition" });
+    }
+  });
+
+  app.post("/api/expeditions/:id/publish", isAuthenticated, async (req, res) => {
+    try {
+      const exp = await storage.getExpeditionById(req.params.id);
+      if (!exp) return res.status(404).json({ message: "Expedition not found" });
+      const baseSlug = slugify(exp.title);
+      const slug = exp.slug ?? await uniqueSlug(baseSlug, async (s) => !await storage.getPublishedExpeditionBySlug(s));
+      const updated = await storage.publishExpedition(exp.id, slug);
+      res.json(updated);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to publish expedition" });
+    }
+  });
+
+  app.post("/api/expeditions/:id/unpublish", isAuthenticated, async (req, res) => {
+    try {
+      const updated = await storage.unpublishExpedition(req.params.id);
+      if (!updated) return res.status(404).json({ message: "Expedition not found" });
+      res.json(updated);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to unpublish expedition" });
+    }
+  });
+
+  // ── Public endpoints (no auth) ────────────────────────────────────────────
+
+  app.get("/api/public/field-notes/:slug", async (req, res) => {
+    try {
+      const note = await storage.getPublishedFieldNoteBySlug(req.params.slug);
+      if (!note) return res.status(404).json({ message: "Not found" });
+      const photos = await storage.getPhotosByFieldNoteId(note.id);
+      res.json({ ...note, photos });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to fetch field note" });
+    }
+  });
+
+  app.get("/api/public/expeditions/:slug", async (req, res) => {
+    try {
+      const exp = await storage.getPublishedExpeditionBySlug(req.params.slug);
+      if (!exp) return res.status(404).json({ message: "Not found" });
+      const rows = await storage.getExpeditionFieldNotes(exp.id);
+      const fieldNotes = await Promise.all(
+        rows.map(async ({ fieldNote, position }) => {
+          const photos = await storage.getPhotosByFieldNoteId(fieldNote.id);
+          return { ...fieldNote, photos, position };
+        })
+      );
+      res.json({ ...exp, fieldNotes });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to fetch expedition" });
     }
   });
 
