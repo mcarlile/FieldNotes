@@ -11,7 +11,7 @@ export interface IStorage {
   }): Promise<FieldNote[]>;
   getFieldNoteById(id: string): Promise<FieldNote | undefined>;
   createFieldNote(fieldNote: InsertFieldNote): Promise<FieldNote>;
-  updateFieldNote(id: string, fieldNote: InsertFieldNote): Promise<FieldNote | undefined>;
+  updateFieldNote(id: string, fieldNote: Partial<InsertFieldNote>): Promise<FieldNote | undefined>;
   deleteFieldNote(id: string): Promise<boolean>;
   
   // Photos
@@ -126,7 +126,7 @@ export class DatabaseStorage implements IStorage {
     return fieldNote;
   }
 
-  async updateFieldNote(id: string, updateFieldNote: InsertFieldNote): Promise<FieldNote | undefined> {
+  async updateFieldNote(id: string, updateFieldNote: Partial<InsertFieldNote>): Promise<FieldNote | undefined> {
     const [fieldNote] = await db
       .update(fieldNotes)
       .set(updateFieldNote)
@@ -482,7 +482,7 @@ export class DatabaseStorage implements IStorage {
 
 // Temporary in-memory storage with sample data for demonstration
 export class MemStorage implements IStorage {
-  async updateFieldNote(id: string, updateFieldNote: InsertFieldNote): Promise<FieldNote | undefined> {
+  async updateFieldNote(id: string, updateFieldNote: Partial<InsertFieldNote>): Promise<FieldNote | undefined> {
     const index = this.fieldNotesData.findIndex(note => note.id === id);
     if (index === -1) return undefined;
     
@@ -526,6 +526,8 @@ export class MemStorage implements IStorage {
           [-118.288, 36.582]
         ]
       },
+      stravaId: null,
+      stravaSource: null,
       createdAt: new Date("2024-07-16T10:00:00Z")
     },
     {
@@ -544,6 +546,8 @@ export class MemStorage implements IStorage {
           [-119.648, 37.751]
         ]
       },
+      stravaId: null,
+      stravaSource: null,
       createdAt: new Date("2024-06-21T09:15:00Z")
     }
   ];
@@ -658,6 +662,8 @@ export class MemStorage implements IStorage {
       distance: insertFieldNote.distance ?? null,
       elevationGain: insertFieldNote.elevationGain ?? null,
       gpxData: insertFieldNote.gpxData ?? null,
+      stravaId: insertFieldNote.stravaId ?? null,
+      stravaSource: insertFieldNote.stravaSource ?? null,
       createdAt: new Date()
     };
     this.fieldNotesData.push(fieldNote);

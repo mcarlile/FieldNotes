@@ -11,8 +11,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Copy, RefreshCw, Trash2, Loader2, CheckCircle, Unlink, Activity, Route, Check, Terminal, Globe, Zap, Search } from "lucide-react";
-import type { GpxInboxItem } from "@shared/schema";
+import { Copy, RefreshCw, Trash2, Loader2, CheckCircle, Unlink, Activity, Route, Check, Terminal, Globe, Zap, Search, ExternalLink } from "lucide-react";
+import type { GpxInboxItem, FieldNote } from "@shared/schema";
 
 const TRIP_TYPES = [
   { id: "hiking", label: "Hiking" },
@@ -117,7 +117,13 @@ interface ImportedHint {
   suggestedTripType: string;
 }
 
-function StravaPanel({ onImported }: { onImported: (hint: ImportedHint) => void }) {
+interface AssociateHint {
+  type: "activity" | "route";
+  id: number;
+  name: string;
+}
+
+function StravaPanel({ onImported, onAssociate }: { onImported: (hint: ImportedHint) => void; onAssociate: (hint: AssociateHint) => void }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -188,7 +194,7 @@ function StravaPanel({ onImported }: { onImported: (hint: ImportedHint) => void 
         item = await resp.json().catch(() => null);
       }
 
-      setImportedIds(prev => new Set([...prev, key]));
+      setImportedIds(prev => new Set(Array.from(prev).concat(key)));
       queryClient.invalidateQueries({ queryKey: ["/api/inbox"] });
 
       if (!item?.id) {
@@ -213,68 +219,6 @@ function StravaPanel({ onImported }: { onImported: (hint: ImportedHint) => void 
       });
     } catch {
       toast({ title: "Import failed", variant: "destructive" });
-    } finally {
-      setImportingId(null);
-    }
-  }
-
-  async function handleAssociate(
-    type: "activity" | "route",
-    id: number,
-    meta: { name: string; sportType?: string; routeType?: number },
-  ) {
-    const key = `${type}-${id}`;
-    setImportingId(key);
-    try {
-      const resp = await fetch(`/api/strava/associate/${type}/${id}`, {
-        method: "POST",
-        credentials: "include",
-      });
-      let item: GpxInboxItem | null = null;
-      const isDuplicate = resp.status === 409;
-
-      if (isDuplicate) {
-        const data = await resp.json().catch(() => ({} as any));
-        if (data?.inboxItemId) {
-          const listResp = await fetch("/api/inbox", { credentials: "include" });
-          if (listResp.ok) {
-            const list: GpxInboxItem[] = await listResp.json();
-            item = list.find(i => i.id === data.inboxItemId) ?? null;
-          }
-        }
-      } else if (!resp.ok) {
-        const data = await resp.json().catch(() => ({}));
-        toast({ title: "Association failed", description: (data as any).message ?? "Unknown error", variant: "destructive" });
-        return;
-      } else {
-        item = await resp.json().catch(() => null);
-      }
-
-      setImportedIds(prev => new Set([...prev, key]));
-      queryClient.invalidateQueries({ queryKey: ["/api/inbox"] });
-
-      if (!item?.id) {
-        toast({ title: isDuplicate ? "Already in your inbox" : "Associated", description: "Find it below to link to your journal." });
-        return;
-      }
-
-      if (item.status === "promoted") {
-        toast({ title: "Already in your journal", description: "This Strava item is already linked." });
-        return;
-      }
-
-      const suggestedTripType = type === "activity"
-        ? mapStravaSportToTripType(meta.sportType ?? "")
-        : mapStravaRouteTypeToTripType(meta.routeType ?? 0);
-      const sourceLabel = type === "activity" ? "Strava activity" : "Strava route";
-      onImported({
-        item,
-        suggestedTitle: meta.name,
-        suggestedDescription: `Associated with ${sourceLabel} on ${new Date().toLocaleDateString()}.`,
-        suggestedTripType,
-      });
-    } catch {
-      toast({ title: "Association failed", variant: "destructive" });
     } finally {
       setImportingId(null);
     }
@@ -384,9 +328,9 @@ function StravaPanel({ onImported }: { onImported: (hint: ImportedHint) => void 
                       <button
                         type="button"
                         disabled={isImported || isLoading}
-                        onClick={() => handleAssociate("activity", act.id, { name: act.name, sportType: act.sport_type })}
+                        onClick={() => onAssociate({ type: "activity", id: act.id, name: act.name })}
                         className="meta-mono shrink-0 text-muted-foreground hover:text-foreground transition-colors underline underline-offset-4"
-                        title="Mark as already imported and manually link"
+                        title="Link to an existing journal entry"
                       >
                         Associate
                       </button>
@@ -437,9 +381,9 @@ function StravaPanel({ onImported }: { onImported: (hint: ImportedHint) => void 
                       <button
                         type="button"
                         disabled={isImported || isLoading}
-                        onClick={() => handleAssociate("route", route.id, { name: route.name, routeType: route.type })}
+                        onClick={() => onAssociate({ type: "route", id: route.id, name: route.name })}
                         className="meta-mono shrink-0 text-muted-foreground hover:text-foreground transition-colors underline underline-offset-4"
-                        title="Mark as already imported and manually link"
+                        title="Link to an existing journal entry"
                       >
                         Associate
                       </button>
@@ -489,6 +433,10 @@ export default function InboxPage() {
 
   const { data: items = [], isLoading: itemsLoading } = useQuery<GpxInboxItem[]>({
     queryKey: ["/api/inbox"],
+  });
+
+  const { data: fieldNotes = [] } = useQuery<FieldNote[]>({
+    queryKey: ["/api/field-notes"],
   });
 
   const webhookUrl = tokenData
@@ -567,6 +515,30 @@ export default function InboxPage() {
     });
   }
 
+  // Associate dialog state
+  const [associateTarget, setAssociateTarget] = useState<AssociateHint | null>(null);
+
+  const linkMutation = useMutation({
+    mutationFn: async ({ fieldNoteId, stravaId, stravaSource }: { fieldNoteId: string; stravaId: string; stravaSource: string }) => {
+      const res = await fetch(`/api/field-notes/${fieldNoteId}/strava`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stravaId, stravaSource }),
+      });
+      if (!res.ok) throw new Error("Failed to link");
+      return res.json();
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/field-notes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/field-notes", vars.fieldNoteId] });
+      setAssociateTarget(null);
+      toast({ title: "Linked to field note", description: "The Strava item is now associated with your journal entry." });
+    },
+    onError: () => {
+      toast({ title: "Link failed", variant: "destructive" });
+    },
+  });
 
   return (
     <div className="min-h-screen bg-background">
@@ -585,7 +557,7 @@ export default function InboxPage() {
         </div>
 
         {/* Strava */}
-        <StravaPanel onImported={handleStravaImported} />
+        <StravaPanel onImported={handleStravaImported} onAssociate={(hint) => setAssociateTarget(hint)} />
 
         {/* Webhook URL */}
         <section className="mb-12">
@@ -878,6 +850,62 @@ export default function InboxPage() {
             >
               {promoteMutation.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
               Add to journal →
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Associate dialog — pick an existing field note to link */}
+      <Dialog open={!!associateTarget} onOpenChange={(open) => !open && setAssociateTarget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-serif text-2xl font-normal">
+              Link to journal entry
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-2">
+            {associateTarget && (
+              <p className="meta-mono text-muted-foreground mb-4">
+                {associateTarget.type === "activity" ? "Activity" : "Route"}: <span className="text-foreground">{associateTarget.name}</span>
+              </p>
+            )}
+            {fieldNotes.length === 0 ? (
+              <p className="meta-mono text-muted-foreground">
+                No journal entries yet. Add a trip first, then come back to link it.
+              </p>
+            ) : (
+              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                {fieldNotes.map((note) => (
+                  <button
+                    key={note.id}
+                    type="button"
+                    onClick={() => {
+                      if (!associateTarget) return;
+                      linkMutation.mutate({
+                        fieldNoteId: note.id,
+                        stravaId: String(associateTarget.id),
+                        stravaSource: associateTarget.type === "activity" ? "strava-activity" : "strava-route",
+                      });
+                    }}
+                    disabled={linkMutation.isPending}
+                    className="w-full text-left px-3 py-2.5 rounded-md border border-border hover:border-foreground/40 transition-colors"
+                  >
+                    <div className="font-serif text-foreground text-sm">{note.title}</div>
+                    <div className="meta-mono text-muted-foreground text-xs mt-0.5">
+                      {note.tripType?.join(" · ")} · {note.date ? new Date(note.date).toLocaleDateString() : ""}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <button
+              type="button"
+              onClick={() => setAssociateTarget(null)}
+              className="meta-mono text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Cancel
             </button>
           </DialogFooter>
         </DialogContent>

@@ -434,6 +434,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Link a Strava activity/route to an existing field note
+  app.post("/api/field-notes/:id/strava", isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { stravaId, stravaSource } = req.body;
+      if (!stravaId || !stravaSource) {
+        return res.status(400).json({ message: "stravaId and stravaSource are required" });
+      }
+      const validSources = ["strava-activity", "strava-route"];
+      if (!validSources.includes(stravaSource)) {
+        return res.status(400).json({ message: "stravaSource must be strava-activity or strava-route" });
+      }
+      const fieldNote = await storage.getFieldNoteById(id);
+      if (!fieldNote) {
+        return res.status(404).json({ message: "Field note not found" });
+      }
+      const updated = await storage.updateFieldNote(id, {
+        stravaId: String(stravaId),
+        stravaSource,
+      });
+      res.json(updated);
+    } catch (error) {
+      console.error("Error linking Strava to field note:", error);
+      res.status(500).json({ message: "Failed to link Strava" });
+    }
+  });
+
   // Delete field note
   app.delete("/api/field-notes/:id", isAuthenticated, async (req, res) => {
     try {
