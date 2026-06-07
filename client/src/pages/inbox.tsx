@@ -172,7 +172,6 @@ function StravaPanel({ onImported }: { onImported: (hint: ImportedHint) => void 
       const isDuplicate = resp.status === 409;
 
       if (isDuplicate) {
-        // Server returns { message, inboxItemId } — look up the existing item
         const data = await resp.json().catch(() => ({} as any));
         if (data?.inboxItemId) {
           const listResp = await fetch("/api/inbox", { credentials: "include" });
@@ -197,13 +196,11 @@ function StravaPanel({ onImported }: { onImported: (hint: ImportedHint) => void 
         return;
       }
 
-      // If it's already promoted, just notify — don't reopen the dialog
       if (item.status === "promoted") {
         toast({ title: "Already in your journal", description: "This Strava item has already been added." });
         return;
       }
 
-      // Open the "Add to journal" dialog automatically with preloaded fields
       const suggestedTripType = type === "activity"
         ? mapStravaSportToTripType(meta.sportType ?? "")
         : mapStravaRouteTypeToTripType(meta.routeType ?? 0);
@@ -216,6 +213,68 @@ function StravaPanel({ onImported }: { onImported: (hint: ImportedHint) => void 
       });
     } catch {
       toast({ title: "Import failed", variant: "destructive" });
+    } finally {
+      setImportingId(null);
+    }
+  }
+
+  async function handleAssociate(
+    type: "activity" | "route",
+    id: number,
+    meta: { name: string; sportType?: string; routeType?: number },
+  ) {
+    const key = `${type}-${id}`;
+    setImportingId(key);
+    try {
+      const resp = await fetch(`/api/strava/associate/${type}/${id}`, {
+        method: "POST",
+        credentials: "include",
+      });
+      let item: GpxInboxItem | null = null;
+      const isDuplicate = resp.status === 409;
+
+      if (isDuplicate) {
+        const data = await resp.json().catch(() => ({} as any));
+        if (data?.inboxItemId) {
+          const listResp = await fetch("/api/inbox", { credentials: "include" });
+          if (listResp.ok) {
+            const list: GpxInboxItem[] = await listResp.json();
+            item = list.find(i => i.id === data.inboxItemId) ?? null;
+          }
+        }
+      } else if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        toast({ title: "Association failed", description: (data as any).message ?? "Unknown error", variant: "destructive" });
+        return;
+      } else {
+        item = await resp.json().catch(() => null);
+      }
+
+      setImportedIds(prev => new Set([...prev, key]));
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox"] });
+
+      if (!item?.id) {
+        toast({ title: isDuplicate ? "Already in your inbox" : "Associated", description: "Find it below to link to your journal." });
+        return;
+      }
+
+      if (item.status === "promoted") {
+        toast({ title: "Already in your journal", description: "This Strava item is already linked." });
+        return;
+      }
+
+      const suggestedTripType = type === "activity"
+        ? mapStravaSportToTripType(meta.sportType ?? "")
+        : mapStravaRouteTypeToTripType(meta.routeType ?? 0);
+      const sourceLabel = type === "activity" ? "Strava activity" : "Strava route";
+      onImported({
+        item,
+        suggestedTitle: meta.name,
+        suggestedDescription: `Associated with ${sourceLabel} on ${new Date().toLocaleDateString()}.`,
+        suggestedTripType,
+      });
+    } catch {
+      toast({ title: "Association failed", variant: "destructive" });
     } finally {
       setImportingId(null);
     }
@@ -309,18 +368,29 @@ function StravaPanel({ onImported }: { onImported: (hint: ImportedHint) => void 
                         <span>·</span><span>{formatDate(act.start_date)}</span>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      disabled={isImported || isLoading}
-                      onClick={() => handleImport("activity", act.id, { name: act.name, sportType: act.sport_type })}
-                      className={`meta-mono shrink-0 flex items-center gap-1 transition-colors ${
-                        isImported
-                          ? "text-muted-foreground"
-                          : "text-orange-500 hover:text-orange-600 underline underline-offset-4"
-                      }`}
-                    >
-                      {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : isImported ? "Imported" : "Import →"}
-                    </button>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <button
+                        type="button"
+                        disabled={isImported || isLoading}
+                        onClick={() => handleImport("activity", act.id, { name: act.name, sportType: act.sport_type })}
+                        className={`meta-mono shrink-0 flex items-center gap-1 transition-colors ${
+                          isImported
+                            ? "text-muted-foreground"
+                            : "text-orange-500 hover:text-orange-600 underline underline-offset-4"
+                        }`}
+                      >
+                        {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : isImported ? "Imported" : "Import →"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isImported || isLoading}
+                        onClick={() => handleAssociate("activity", act.id, { name: act.name, sportType: act.sport_type })}
+                        className="meta-mono shrink-0 text-muted-foreground hover:text-foreground transition-colors underline underline-offset-4"
+                        title="Mark as already imported and manually link"
+                      >
+                        Associate
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -351,18 +421,29 @@ function StravaPanel({ onImported }: { onImported: (hint: ImportedHint) => void 
                         {formatStravaElevation(route.elevation_gain) && <><span>·</span><span>{formatStravaElevation(route.elevation_gain)} gain</span></>}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      disabled={isImported || isLoading}
-                      onClick={() => handleImport("route", route.id, { name: route.name, routeType: route.type })}
-                      className={`meta-mono shrink-0 flex items-center gap-1 transition-colors ${
-                        isImported
-                          ? "text-muted-foreground"
-                          : "text-orange-500 hover:text-orange-600 underline underline-offset-4"
-                      }`}
-                    >
-                      {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : isImported ? "Imported" : "Import →"}
-                    </button>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <button
+                        type="button"
+                        disabled={isImported || isLoading}
+                        onClick={() => handleImport("route", route.id, { name: route.name, routeType: route.type })}
+                        className={`meta-mono shrink-0 flex items-center gap-1 transition-colors ${
+                          isImported
+                            ? "text-muted-foreground"
+                            : "text-orange-500 hover:text-orange-600 underline underline-offset-4"
+                        }`}
+                      >
+                        {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : isImported ? "Imported" : "Import →"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isImported || isLoading}
+                        onClick={() => handleAssociate("route", route.id, { name: route.name, routeType: route.type })}
+                        className="meta-mono shrink-0 text-muted-foreground hover:text-foreground transition-colors underline underline-offset-4"
+                        title="Mark as already imported and manually link"
+                      >
+                        Associate
+                      </button>
+                    </div>
                   </div>
                 );
               })}

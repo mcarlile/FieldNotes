@@ -64,6 +64,11 @@ async function runStartupMigrations() {
       ALTER TABLE gpx_inbox ADD COLUMN IF NOT EXISTS source text;
       ALTER TABLE gpx_inbox ADD COLUMN IF NOT EXISTS strava_id text;
     `);
+    // Add Strava tracking columns to field_notes if missing
+    await client.query(`
+      ALTER TABLE field_notes ADD COLUMN IF NOT EXISTS strava_id text;
+      ALTER TABLE field_notes ADD COLUMN IF NOT EXISTS strava_source text;
+    `);
     // Strava OAuth connections table
     await client.query(`
       CREATE TABLE IF NOT EXISTS strava_connections (

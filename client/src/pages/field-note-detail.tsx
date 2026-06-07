@@ -3,7 +3,7 @@ import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Modal } from "@carbon/react";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Trash2, ExternalLink } from "lucide-react";
 import PhotoLightbox from "@/components/photo-lightbox";
 import MapboxMap from "@/components/mapbox-map";
 import ElevationProfile from "@/components/elevation-profile";
@@ -227,25 +227,38 @@ export default function FieldNoteDetail() {
             {fieldNote.title}
           </h1>
 
-          {isAuthenticated && (
-            <div className="flex items-center gap-4 flex-shrink-0">
-              <Link
-                href={`/field-notes/${fieldNote.id}/edit`}
-                className="meta-mono text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
+          <div className="flex items-center gap-4 flex-shrink-0">
+            {fieldNote.stravaId && (
+              <a
+                href={`https://www.strava.com/${fieldNote.stravaSource === "strava-route" ? "routes" : "activities"}/${fieldNote.stravaId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="meta-mono text-orange-500 hover:text-orange-600 transition-colors flex items-center gap-1.5"
               >
-                <Pencil className="h-3 w-3" />
-                Edit
-              </Link>
-              <button
-                onClick={() => setShowDeleteModal(true)}
-                className="meta-mono text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1.5"
-                data-testid="button-delete"
-              >
-                <Trash2 className="h-3 w-3" />
-                Delete
-              </button>
-            </div>
-          )}
+                <ExternalLink className="h-3 w-3" />
+                Open in Strava
+              </a>
+            )}
+            {isAuthenticated && (
+              <>
+                <Link
+                  href={`/field-notes/${fieldNote.id}/edit`}
+                  className="meta-mono text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
+                >
+                  <Pencil className="h-3 w-3" />
+                  Edit
+                </Link>
+                <button
+                  onClick={() => setShowDeleteModal(true)}
+                  className="meta-mono text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1.5"
+                  data-testid="button-delete"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  Delete
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {fieldNote.description && (

@@ -1305,6 +1305,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         distance: stats?.distance ?? null,
         elevationGain: stats?.elevationGain ?? null,
         gpxData: stats?.coordinates ? { coordinates: stats.coordinates } : null,
+        stravaId: item.stravaId ?? null,
+        stravaSource: item.source ?? null,
       });
       await storage.updateInboxItemStatus(item.id, 'promoted');
       res.json({ fieldNote });
@@ -1621,6 +1623,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (err.message?.includes("not connected")) return res.status(401).json({ message: "Strava not connected" });
       console.error("Strava route import error:", err);
       res.status(500).json({ message: "Failed to import route" });
+    }
+  });
+
+  // Associate a Strava activity/route with a manually created trip
+  // (creates a lightweight inbox entry so promote still works, but no GPX download)
+  app.post("/api/strava/associate/:type/:stravaId", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const type = req.params.type;
+      if (type !== "activity" && type !== "route") {
+        return res.status(400).json({ message: "Invalid type. Must be 'activity' or 'route'." });
+      }
+      const { stravaId } = req.params;
+      const source = type === "activity" ? "strava-activity" : "strava-route";
+
+      // Dedup check
+      const existing = await storage.getInboxItemByStravaId(userId, source, stravaId);
+      if (existing) {
+        return res.status(409).json({ message: "Already in your inbox", inboxItemId: existing.id });
+      }
+
+      // Fetch metadata for the filename
+      let name = "Strava";
+      if (type === "activity") {
+        const resp = await stravaFetch(userId, `/activities/${stravaId}`);
+        if (resp.ok) {
+          const data = await resp.json() as { name: string; sport_type: string; start_date: string };
+          name = data.name;
+        }
+      } else {
+        const resp = await stravaFetch(userId, `/routes/${stravaId}`);
+        if (resp.ok) {
+          const data = await resp.json() as { name: string };
+          name = data.name;
+        }
+      }
+
+      const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 50);
+      const filename = `strava_${type}_${safeName}_${stravaId}.gpx`;
+
+      // Create an inbox entry with no GPX data (status stays pending so user can promote)
+      const inboxItem = await storage.createInboxItem({
+        userId,
+        filename,
+        rawGpx: "", // empty GPX — user will manage the trip manually
+        source,
+        stravaId,
+      });
+      res.status(201).json(inboxItem);
+    } catch (err: any) {
+      if (err.message?.includes("not connected")) return res.status(401).json({ message: "Strava not connected" });
+      console.error("Strava associate error:", err);
+      res.status(500).json({ message: "Failed to associate" });
     }
   });
 

@@ -63,6 +63,8 @@ export const fieldNotes = pgTable("field_notes", {
   distance: real("distance"), // in kilometers
   elevationGain: real("elevation_gain"), // in meters
   gpxData: jsonb("gpx_data"), // stored GPX track data
+  stravaId: text("strava_id"), // Strava activity/route ID
+  stravaSource: text("strava_source"), // 'strava-activity' | 'strava-route'
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
