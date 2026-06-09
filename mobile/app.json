@@ -25,7 +25,8 @@
     "plugins": [
       "expo-router",
       "expo-web-browser",
-      "expo-secure-store"
+      "expo-secure-store",
+      "react-native-maps"
     ],
     "experiments": {
       "typedRoutes": true
