@@ -5,12 +5,25 @@ import "./index.css";
 // Register service worker for PWA functionality
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
+    // Force-unregister old service workers that may have stale caches
+    navigator.serviceWorker.getRegistrations().then((registrations) => {
+      for (const registration of registrations) {
+        const scope = registration.scope;
+        const sw = registration.installing || registration.waiting || registration.active;
+        const scriptURL = sw?.scriptURL || '';
+        // If the old worker doesn't match our new sw.js, unregister it
+        if (!scriptURL.endsWith('/sw.js')) {
+          registration.unregister();
+        }
+      }
+    });
+
     navigator.serviceWorker.register('/sw.js')
       .then((registration) => {
-        console.log('SW registered: ', registration);
+        console.log('SW registered:', registration);
       })
       .catch((registrationError) => {
-        console.log('SW registration failed: ', registrationError);
+        console.log('SW registration failed:', registrationError);
       });
   });
 }
