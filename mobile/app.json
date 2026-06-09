@@ -26,7 +26,14 @@
       "expo-router",
       "expo-web-browser",
       "expo-secure-store",
-      "react-native-maps"
+      "react-native-maps",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Big Miles uses your photo library to attach photos to field notes.",
+          "cameraPermission": "Big Miles uses the camera to take photos for field notes."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

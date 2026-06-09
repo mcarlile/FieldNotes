@@ -16,6 +16,7 @@ import { useMemo, useState } from "react";
 import { getFieldNote, deleteFieldNote } from "../../src/api/fieldNotes";
 import TypeBadge from "../../src/components/TypeBadge";
 import LoadingView from "../../src/components/LoadingView";
+import PhotoUploadButton from "../../src/components/PhotoUploadButton";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 const PHOTO_SIZE = Math.floor((SCREEN_WIDTH - 20 * 2 - 10) / 2);
@@ -168,27 +169,30 @@ export default function FieldNoteDetail() {
           )}
 
           {/* Photos grid */}
-          {note.photos && note.photos.length > 0 && (
-            <View style={styles.photosSection}>
-              <Text style={styles.sectionHeader}>Photos · {note.photos.length}</Text>
-              <View style={styles.photoGrid}>
-                {note.photos.map((photo) => (
-                  <Pressable
-                    key={photo.id}
-                    onPress={() => setLightboxPhoto(photo.url)}
-                    style={styles.photoThumb}
-                  >
-                    <Image
-                      source={{ uri: photo.url }}
-                      style={styles.photoImage}
-                      contentFit="cover"
-                      transition={200}
-                    />
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-          )}
+          <View style={styles.photosSection}>
+            {note.photos && note.photos.length > 0 && (
+              <>
+                <Text style={styles.sectionHeader}>Photos · {note.photos.length}</Text>
+                <View style={styles.photoGrid}>
+                  {note.photos.map((photo) => (
+                    <Pressable
+                      key={photo.id}
+                      onPress={() => setLightboxPhoto(photo.url)}
+                      style={styles.photoThumb}
+                    >
+                      <Image
+                        source={{ uri: photo.url }}
+                        style={styles.photoImage}
+                        contentFit="cover"
+                        transition={200}
+                      />
+                    </Pressable>
+                  ))}
+                </View>
+              </>
+            )}
+            <PhotoUploadButton fieldNoteId={id!} />
+          </View>
         </View>
       </ScrollView>
 
