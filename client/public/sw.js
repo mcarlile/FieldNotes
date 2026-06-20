@@ -1,75 +1,31 @@
-const CACHE_NAME = 'big-miles-v2';
+// Kill-switch service worker.
+//
+// This app no longer uses a service worker. Earlier versions registered a
+// caching service worker that served a stale app shell, forcing users to open
+// the site in incognito to see updates. Browsers re-check this sw.js file on
+// every navigation, so shipping this self-destroying worker guarantees the old
+// worker is replaced by one that removes itself and all of its caches.
 
-// Install: claim clients immediately
-self.addEventListener('install', (event) => {
+self.addEventListener('install', () => {
+  // Activate immediately, replacing any previously installed worker.
   self.skipWaiting();
 });
 
-// Activate: clear old caches and take control
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME) {
-            console.log('Deleting old cache:', cacheName);
-            return caches.delete(cacheName);
-          }
-        })
-      );
-    }).then(() => self.clients.claim())
-  );
-});
+    (async () => {
+      // 1. Delete every cache this origin created.
+      const cacheNames = await caches.keys();
+      await Promise.all(cacheNames.map((name) => caches.delete(name)));
 
-// Fetch: network-first for HTML/API, cache-first for hashed assets
-self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
-  const isSameOrigin = url.origin === self.location.origin;
+      // 2. Unregister this service worker so nothing intercepts requests anymore.
+      await self.registration.unregister();
 
-  // Skip non-GET, API calls, and external requests
-  if (event.request.method !== 'GET' ||
-      url.pathname.startsWith('/api/') ||
-      url.pathname.includes('/video/') ||
-      !isSameOrigin) {
-    return;
-  }
-
-  // Hash-fingerprinted assets (e.g., /assets/index-Dv7TvVuV.js) — cache-first
-  if (url.pathname.startsWith('/assets/')) {
-    event.respondWith(
-      caches.match(event.request).then((cached) => {
-        if (cached) return cached;
-        return fetch(event.request).then((response) => {
-          if (response.ok && response.type === 'basic') {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          }
-          return response;
-        });
-      })
-    );
-    return;
-  }
-
-  // HTML pages and other navigation — network-first, cache as fallback
-  event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        if (response.ok && response.type === 'basic') {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-        }
-        return response;
-      })
-      .catch(() => {
-        return caches.match(event.request).then((cached) => {
-          if (cached) return cached;
-          // Fallback: return cached root page for navigation
-          if (event.request.destination === 'document') {
-            return caches.match('/');
-          }
-          return new Response('Offline', { status: 503 });
-        });
-      })
+      // 3. Reload every open tab so they re-fetch fresh content from the server.
+      const clients = await self.clients.matchAll({ type: 'window' });
+      for (const client of clients) {
+        client.navigate(client.url);
+      }
+    })()
   );
 });
