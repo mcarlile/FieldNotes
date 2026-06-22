@@ -1,4 +1,4 @@
-import { Switch, Route, useLocation } from "wouter";
+import { Switch, Route, useLocation, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { CarbonNotificationContainer } from "@/components/carbon-notification";
@@ -32,8 +32,16 @@ function RequireAuth({ component: Component }: { component: ComponentType<any> }
   return <Component />;
 }
 
+function RootRoute() {
+  const { isAuthenticated } = useAuth();
+  if (isAuthenticated) {
+    return <Redirect to="/dashboard" />;
+  }
+  return <Home />;
+}
+
 function AppContent() {
-  const { isLoading, isAuthenticated } = useAuth();
+  const { isLoading } = useAuth();
   const [location] = useLocation();
 
   if (isLoading) {
@@ -48,7 +56,7 @@ function AppContent() {
     <>
       {location !== "/" && <GlobalHeader />}
       <Switch>
-        <Route path="/" component={Home} />
+        <Route path="/" component={RootRoute} />
         <Route path="/dashboard">{() => <RequireAuth component={Dashboard} />}</Route>
         <Route path="/field-notes/:id" component={FieldNoteDetail} />
         <Route path="/admin">{() => <RequireAuth component={Admin} />}</Route>
