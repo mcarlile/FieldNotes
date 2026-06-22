@@ -8,8 +8,6 @@ import { relations } from "drizzle-orm";
 export const stravaConnections = pgTable("strava_connections", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: text("user_id").notNull().unique(),
-  stravaClientId: text("strava_client_id"),
-  stravaClientSecret: text("strava_client_secret"),
   stravaAthleteId: integer("strava_athlete_id"),
   accessToken: text("access_token"),
   refreshToken: text("refresh_token"),

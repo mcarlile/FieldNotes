@@ -1509,11 +1509,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get the OAuth redirect URI the user must whitelist in their Strava app
-  app.get("/api/strava/redirect-uri", isAuthenticated, (req: any, res) => {
-    res.json({ redirectUri: `https://${req.hostname}/api/strava/callback`, domain: req.hostname });
-  });
-
   // Disconnect
   app.delete("/api/strava/disconnect", isAuthenticated, async (req: any, res) => {
     try {

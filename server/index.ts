@@ -74,8 +74,6 @@ async function runStartupMigrations() {
       CREATE TABLE IF NOT EXISTS strava_connections (
         id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id text NOT NULL UNIQUE,
-        strava_client_id text,
-        strava_client_secret text,
         strava_athlete_id integer,
         access_token text,
         refresh_token text,
@@ -85,13 +83,13 @@ async function runStartupMigrations() {
         updated_at timestamp DEFAULT now() NOT NULL
       );
     `);
-    // Add new columns if missing (idempotent)
+    // Drop legacy per-user app credential columns (now using a single shared Strava app)
     await client.query(`
       ALTER TABLE strava_connections
-        ADD COLUMN IF NOT EXISTS strava_client_id text,
-        ADD COLUMN IF NOT EXISTS strava_client_secret text;
+        DROP COLUMN IF EXISTS strava_client_id,
+        DROP COLUMN IF EXISTS strava_client_secret;
     `);
-    // Make previously-required columns nullable so users can store credentials before connecting
+    // Make previously-required columns nullable so a row can exist before the OAuth handshake completes
     await client.query(`
       ALTER TABLE strava_connections
         ALTER COLUMN strava_athlete_id DROP NOT NULL,

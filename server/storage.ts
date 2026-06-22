@@ -56,7 +56,6 @@ export interface IStorage {
   getStravaConnection(userId: string): Promise<StravaConnection | undefined>;
   upsertStravaConnection(data: InsertStravaConnection): Promise<StravaConnection>;
   updateStravaTokens(userId: string, accessToken: string, refreshToken: string, expiresAt: number): Promise<void>;
-  updateStravaCredentials(userId: string, clientId: string, clientSecret: string): Promise<void>;
   deleteStravaConnection(userId: string): Promise<void>;
 
   // Mobile tokens
@@ -422,8 +421,6 @@ export class DatabaseStorage implements IStorage {
       .onConflictDoUpdate({
         target: stravaConnections.userId,
         set: {
-          stravaClientId: data.stravaClientId,
-          stravaClientSecret: data.stravaClientSecret,
           stravaAthleteId: data.stravaAthleteId,
           accessToken: data.accessToken,
           refreshToken: data.refreshToken,
@@ -440,15 +437,6 @@ export class DatabaseStorage implements IStorage {
     await db.update(stravaConnections)
       .set({ accessToken, refreshToken, expiresAt, updatedAt: new Date() })
       .where(eq(stravaConnections.userId, userId));
-  }
-
-  async updateStravaCredentials(userId: string, stravaClientId: string, stravaClientSecret: string): Promise<void> {
-    await db.insert(stravaConnections)
-      .values({ userId, stravaClientId, stravaClientSecret })
-      .onConflictDoUpdate({
-        target: stravaConnections.userId,
-        set: { stravaClientId, stravaClientSecret, updatedAt: new Date() },
-      });
   }
 
   async deleteStravaConnection(userId: string): Promise<void> {
@@ -846,7 +834,6 @@ export class MemStorage implements IStorage {
   async getStravaConnection(_userId: string): Promise<StravaConnection | undefined> { return undefined; }
   async upsertStravaConnection(_data: InsertStravaConnection): Promise<StravaConnection> { throw new Error("Not implemented"); }
   async updateStravaTokens(_userId: string, _accessToken: string, _refreshToken: string, _expiresAt: number): Promise<void> {}
-  async updateStravaCredentials(_userId: string, _clientId: string, _clientSecret: string): Promise<void> {}
   async deleteStravaConnection(_userId: string): Promise<void> {}
 
   // Mobile tokens (stubs)
