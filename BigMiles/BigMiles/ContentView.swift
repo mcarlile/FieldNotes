@@ -1,24 +1,17 @@
-//
-//  ContentView.swift
-//  BigMiles
-//
-//  Created by McKenzie Carlile on 6/27/26.
-//
-
 import SwiftUI
 
 struct ContentView: View {
+    @EnvironmentObject var auth: AuthManager
+
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        if auth.isAuthenticated {
+            NotesListView()
+        } else {
+            LoginView()
         }
-        .padding()
     }
 }
 
 #Preview {
-    ContentView()
+    ContentView().environmentObject(AuthManager.shared)
 }
