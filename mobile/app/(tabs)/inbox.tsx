@@ -18,8 +18,16 @@ import LoadingView from "../../src/components/LoadingView";
 
 const TRIP_TYPES = [
   "hiking", "backpacking", "cycling", "running",
-  "paddling", "fishing", "motorcycle", "climbing", "skiing", "other",
+  "paddling", "fishing", "motorcycle", "climbing", "skiing", "openwater", "other",
 ];
+
+const TRIP_TYPE_LABELS: Record<string, string> = {
+  openwater: "Open Water Swimming",
+};
+
+function tripTypeLabel(t: string) {
+  return TRIP_TYPE_LABELS[t] ?? t.charAt(0).toUpperCase() + t.slice(1);
+}
 
 function SourceBadge({ source }: { source: string | null }) {
   if (!source) return null;
@@ -203,7 +211,7 @@ export default function InboxTab() {
                   style={[styles.typePill, selectedTypes.includes(t) && styles.typePillActive]}
                 >
                   <Text style={[styles.typePillText, selectedTypes.includes(t) && styles.typePillTextActive]}>
-                    {t.charAt(0).toUpperCase() + t.slice(1)}
+                    {tripTypeLabel(t)}
                   </Text>
                 </Pressable>
               ))}

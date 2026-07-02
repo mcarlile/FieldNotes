@@ -10,16 +10,17 @@ import { Checkbox } from "@/components/ui/checkbox";
 import type { FieldNote } from "@shared/schema";
 
 const availableTripTypes = [
-  "Hiking",
-  "Cycling",
-  "Running",
-  "Backpacking",
-  "Paddling",
-  "Fishing",
-  "Motorcycle",
-  "Climbing",
-  "Skiing",
-  "Other",
+  { id: "hiking", label: "Hiking" },
+  { id: "cycling", label: "Cycling" },
+  { id: "running", label: "Running" },
+  { id: "backpacking", label: "Backpacking" },
+  { id: "paddling", label: "Paddling" },
+  { id: "fishing", label: "Fishing" },
+  { id: "motorcycle", label: "Motorcycle" },
+  { id: "climbing", label: "Climbing" },
+  { id: "skiing", label: "Skiing" },
+  { id: "openwater", label: "Open Water Swimming" },
+  { id: "other", label: "Other" },
 ];
 
 const distanceOptions = [
@@ -89,7 +90,7 @@ export default function Dashboard() {
   });
 
   const fieldNotes = allFieldNotes.filter((note) => {
-    if (tripTypes.length > 0 && !tripTypes.some((t) => note.tripType.map((x) => x.toLowerCase()).includes(t.toLowerCase()))) return false;
+    if (tripTypes.length > 0 && !tripTypes.some((t) => note.tripType.map((x) => x.toLowerCase()).includes(t))) return false;
 
     if (distanceFilter !== "any") {
       const d = note.distance || 0;
@@ -130,7 +131,7 @@ export default function Dashboard() {
     tripTypes.length === 0
       ? "Trip type"
       : tripTypes.length === 1
-      ? tripTypes[0]
+      ? availableTripTypes.find((t) => t.id === tripTypes[0])?.label ?? tripTypes[0]
       : `${tripTypes.length} types`;
 
   const distancePillLabel =
@@ -235,12 +236,12 @@ export default function Dashboard() {
               <div className="meta-mono text-muted-foreground mb-2">Trip type</div>
               <div className="space-y-2 max-h-64 overflow-y-auto">
                 {availableTripTypes.map((type) => (
-                  <label key={type} className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+                  <label key={type.id} className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
                     <Checkbox
-                      checked={tripTypes.includes(type)}
-                      onCheckedChange={(c) => handleTripTypeChange(type, !!c)}
+                      checked={tripTypes.includes(type.id)}
+                      onCheckedChange={(c) => handleTripTypeChange(type.id, !!c)}
                     />
-                    {type}
+                    {type.label}
                   </label>
                 ))}
               </div>

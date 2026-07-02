@@ -24,6 +24,7 @@ const TRIP_TYPES = [
   { id: "motorcycle", label: "Motorcycle" },
   { id: "climbing", label: "Climbing" },
   { id: "skiing", label: "Skiing" },
+  { id: "openwater", label: "Open Water Swimming" },
   { id: "other", label: "Other" },
 ];
 
@@ -98,6 +99,7 @@ function mapStravaSportToTripType(sportType: string): string {
   if (s.includes("hike")) return "hiking";
   if (s.includes("walk")) return "hiking";
   if (s.includes("ski")) return "skiing";
+  if (s.includes("swim")) return "openwater";
   if (s.includes("kayak") || s.includes("canoe") || s.includes("paddl") || s.includes("row")) return "paddling";
   if (s.includes("climb")) return "climbing";
   if (s.includes("motor")) return "motorcycle";
