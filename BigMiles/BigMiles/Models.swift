@@ -18,6 +18,48 @@ struct FieldNote: Codable, Identifiable, Hashable {
         let coordinates: [[Double]]?
     }
 
+    // gpxData can arrive as a JSON object OR as a raw JSON string depending on
+    // how it was originally stored. Handle both so the decoder never throws.
+    enum CodingKeys: String, CodingKey {
+        case id, title, description, tripType, date, distance, elevationGain, photos, gpxData
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id            = try c.decode(String.self, forKey: .id)
+        title         = try c.decode(String.self, forKey: .title)
+        description   = try c.decodeIfPresent(String.self, forKey: .description)
+        tripType      = try c.decode([String].self, forKey: .tripType)
+        date          = try c.decode(String.self, forKey: .date)
+        distance      = try c.decodeIfPresent(Double.self, forKey: .distance)
+        elevationGain = try c.decodeIfPresent(Double.self, forKey: .elevationGain)
+        photos        = try c.decodeIfPresent([Photo].self, forKey: .photos)
+
+        // Try object first, then fall back to parsing a JSON string
+        if let gpx = try? c.decodeIfPresent(GpxData.self, forKey: .gpxData) {
+            gpxData = gpx
+        } else if let raw = try? c.decodeIfPresent(String.self, forKey: .gpxData),
+                  let data = raw.data(using: .utf8),
+                  let gpx = try? JSONDecoder().decode(GpxData.self, from: data) {
+            gpxData = gpx
+        } else {
+            gpxData = nil
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(title, forKey: .title)
+        try c.encodeIfPresent(description, forKey: .description)
+        try c.encode(tripType, forKey: .tripType)
+        try c.encode(date, forKey: .date)
+        try c.encodeIfPresent(distance, forKey: .distance)
+        try c.encodeIfPresent(elevationGain, forKey: .elevationGain)
+        try c.encodeIfPresent(photos, forKey: .photos)
+        try c.encodeIfPresent(gpxData, forKey: .gpxData)
+    }
+
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
     static func == (lhs: FieldNote, rhs: FieldNote) -> Bool { lhs.id == rhs.id }
 
