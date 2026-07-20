@@ -1,4 +1,4 @@
-import { fieldNotes, photos, trailcamProjects, videoClips, webhookTokens, gpxInbox, stravaConnections, type FieldNote, type Photo, type InsertFieldNote, type InsertPhoto, type TrailcamProject, type VideoClip, type InsertTrailcamProject, type InsertVideoClip, type WebhookToken, type GpxInboxItem, type StravaConnection, type InsertStravaConnection } from "@shared/schema";
+import { fieldNotes, photos, trailcamProjects, videoClips, webhookTokens, gpxInbox, stravaConnections, expeditions, expeditionFieldNotes, type FieldNote, type Photo, type InsertFieldNote, type InsertPhoto, type TrailcamProject, type VideoClip, type InsertTrailcamProject, type InsertVideoClip, type WebhookToken, type GpxInboxItem, type StravaConnection, type InsertStravaConnection, type Expedition, type InsertExpedition, type ExpeditionFieldNote } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, like, ilike, and, or, sql } from "drizzle-orm";
 
@@ -63,6 +63,23 @@ export interface IStorage {
   getMobileToken(token: string): Promise<{ userId: string; expiresAt: Date } | undefined>;
   createMobileToken(userId: string, token: string, expiresAt: Date): Promise<void>;
   deleteMobileTokensByUser(userId: string): Promise<void>;
+
+  // Publishing — field notes
+  publishFieldNote(id: string, slug: string): Promise<FieldNote | undefined>;
+  unpublishFieldNote(id: string): Promise<FieldNote | undefined>;
+  getPublishedFieldNoteBySlug(slug: string): Promise<FieldNote | undefined>;
+
+  // Expeditions
+  getExpeditionsByUser(userId: string): Promise<Expedition[]>;
+  getExpeditionById(id: string): Promise<Expedition | undefined>;
+  createExpedition(data: InsertExpedition): Promise<Expedition>;
+  updateExpedition(id: string, data: Partial<InsertExpedition>): Promise<Expedition | undefined>;
+  deleteExpedition(id: string): Promise<boolean>;
+  publishExpedition(id: string, slug: string): Promise<Expedition | undefined>;
+  unpublishExpedition(id: string): Promise<Expedition | undefined>;
+  getPublishedExpeditionBySlug(slug: string): Promise<Expedition | undefined>;
+  setExpeditionFieldNotes(expeditionId: string, fieldNoteIds: string[]): Promise<void>;
+  getExpeditionFieldNotes(expeditionId: string): Promise<Array<{ fieldNote: FieldNote; position: number }>>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -478,6 +495,110 @@ export class DatabaseStorage implements IStorage {
     const { pool } = await import("./db");
     await pool.query("DELETE FROM mobile_tokens WHERE user_id = $1", [userId]);
   }
+
+  // Publishing — field notes
+  async publishFieldNote(id: string, slug: string): Promise<FieldNote | undefined> {
+    const [note] = await db
+      .update(fieldNotes)
+      .set({ isPublished: true, publishedAt: new Date(), slug })
+      .where(eq(fieldNotes.id, id))
+      .returning();
+    return note;
+  }
+
+  async unpublishFieldNote(id: string): Promise<FieldNote | undefined> {
+    const [note] = await db
+      .update(fieldNotes)
+      .set({ isPublished: false })
+      .where(eq(fieldNotes.id, id))
+      .returning();
+    return note;
+  }
+
+  async getPublishedFieldNoteBySlug(slug: string): Promise<FieldNote | undefined> {
+    const [note] = await db
+      .select()
+      .from(fieldNotes)
+      .where(and(eq(fieldNotes.slug, slug), eq(fieldNotes.isPublished, true)));
+    return note;
+  }
+
+  // Expeditions
+  async getExpeditionsByUser(userId: string): Promise<Expedition[]> {
+    return db
+      .select()
+      .from(expeditions)
+      .where(eq(expeditions.userId, userId))
+      .orderBy(desc(expeditions.createdAt));
+  }
+
+  async getExpeditionById(id: string): Promise<Expedition | undefined> {
+    const [exp] = await db.select().from(expeditions).where(eq(expeditions.id, id));
+    return exp;
+  }
+
+  async createExpedition(data: InsertExpedition): Promise<Expedition> {
+    const [exp] = await db.insert(expeditions).values(data).returning();
+    return exp;
+  }
+
+  async updateExpedition(id: string, data: Partial<InsertExpedition>): Promise<Expedition | undefined> {
+    const [exp] = await db
+      .update(expeditions)
+      .set(data)
+      .where(eq(expeditions.id, id))
+      .returning();
+    return exp;
+  }
+
+  async deleteExpedition(id: string): Promise<boolean> {
+    const result = await db.delete(expeditions).where(eq(expeditions.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async publishExpedition(id: string, slug: string): Promise<Expedition | undefined> {
+    const [exp] = await db
+      .update(expeditions)
+      .set({ isPublished: true, publishedAt: new Date(), slug })
+      .where(eq(expeditions.id, id))
+      .returning();
+    return exp;
+  }
+
+  async unpublishExpedition(id: string): Promise<Expedition | undefined> {
+    const [exp] = await db
+      .update(expeditions)
+      .set({ isPublished: false })
+      .where(eq(expeditions.id, id))
+      .returning();
+    return exp;
+  }
+
+  async getPublishedExpeditionBySlug(slug: string): Promise<Expedition | undefined> {
+    const [exp] = await db
+      .select()
+      .from(expeditions)
+      .where(and(eq(expeditions.slug, slug), eq(expeditions.isPublished, true)));
+    return exp;
+  }
+
+  async setExpeditionFieldNotes(expeditionId: string, fieldNoteIds: string[]): Promise<void> {
+    await db.delete(expeditionFieldNotes).where(eq(expeditionFieldNotes.expeditionId, expeditionId));
+    if (fieldNoteIds.length === 0) return;
+    await db.insert(expeditionFieldNotes).values(
+      fieldNoteIds.map((fieldNoteId, position) => ({ expeditionId, fieldNoteId, position }))
+    );
+  }
+
+  async getExpeditionFieldNotes(expeditionId: string): Promise<Array<{ fieldNote: FieldNote; position: number }>> {
+    const rows = await db
+      .select({ fieldNote: fieldNotes, position: expeditionFieldNotes.position })
+      .from(expeditionFieldNotes)
+      .innerJoin(fieldNotes, eq(expeditionFieldNotes.fieldNoteId, fieldNotes.id))
+      .where(eq(expeditionFieldNotes.expeditionId, expeditionId))
+      .orderBy(asc(expeditionFieldNotes.position));
+    return rows;
+  }
 }
 
 // Temporary in-memory storage with sample data for demonstration
@@ -658,6 +779,9 @@ export class MemStorage implements IStorage {
       distance: insertFieldNote.distance ?? null,
       elevationGain: insertFieldNote.elevationGain ?? null,
       gpxData: insertFieldNote.gpxData ?? null,
+      isPublished: false,
+      publishedAt: null,
+      slug: null,
       createdAt: new Date()
     };
     this.fieldNotesData.push(fieldNote);
@@ -847,6 +971,21 @@ export class MemStorage implements IStorage {
   async getMobileToken(_token: string): Promise<{ userId: string; expiresAt: Date } | undefined> { return undefined; }
   async createMobileToken(_userId: string, _token: string, _expiresAt: Date): Promise<void> {}
   async deleteMobileTokensByUser(_userId: string): Promise<void> {}
+
+  // Publishing + expeditions (stubs)
+  async publishFieldNote(_id: string, _slug: string): Promise<FieldNote | undefined> { return undefined; }
+  async unpublishFieldNote(_id: string): Promise<FieldNote | undefined> { return undefined; }
+  async getPublishedFieldNoteBySlug(_slug: string): Promise<FieldNote | undefined> { return undefined; }
+  async getExpeditionsByUser(_userId: string): Promise<Expedition[]> { return []; }
+  async getExpeditionById(_id: string): Promise<Expedition | undefined> { return undefined; }
+  async createExpedition(_data: InsertExpedition): Promise<Expedition> { throw new Error("Not implemented"); }
+  async updateExpedition(_id: string, _data: Partial<InsertExpedition>): Promise<Expedition | undefined> { return undefined; }
+  async deleteExpedition(_id: string): Promise<boolean> { return false; }
+  async publishExpedition(_id: string, _slug: string): Promise<Expedition | undefined> { return undefined; }
+  async unpublishExpedition(_id: string): Promise<Expedition | undefined> { return undefined; }
+  async getPublishedExpeditionBySlug(_slug: string): Promise<Expedition | undefined> { return undefined; }
+  async setExpeditionFieldNotes(_expeditionId: string, _fieldNoteIds: string[]): Promise<void> {}
+  async getExpeditionFieldNotes(_expeditionId: string): Promise<Array<{ fieldNote: FieldNote; position: number }>> { return []; }
 }
 
 // Use database storage for permanent data persistence

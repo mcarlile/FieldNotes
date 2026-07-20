@@ -50,3 +50,16 @@ export async function deleteFieldNote(id: string): Promise<void> {
   const res = await apiRequest(`/api/field-notes/${id}`, "DELETE");
   if (!res.ok) throw new Error("Failed to delete");
 }
+
+export interface CreateFieldNoteInput {
+  title: string;
+  description?: string;
+  date: string;
+  tripType: string[];
+  distance?: number;
+  elevationGain?: number;
+}
+
+export async function createFieldNote(data: CreateFieldNoteInput): Promise<FieldNote> {
+  return apiJson<FieldNote>("/api/field-notes", "POST", data);
+}

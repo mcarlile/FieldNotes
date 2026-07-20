@@ -115,6 +115,39 @@ async function runStartupMigrations() {
       );
       CREATE INDEX IF NOT EXISTS mobile_tokens_token_idx ON mobile_tokens (token);
     `);
+    // Publishing fields on field_notes
+    await client.query(`
+      ALTER TABLE field_notes
+        ADD COLUMN IF NOT EXISTS is_published boolean NOT NULL DEFAULT false,
+        ADD COLUMN IF NOT EXISTS published_at timestamp,
+        ADD COLUMN IF NOT EXISTS slug text;
+      CREATE UNIQUE INDEX IF NOT EXISTS field_notes_slug_idx ON field_notes (slug)
+        WHERE slug IS NOT NULL;
+    `);
+    // Expeditions + expedition_field_notes
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS expeditions (
+        id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id text NOT NULL,
+        title text NOT NULL,
+        description text,
+        cover_photo_url text,
+        slug text UNIQUE,
+        is_published boolean NOT NULL DEFAULT false,
+        published_at timestamp,
+        created_at timestamp DEFAULT now() NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS expeditions_user_id_idx ON expeditions (user_id);
+      CREATE TABLE IF NOT EXISTS expedition_field_notes (
+        id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        expedition_id varchar NOT NULL REFERENCES expeditions(id) ON DELETE CASCADE,
+        field_note_id varchar NOT NULL REFERENCES field_notes(id) ON DELETE CASCADE,
+        position integer NOT NULL DEFAULT 0,
+        UNIQUE(expedition_id, field_note_id)
+      );
+      CREATE INDEX IF NOT EXISTS expedition_field_notes_expedition_idx
+        ON expedition_field_notes (expedition_id);
+    `);
     log("Startup migrations complete");
   } catch (err) {
     log(`Startup migration warning: ${(err as Error).message}`);

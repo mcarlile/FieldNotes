@@ -81,9 +81,7 @@ export default function NotesTab() {
       {/* FAB — link to web */}
       <Pressable
         style={styles.fab}
-        onPress={() =>
-          router.push({ pathname: "/field-notes/[id]", params: { id: "new" } })
-        }
+        onPress={() => router.push("/field-notes/new")}
       >
         <Text style={styles.fabText}>+</Text>
       </Pressable>
