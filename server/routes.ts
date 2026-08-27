@@ -1,12 +1,12 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertFieldNoteSchema, insertPhotoSchema, insertTrailcamProjectSchema, insertVideoClipSchema } from "@shared/schema";
+import { insertFieldNoteSchema, insertPhotoSchema, insertTrailcamProjectSchema, insertVideoClipSchema, insertExpeditionSchema } from "@shared/schema";
 import { ObjectStorageService, ObjectNotFoundError, objectStorageService } from "./objectStorage";
 import { extractExifData, extractExifFromBuffer } from "./exif-extractor";
 import { startVideoProcessing } from "./videoProcessor";
 import { resolveClipCoordinates } from "@shared/gpx-utils";
-import { isAuthenticated } from "./replit_integrations/auth";
+import { requireAuth } from "./middlewares/clerkAuth";
 import multer from 'multer';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -28,9 +28,9 @@ const MAX_CONCURRENT_UPLOADS_PER_IP = 3;
 const UPLOAD_TOKEN_SECRET = process.env.UPLOAD_TOKEN_SECRET || crypto.randomBytes(32).toString('hex');
 
 // Cleanup old uploads periodically
-const activeUploads = new Map<string, { 
-  startTime: number; 
-  totalChunks: number; 
+const activeUploads = new Map<string, {
+  startTime: number;
+  totalChunks: number;
   receivedChunks: Set<number>;
   token: string;
   ip: string;
@@ -44,6 +44,7 @@ const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
 
 // Concurrent uploads by IP
 const uploadsPerIP = new Map<string, Set<string>>();
+const stravaOAuthStates = new Map<string, { userId: string; createdAt: number }>();
 
 if (!fs.existsSync(CHUNK_UPLOAD_DIR)) {
   fs.mkdirSync(CHUNK_UPLOAD_DIR, { recursive: true });
@@ -61,16 +62,16 @@ function verifyUploadToken(token: string, ip: string): { uploadKey: string } | n
   try {
     const [payloadB64, signature] = token.split('.');
     if (!payloadB64 || !signature) return null;
-    
+
     const payload = Buffer.from(payloadB64, 'base64').toString();
     const expectedSignature = crypto.createHmac('sha256', UPLOAD_TOKEN_SECRET).update(payload).digest('hex');
-    
+
     if (signature !== expectedSignature) return null;
-    
+
     const data = JSON.parse(payload);
     if (Date.now() > data.exp) return null;
     if (data.ip !== ip) return null;
-    
+
     return { uploadKey: data.uploadKey };
   } catch {
     return null;
@@ -81,16 +82,16 @@ function verifyUploadToken(token: string, ip: string): { uploadKey: string } | n
 function checkRateLimit(ip: string): boolean {
   const now = Date.now();
   const entry = rateLimitMap.get(ip);
-  
+
   if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
     rateLimitMap.set(ip, { count: 1, windowStart: now });
     return true;
   }
-  
+
   if (entry.count >= RATE_LIMIT_MAX_REQUESTS) {
     return false;
   }
-  
+
   entry.count++;
   return true;
 }
@@ -105,7 +106,7 @@ function cleanupStaleUploads() {
       if (fs.existsSync(chunkDir)) {
         fs.rmSync(chunkDir, { recursive: true, force: true });
       }
-      
+
       // Clean up IP tracking
       const ipUploads = uploadsPerIP.get(data.ip);
       if (ipUploads) {
@@ -114,12 +115,12 @@ function cleanupStaleUploads() {
           uploadsPerIP.delete(data.ip);
         }
       }
-      
+
       activeUploads.delete(key);
       console.log(`Cleaned up stale upload: ${key}`);
     }
   }
-  
+
   // Clean up expired tokens
   const tokenEntries = Array.from(validTokens.entries());
   for (const [token, data] of tokenEntries) {
@@ -127,47 +128,71 @@ function cleanupStaleUploads() {
       validTokens.delete(token);
     }
   }
+
+  for (const [state, data] of Array.from(stravaOAuthStates.entries())) {
+    if (now - data.createdAt > 10 * 60 * 1000) {
+      stravaOAuthStates.delete(state);
+    }
+  }
 }
 setInterval(cleanupStaleUploads, 5 * 60 * 1000); // Run every 5 minutes
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Current user profile — works for both web sessions and mobile Bearer tokens
-  app.get("/api/me", isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const { pool } = await import("./db");
-      const result = await pool.query(
-        "SELECT id, email, first_name, last_name, profile_image_url FROM users WHERE id = $1",
-        [userId]
-      );
-      if (!result.rows[0]) return res.status(404).json({ message: "User not found" });
-      res.json(result.rows[0]);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch user" });
-    }
+  async function getOwnedFieldNote(id: string, userId: string) {
+    const note = await storage.getFieldNoteById(id);
+    return note?.userId === userId ? note : undefined;
+  }
+
+  async function getOwnedExpedition(id: string, userId: string) {
+    const expedition = await storage.getExpeditionById(id);
+    return expedition?.userId === userId ? expedition : undefined;
+  }
+
+  async function ownsEveryFieldNote(userId: string, fieldNoteIds: string[]) {
+    const uniqueIds = Array.from(new Set(fieldNoteIds));
+    if (uniqueIds.length !== fieldNoteIds.length) return false;
+    const notes = await Promise.all(uniqueIds.map((id) => getOwnedFieldNote(id, userId)));
+    return notes.every(Boolean);
+  }
+
+  // Current user profile is resolved through the Clerk-authenticated local user.
+  app.get("/api/me", requireAuth, async (req: any, res) => {
+    res.json(req.dbUser);
   });
 
-  // Mobile logout — revokes the Bearer token
-  app.delete("/api/auth/mobile-logout", isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      await storage.deleteMobileTokensByUser(userId);
-      res.json({ message: "Logged out" });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to logout" });
+  // Backwards-compatible native entry point. Authentication is performed by
+  // Clerk; the callback only exchanges the verified Clerk browser session for
+  // the revocable mobile token used by the existing iOS and Expo clients.
+  app.get("/api/login", (req, res) => {
+    if (req.query.redirectTo !== "mobile") {
+      return res.redirect("/sign-in");
     }
+    const callbackUrl = `${req.protocol}://${req.get("host")}/api/mobile-auth/callback`;
+    res.redirect(`/sign-in?redirect_url=${encodeURIComponent(callbackUrl)}`);
+  });
+
+  app.get("/api/mobile-auth/callback", requireAuth, async (req: any, res) => {
+    const token = crypto.randomBytes(48).toString("hex");
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    await storage.createMobileToken(req.dbUser.id, token, expiresAt);
+    res.redirect(`bigmiles://auth?token=${encodeURIComponent(token)}`);
+  });
+
+  app.delete("/api/auth/mobile-logout", requireAuth, async (req: any, res) => {
+    await storage.deleteMobileTokensByUser(req.dbUser.id);
+    res.status(204).send();
   });
 
   // Get all field notes with optional filters (includes photo count)
-  app.get("/api/field-notes", async (req, res) => {
+  app.get("/api/field-notes", requireAuth, async (req: any, res) => {
     try {
       const { search, tripType, sortOrder } = req.query;
-      const fieldNotes = await storage.getFieldNotes({
+      const fieldNotes = (await storage.getFieldNotes({
         search: search as string,
         tripType: tripType as string,
         sortOrder: sortOrder as 'recent' | 'oldest' | 'name',
-      });
-      
+      })).filter((note) => note.userId === req.dbUser.id);
+
       // Fetch photo counts for all field notes efficiently
       const fieldNotesWithCounts = await Promise.all(
         fieldNotes.map(async (note) => {
@@ -178,7 +203,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           };
         })
       );
-      
+
       res.json(fieldNotesWithCounts);
     } catch (error) {
       console.error("Error fetching field notes:", error);
@@ -187,23 +212,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get specific field note by ID with photos included
-  app.get("/api/field-notes/:id", async (req, res) => {
+  app.get("/api/field-notes/:id", requireAuth, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const fieldNote = await storage.getFieldNoteById(id);
+      const fieldNote = await getOwnedFieldNote(id, req.dbUser.id);
       if (!fieldNote) {
         return res.status(404).json({ message: "Field note not found" });
       }
-      
+
       // Also fetch photos in the same request to reduce round trips
       const photos = await storage.getPhotosByFieldNoteId(id);
       const fieldNoteWithPhotos = {
         ...fieldNote,
         photos
       };
-      
+
       // Add cache headers for better performance
-      res.set('Cache-Control', 'public, max-age=300'); // 5 minutes cache
+      res.set('Cache-Control', 'private, max-age=300'); // user-scoped, 5 minutes
       res.json(fieldNoteWithPhotos);
     } catch (error) {
       console.error("Error fetching field note:", error);
@@ -212,9 +237,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get photos for a specific field note
-  app.get("/api/field-notes/:id/photos", async (req, res) => {
+  app.get("/api/field-notes/:id/photos", requireAuth, async (req: any, res) => {
     try {
       const { id } = req.params;
+      if (!await getOwnedFieldNote(id, req.dbUser.id)) {
+        return res.status(404).json({ message: "Field note not found" });
+      }
       const photos = await storage.getPhotosByFieldNoteId(id);
       res.json(photos);
     } catch (error) {
@@ -224,11 +252,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get specific photo by ID
-  app.get("/api/photos/:id", async (req, res) => {
+  app.get("/api/photos/:id", requireAuth, async (req: any, res) => {
     try {
       const { id } = req.params;
       const photo = await storage.getPhotoById(id);
       if (!photo) {
+        return res.status(404).json({ message: "Photo not found" });
+      }
+      if (!await getOwnedFieldNote(photo.fieldNoteId, req.dbUser.id)) {
         return res.status(404).json({ message: "Photo not found" });
       }
       res.json(photo);
@@ -239,9 +270,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Extract EXIF data from an uploaded photo with optimized limits
-  const upload = multer({ 
+  const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { 
+    limits: {
       fileSize: 50 * 1024 * 1024, // 50MB limit
       files: 1,
       fieldSize: 1024 * 1024, // 1MB field limit
@@ -256,7 +287,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     }
   });
-  
+
   app.post("/api/photos/extract-exif", upload.single('photo'), async (req, res) => {
     try {
       if (!req.file) {
@@ -264,15 +295,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       console.log(`Extracting EXIF from uploaded file: ${req.file.originalname} (${req.file.size} bytes)`);
-      
+
       // Add timeout for EXIF processing
       const exifData = await Promise.race([
         extractExifFromBuffer(req.file.buffer, req.file.originalname),
-        new Promise<never>((_, reject) => 
+        new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error('EXIF extraction timeout')), 10000)
         )
       ]);
-      
+
       res.json({
         filename: req.file.originalname,
         fileSize: `${Math.round(req.file.size / 1024)} KB`,
@@ -298,7 +329,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`Extracting EXIF from photo URL: ${photoUrl}`);
       const exifData = await extractExifData(photoUrl);
-      
+
       res.json(exifData);
     } catch (error) {
       console.error("Error extracting EXIF from photo URL:", error);
@@ -310,21 +341,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/photos/update-all-exif", async (req, res) => {
     try {
       console.log('Starting batch EXIF extraction for all photos...');
-      
+
       // Get all photos without EXIF data
       const photos = await storage.getPhotosByFieldNoteId('');
       const photosWithoutExif = photos.filter(p => !p.camera);
-      
+
       console.log(`Found ${photosWithoutExif.length} photos without EXIF data`);
-      
+
       let successCount = 0;
       let errorCount = 0;
-      
+
       for (const photo of photosWithoutExif) {
         try {
           console.log(`Processing ${photo.filename}...`);
           const exifData = await extractExifData(photo.url);
-          
+
           if (Object.keys(exifData).length > 0) {
             await storage.updatePhoto(photo.id, {
               latitude: exifData.latitude,
@@ -347,7 +378,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           errorCount++;
         }
       }
-      
+
       res.json({
         message: `EXIF extraction complete`,
         processed: photosWithoutExif.length,
@@ -361,32 +392,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create new field note
-  app.post("/api/field-notes", isAuthenticated, async (req, res) => {
+  app.post("/api/field-notes", requireAuth, async (req: any, res) => {
     try {
       // Extract photos from the request body
       const { photos: photosData, ...fieldNoteData } = req.body;
-      
+
       // Convert string date to Date object
       const bodyWithDate = {
         ...fieldNoteData,
         date: fieldNoteData.date ? new Date(fieldNoteData.date) : undefined
       };
-      
+
       const result = insertFieldNoteSchema.safeParse(bodyWithDate);
       if (!result.success) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           message: "Invalid field note data",
-          errors: result.error.errors 
+          errors: result.error.errors
         });
       }
-      
-      const fieldNote = await storage.createFieldNote(result.data);
-      
+
+      const fieldNote = await storage.createFieldNote({
+        ...result.data,
+        userId: req.dbUser.id,
+      });
+
       // Create photos if provided
       if (photosData && Array.isArray(photosData)) {
         await storage.updateFieldNotePhotos(fieldNote.id, photosData);
       }
-      
+
       res.status(201).json(fieldNote);
     } catch (error) {
       console.error("Error creating field note:", error);
@@ -395,38 +429,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update field note
-  app.put("/api/field-notes/:id", isAuthenticated, async (req, res) => {
+  app.put("/api/field-notes/:id", requireAuth, async (req: any, res) => {
     try {
       const { id } = req.params;
-      
+      if (!await getOwnedFieldNote(id, req.dbUser.id)) {
+        return res.status(404).json({ message: "Field note not found" });
+      }
+
       // Extract photos from the request body
-      const { photos: photosData, ...fieldNoteData } = req.body;
-      
+      const { photos: photosData, userId: _ignoredUserId, ...fieldNoteData } = req.body;
+
       // Convert string date to Date object
       const bodyWithDate = {
         ...fieldNoteData,
         date: fieldNoteData.date ? new Date(fieldNoteData.date) : undefined
       };
-      
+
       const result = insertFieldNoteSchema.safeParse(bodyWithDate);
       if (!result.success) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           message: "Invalid field note data",
-          errors: result.error.errors 
+          errors: result.error.errors
         });
       }
-      
+
       // Update the field note
       const fieldNote = await storage.updateFieldNote(id, result.data);
       if (!fieldNote) {
         return res.status(404).json({ message: "Field note not found" });
       }
-      
+
       // Update photos if provided
       if (photosData && Array.isArray(photosData)) {
         await storage.updateFieldNotePhotos(id, photosData);
       }
-      
+
       res.json(fieldNote);
     } catch (error) {
       console.error("Error updating field note:", error);
@@ -435,7 +472,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Link a Strava activity/route to an existing field note
-  app.post("/api/field-notes/:id/strava", isAuthenticated, async (req: any, res) => {
+  app.post("/api/field-notes/:id/strava", requireAuth, async (req: any, res) => {
     try {
       const { id } = req.params;
       const { stravaId, stravaSource } = req.body;
@@ -446,7 +483,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!validSources.includes(stravaSource)) {
         return res.status(400).json({ message: "stravaSource must be strava-activity or strava-route" });
       }
-      const fieldNote = await storage.getFieldNoteById(id);
+      const fieldNote = await getOwnedFieldNote(id, req.dbUser.id);
       if (!fieldNote) {
         return res.status(404).json({ message: "Field note not found" });
       }
@@ -462,14 +499,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete field note
-  app.delete("/api/field-notes/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/field-notes/:id", requireAuth, async (req: any, res) => {
     try {
       const { id } = req.params;
+      if (!await getOwnedFieldNote(id, req.dbUser.id)) {
+        return res.status(404).json({ message: "Field note not found" });
+      }
       const deleted = await storage.deleteFieldNote(id);
       if (!deleted) {
         return res.status(404).json({ message: "Field note not found" });
       }
-      
+
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting field note:", error);
@@ -481,7 +521,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Note: objectStorageService is imported from ./objectStorage
 
   // Endpoint to get upload URL for photos (both POST and PUT for compatibility)
-  app.post("/api/photos/upload", isAuthenticated, async (req, res) => {
+  app.post("/api/photos/upload", requireAuth, async (req, res) => {
     try {
       const uploadURL = await objectStorageService.getObjectEntityUploadURL();
       res.json({ uploadURL });
@@ -492,7 +532,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Generic object storage upload endpoint (for videos and other files)
-  app.post("/api/objects/upload", isAuthenticated, async (req, res) => {
+  app.post("/api/objects/upload", requireAuth, async (req, res) => {
     try {
       const uploadURL = await objectStorageService.getObjectEntityUploadURL();
       res.json({ uploadURL });
@@ -506,43 +546,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // The POST endpoint above handles upload URL requests
 
   // Endpoint to create photo record after upload and extract EXIF data
-  app.post("/api/photos", isAuthenticated, async (req, res) => {
+  app.post("/api/photos", requireAuth, async (req: any, res) => {
     try {
       const validatedData = insertPhotoSchema.parse(req.body);
-      
+      if (!await getOwnedFieldNote(validatedData.fieldNoteId, req.dbUser.id)) {
+        return res.status(404).json({ message: "Field note not found" });
+      }
+
       // Normalize the URL if it's a full storage URL
       if (validatedData.url) {
         validatedData.url = objectStorageService.normalizeObjectEntityPath(validatedData.url);
       }
-      
+
       // Verify the uploaded object exists before creating the database record
       // This prevents orphaned DB records when uploads fail
       const objectExists = await objectStorageService.verifyObjectExists(validatedData.url);
       if (!objectExists) {
         console.error(`Upload verification failed: Object not found at ${validatedData.url}`);
-        return res.status(400).json({ 
-          error: "Upload verification failed", 
+        return res.status(400).json({
+          error: "Upload verification failed",
           message: "The uploaded file could not be verified. Please try uploading again."
         });
       }
-      
+
       // Create the photo record after verifying the upload
       const photo = await storage.createPhoto(validatedData);
       res.status(201).json(photo);
-      
+
       // Process EXIF data asynchronously in the background
       // This prevents blocking the response and improves upload performance
       setImmediate(async () => {
         try {
           console.log(`Background EXIF processing for photo: ${photo.url}`);
-          
+
           const exifData = await Promise.race([
             extractExifData(photo.url),
-            new Promise<never>((_, reject) => 
+            new Promise<never>((_, reject) =>
               setTimeout(() => reject(new Error('Background EXIF extraction timeout')), 30000)
             )
           ]);
-          
+
           if (Object.keys(exifData).length > 0) {
             console.log(`Background EXIF data found for ${photo.id}:`, exifData);
 
@@ -636,7 +679,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create new TrailCam project
-  app.post("/api/trailcam-projects", isAuthenticated, async (req, res) => {
+  app.post("/api/trailcam-projects", requireAuth, async (req, res) => {
     try {
       const validatedData = insertTrailcamProjectSchema.parse(req.body);
       const project = await storage.createTrailcamProject(validatedData);
@@ -648,7 +691,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update TrailCam project
-  app.put("/api/trailcam-projects/:id", isAuthenticated, async (req, res) => {
+  app.put("/api/trailcam-projects/:id", requireAuth, async (req, res) => {
     try {
       const { id } = req.params;
       const validatedData = insertTrailcamProjectSchema.partial().parse(req.body);
@@ -664,7 +707,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete TrailCam project
-  app.delete("/api/trailcam-projects/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/trailcam-projects/:id", requireAuth, async (req, res) => {
     try {
       const { id } = req.params;
       const deleted = await storage.deleteTrailcamProject(id);
@@ -709,35 +752,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create new video clip
-  app.post("/api/video-clips", isAuthenticated, async (req, res) => {
+  app.post("/api/video-clips", requireAuth, async (req, res) => {
     try {
       const validatedData = insertVideoClipSchema.parse(req.body);
-      
+
       // Normalize the URL if it's a full storage URL
       if (validatedData.url) {
         validatedData.url = objectStorageService.normalizeObjectEntityPath(validatedData.url);
       }
-      
+
       // Fetch project to get GPX data for coordinate calculation
       const project = await storage.getTrailcamProjectById(validatedData.projectId);
       if (project?.gpxData) {
         const coords = resolveClipCoordinates(
-          project.gpxData, 
-          validatedData.startTime, 
+          project.gpxData,
+          validatedData.startTime,
           validatedData.endTime,
           project.duration || undefined
         );
         console.log(`Calculated clip coordinates: start(${coords.startLatitude}, ${coords.startLongitude}), end(${coords.endLatitude}, ${coords.endLongitude})`);
-        
+
         validatedData.startLatitude = coords.startLatitude;
         validatedData.startLongitude = coords.startLongitude;
         validatedData.endLatitude = coords.endLatitude;
         validatedData.endLongitude = coords.endLongitude;
       }
-      
+
       const clip = await storage.createVideoClip(validatedData);
       res.status(201).json(clip);
-      
+
       // Start async video processing (transcoding + thumbnail generation)
       console.log(`Starting video processing for clip ${clip.id}`);
       startVideoProcessing(clip.id);
@@ -748,7 +791,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update video clip
-  app.put("/api/video-clips/:id", isAuthenticated, async (req, res) => {
+  app.put("/api/video-clips/:id", requireAuth, async (req, res) => {
     try {
       const { id } = req.params;
       const validatedData = insertVideoClipSchema.partial().parse(req.body);
@@ -768,32 +811,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { id } = req.params;
       const clip = await storage.getVideoClipById(id);
-      
+
       if (!clip) {
         return res.status(404).json({ message: "Video clip not found" });
       }
-      
+
       const project = await storage.getTrailcamProjectById(clip.projectId);
       if (!project?.gpxData) {
         return res.status(400).json({ message: "Project has no GPX data" });
       }
-      
+
       const coords = resolveClipCoordinates(
-        project.gpxData, 
-        clip.startTime, 
+        project.gpxData,
+        clip.startTime,
         clip.endTime,
         project.duration || undefined
       );
-      
+
       console.log(`Recalculated clip ${id} coordinates: start(${coords.startLatitude}, ${coords.startLongitude}), end(${coords.endLatitude}, ${coords.endLongitude})`);
-      
+
       const updatedClip = await storage.updateVideoClip(id, {
         startLatitude: coords.startLatitude,
         startLongitude: coords.startLongitude,
         endLatitude: coords.endLatitude,
         endLongitude: coords.endLongitude,
       });
-      
+
       res.json(updatedClip);
     } catch (error) {
       console.error("Error recalculating coordinates:", error);
@@ -802,7 +845,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete video clip
-  app.delete("/api/video-clips/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/video-clips/:id", requireAuth, async (req, res) => {
     try {
       const { id } = req.params;
       const deleted = await storage.deleteVideoClip(id);
@@ -821,34 +864,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { id } = req.params;
       const clip = await storage.getVideoClipById(id);
-      
+
       if (!clip) {
         return res.status(404).json({ message: "Video clip not found" });
       }
-      
+
       // Use transcoded version if available, otherwise fall back to original
       const videoUrl = clip.transcodedUrl || clip.url;
-      
+
       const file = await objectStorageService.getFileFromRawPath(videoUrl);
       const [metadata] = await file.getMetadata();
-      
+
       // Handle range requests for seeking
       const range = req.headers.range;
       const fileSize = Number(metadata.size);
-      
+
       if (range) {
         const parts = range.replace(/bytes=/, '').split('-');
         const start = parseInt(parts[0], 10);
         const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
         const chunkSize = end - start + 1;
-        
+
         res.writeHead(206, {
           'Content-Range': `bytes ${start}-${end}/${fileSize}`,
           'Accept-Ranges': 'bytes',
           'Content-Length': chunkSize,
           'Content-Type': 'video/mp4',
         });
-        
+
         const stream = file.createReadStream({ start, end });
         stream.pipe(res);
       } else {
@@ -857,7 +900,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           'Content-Type': 'video/mp4',
           'Accept-Ranges': 'bytes',
         });
-        
+
         const stream = file.createReadStream();
         stream.pipe(res);
       }
@@ -874,11 +917,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { id } = req.params;
       const clip = await storage.getVideoClipById(id);
-      
+
       if (!clip || !clip.thumbnailUrl) {
         return res.status(404).json({ message: "Thumbnail not found" });
       }
-      
+
       const file = await objectStorageService.getFileFromRawPath(clip.thumbnailUrl);
       await objectStorageService.downloadObject(file, res, 86400); // 24 hour cache
     } catch (error) {
@@ -894,20 +937,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { id } = req.params;
       const clip = await storage.getVideoClipById(id);
-      
+
       if (!clip) {
         return res.status(404).json({ message: "Video clip not found" });
       }
-      
+
       if (clip.processingStatus === 'processing') {
         return res.status(400).json({ message: "Video is already being processed" });
       }
-      
-      await storage.updateVideoClip(id, { 
+
+      await storage.updateVideoClip(id, {
         processingStatus: 'pending',
-        processingError: null 
+        processingError: null
       });
-      
+
       startVideoProcessing(id);
       res.json({ message: "Video processing started" });
     } catch (error) {
@@ -917,40 +960,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Initialize a chunked video upload and get a signed token
-  app.post("/api/video/init-upload", isAuthenticated, async (req, res) => {
+  app.post("/api/video/init-upload", requireAuth, async (req, res) => {
     try {
       const ip = req.ip || req.socket.remoteAddress || 'unknown';
-      
+
       // Rate limiting
       if (!checkRateLimit(ip)) {
         return res.status(429).json({ message: "Too many requests, please slow down" });
       }
-      
+
       // Check concurrent upload limit
       const currentUploads = uploadsPerIP.get(ip);
       if (currentUploads && currentUploads.size >= MAX_CONCURRENT_UPLOADS_PER_IP) {
         return res.status(429).json({ message: "Maximum concurrent uploads reached" });
       }
-      
+
       // Generate upload key and token
       const uploadKey = `video-${Date.now()}-${crypto.randomBytes(6).toString('hex')}`;
       const token = generateUploadToken(uploadKey, ip);
-      
+
       // Track token
-      validTokens.set(token, { 
-        uploadKey, 
+      validTokens.set(token, {
+        uploadKey,
         expiresAt: Date.now() + UPLOAD_TOKEN_TTL_MS,
-        ip 
+        ip
       });
-      
+
       // Track upload per IP
       if (!uploadsPerIP.has(ip)) {
         uploadsPerIP.set(ip, new Set());
       }
       uploadsPerIP.get(ip)!.add(uploadKey);
-      
+
       console.log(`Initialized upload ${uploadKey} for IP ${ip}`);
-      
+
       res.json({ uploadKey, token });
     } catch (error) {
       console.error("Error initializing upload:", error);
@@ -967,20 +1010,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     },
   });
 
-  app.post("/api/video/upload-chunk", isAuthenticated, chunkUpload.single('chunk'), async (req, res) => {
+  app.post("/api/video/upload-chunk", requireAuth, chunkUpload.single('chunk'), async (req, res) => {
     try {
       const ip = req.ip || req.socket.remoteAddress || 'unknown';
       const { chunkIndex, totalChunks, uploadKey, token } = req.body;
-      
+
       // Rate limiting
       if (!checkRateLimit(ip)) {
         return res.status(429).json({ message: "Too many requests" });
       }
-      
+
       if (!req.file) {
         return res.status(400).json({ message: "No chunk data provided" });
       }
-      
+
       if (!uploadKey || chunkIndex === undefined || !totalChunks || !token) {
         return res.status(400).json({ message: "Missing required parameters" });
       }
@@ -1016,12 +1059,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const uploadState = activeUploads.get(uploadKey)!;
-      
+
       // Verify token matches the one used to initialize
       if (uploadState.token && uploadState.token !== token) {
         return res.status(401).json({ message: "Token mismatch" });
       }
-      
+
       // Validate total chunks matches
       if (uploadState.totalChunks !== totalChunksNum) {
         return res.status(400).json({ message: "Total chunks mismatch" });
@@ -1043,9 +1086,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`Received chunk ${chunkIdx + 1}/${totalChunksNum} for upload ${uploadKey} (${req.file.size} bytes)`);
 
-      res.json({ 
-        success: true, 
-        chunkIndex: chunkIdx, 
+      res.json({
+        success: true,
+        chunkIndex: chunkIdx,
         received: req.file.size,
         chunksReceived: uploadState.receivedChunks.size,
       });
@@ -1056,11 +1099,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Chunked video upload - complete and assemble
-  app.post("/api/video/complete-upload", isAuthenticated, async (req, res) => {
+  app.post("/api/video/complete-upload", requireAuth, async (req, res) => {
     try {
       const ip = req.ip || req.socket.remoteAddress || 'unknown';
       const { uploadKey, filename, contentType, token } = req.body;
-      
+
       if (!uploadKey || !token) {
         return res.status(400).json({ message: "Upload key and token are required" });
       }
@@ -1085,7 +1128,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const uploadState = activeUploads.get(uploadKey);
       const chunkDir = path.join(CHUNK_UPLOAD_DIR, uploadKey);
-      
+
       if (!fs.existsSync(chunkDir)) {
         return res.status(404).json({ message: "Upload not found" });
       }
@@ -1100,8 +1143,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Validate all chunks are present
       if (uploadState && chunks.length !== uploadState.totalChunks) {
-        return res.status(400).json({ 
-          message: `Missing chunks: expected ${uploadState.totalChunks}, got ${chunks.length}` 
+        return res.status(400).json({
+          message: `Missing chunks: expected ${uploadState.totalChunks}, got ${chunks.length}`
         });
       }
 
@@ -1151,7 +1194,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Clean up
       fs.rmSync(chunkDir, { recursive: true, force: true });
-      
+
       // Clean up IP tracking and token (uploadState was already retrieved above)
       if (uploadState) {
         const ipUploads = uploadsPerIP.get(uploadState.ip);
@@ -1164,7 +1207,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Invalidate the token
         validTokens.delete(token);
       }
-      
+
       activeUploads.delete(uploadKey);
 
       const url = new URL(uploadURL);
@@ -1172,10 +1215,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`Video upload complete: ${normalizedUrl}`);
 
-      res.json({ 
-        success: true, 
+      res.json({
+        success: true,
         url: normalizedUrl,
-        size: stats.size 
+        size: stats.size
       });
     } catch (error) {
       console.error("Error completing video upload:", error);
@@ -1187,7 +1230,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/video/upload/:uploadKey", async (req, res) => {
     try {
       const { uploadKey } = req.params;
-      
+
       // Validate upload key format
       if (!/^video-\d+-[a-f0-9]+$/.test(uploadKey)) {
         return res.status(400).json({ message: "Invalid upload key format" });
@@ -1195,11 +1238,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const chunkDir = path.join(CHUNK_UPLOAD_DIR, uploadKey);
       const uploadState = activeUploads.get(uploadKey);
-      
+
       if (fs.existsSync(chunkDir)) {
         fs.rmSync(chunkDir, { recursive: true, force: true });
       }
-      
+
       // Clean up IP tracking and invalidate token
       if (uploadState) {
         const ipUploads = uploadsPerIP.get(uploadState.ip);
@@ -1212,7 +1255,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Invalidate the token
         validTokens.delete(uploadState.token);
       }
-      
+
       activeUploads.delete(uploadKey);
 
       res.json({ success: true });
@@ -1228,12 +1271,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const ip = req.ip || req.socket.remoteAddress || 'unknown';
       const { uploadKey } = req.params;
       const { token } = req.body;
-      
+
       // Validate upload key format
       if (!/^video-\d+-[a-f0-9]+$/.test(uploadKey)) {
         return res.status(400).json({ message: "Invalid upload key format" });
       }
-      
+
       // Verify token
       if (!token) {
         return res.status(401).json({ message: "Token required" });
@@ -1262,9 +1305,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ── GPX Inbox & Webhook ──────────────────────────────────────────────────
 
   // Get or create the user's webhook token
-  app.get("/api/inbox/token", isAuthenticated, async (req: any, res) => {
+  app.get("/api/inbox/token", requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.dbUser.id;
       let tokenRow = await storage.getWebhookTokenByUserId(userId);
       if (!tokenRow) {
         const token = crypto.randomBytes(24).toString('hex');
@@ -1278,9 +1321,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Regenerate the user's webhook token
-  app.post("/api/inbox/token/regenerate", isAuthenticated, async (req: any, res) => {
+  app.post("/api/inbox/token/regenerate", requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.dbUser.id;
       const token = crypto.randomBytes(24).toString('hex');
       const tokenRow = await storage.upsertWebhookToken(userId, token);
       res.json({ token: tokenRow.token });
@@ -1291,9 +1334,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get all inbox items for the authenticated user
-  app.get("/api/inbox", isAuthenticated, async (req: any, res) => {
+  app.get("/api/inbox", requireAuth, async (req: any, res) => {
     try {
-      const items = await storage.getInboxItems(req.user.claims.sub);
+      const items = await storage.getInboxItems(req.dbUser.id);
       res.json(items);
     } catch (error) {
       console.error("Error fetching inbox:", error);
@@ -1302,10 +1345,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete an inbox item
-  app.delete("/api/inbox/:id", isAuthenticated, async (req: any, res) => {
+  app.delete("/api/inbox/:id", requireAuth, async (req: any, res) => {
     try {
       const item = await storage.getInboxItemById(req.params.id);
-      if (!item || item.userId !== req.user.claims.sub) {
+      if (!item || item.userId !== req.dbUser.id) {
         return res.status(404).json({ message: "Item not found" });
       }
       await storage.deleteInboxItem(req.params.id);
@@ -1317,14 +1360,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Promote an inbox item to a field note
-  app.post("/api/inbox/:id/promote", isAuthenticated, async (req: any, res) => {
+  app.post("/api/inbox/:id/promote", requireAuth, async (req: any, res) => {
     try {
       const item = await storage.getInboxItemById(req.params.id);
-      if (!item || item.userId !== req.user.claims.sub) {
+      if (!item || item.userId !== req.dbUser.id) {
         return res.status(404).json({ message: "Item not found" });
       }
       const stats = item.gpxStats as any;
       const fieldNote = await storage.createFieldNote({
+        userId: req.dbUser.id,
         title: req.body.title || item.filename.replace(/\.gpx$/i, ''),
         description: req.body.description || '',
         tripType: Array.isArray(req.body.tripType) ? req.body.tripType : (req.body.tripType ? [req.body.tripType] : ['hiking']),
@@ -1401,14 +1445,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ── Strava OAuth & Import ─────────────────────────────────────────────────
 
   // Step 1: Redirect user to Strava consent page using app-level credentials
-  app.get("/api/strava/auth", isAuthenticated, async (req: any, res) => {
+  app.get("/api/strava/auth", requireAuth, async (req: any, res) => {
     const clientId = process.env.STRAVA_CLIENT_ID;
     if (!clientId) {
       return res.redirect("/inbox?strava=error");
     }
 
     const stateNonce = crypto.randomBytes(24).toString("hex");
-    (req.session as any).stravaOAuthState = stateNonce;
+    stravaOAuthStates.set(stateNonce, {
+      userId: req.dbUser.id,
+      createdAt: Date.now(),
+    });
 
     const redirectUri = `https://${req.hostname}/api/strava/callback`;
     const params = new URLSearchParams({
@@ -1423,16 +1470,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Step 2: Handle OAuth callback using app-level credentials
-  app.get("/api/strava/callback", isAuthenticated, async (req: any, res) => {
+  app.get("/api/strava/callback", requireAuth, async (req: any, res) => {
     const { code, error, scope, state } = req.query as Record<string, string>;
 
     if (error || !code) {
       return res.redirect("/inbox?strava=denied");
     }
 
-    const expectedState = (req.session as any).stravaOAuthState;
-    (req.session as any).stravaOAuthState = undefined;
-    if (!expectedState || !state || expectedState !== state) {
+    const expectedState = state ? stravaOAuthStates.get(state) : undefined;
+    if (state) stravaOAuthStates.delete(state);
+    if (
+      !expectedState ||
+      expectedState.userId !== req.dbUser.id ||
+      Date.now() - expectedState.createdAt > 10 * 60 * 1000
+    ) {
       console.warn("Strava OAuth state mismatch");
       return res.redirect("/inbox?strava=error");
     }
@@ -1444,7 +1495,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.dbUser.id;
       const redirectUri = `https://${req.hostname}/api/strava/callback`;
       const tokenResp = await fetch("https://www.strava.com/oauth/token", {
         method: "POST",
@@ -1487,10 +1538,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Connection status
-  app.get("/api/strava/status", isAuthenticated, async (req: any, res) => {
+  app.get("/api/strava/status", requireAuth, async (req: any, res) => {
     try {
       const appConfigured = !!(process.env.STRAVA_CLIENT_ID && process.env.STRAVA_CLIENT_SECRET);
-      const conn = await storage.getStravaConnection(req.user.claims.sub);
+      const conn = await storage.getStravaConnection(req.dbUser.id);
       if (!appConfigured) {
         return res.json({ state: "not_configured", connected: false });
       }
@@ -1510,9 +1561,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Disconnect
-  app.delete("/api/strava/disconnect", isAuthenticated, async (req: any, res) => {
+  app.delete("/api/strava/disconnect", requireAuth, async (req: any, res) => {
     try {
-      await storage.deleteStravaConnection(req.user.claims.sub);
+      await storage.deleteStravaConnection(req.dbUser.id);
       res.json({ success: true });
     } catch (err) {
       console.error("Strava disconnect error:", err);
@@ -1521,9 +1572,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // List recent activities from Strava (proxied, not stored)
-  app.get("/api/strava/activities", isAuthenticated, async (req: any, res) => {
+  app.get("/api/strava/activities", requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.dbUser.id;
       const perPage = 30;
       const resp = await stravaFetch(userId, `/athlete/activities?per_page=${perPage}`);
       if (!resp.ok) {
@@ -1541,9 +1592,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // List routes from Strava (proxied, not stored)
-  app.get("/api/strava/routes", isAuthenticated, async (req: any, res) => {
+  app.get("/api/strava/routes", requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.dbUser.id;
       const conn = await storage.getStravaConnection(userId);
       if (!conn) return res.status(401).json({ message: "Strava not connected" });
 
@@ -1563,9 +1614,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Import a Strava activity into the inbox
-  app.post("/api/strava/import/activity/:stravaId", isAuthenticated, async (req: any, res) => {
+  app.post("/api/strava/import/activity/:stravaId", requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.dbUser.id;
       const { stravaId } = req.params;
 
       // Dedup check (scoped to source so activity/route IDs don't collide)
@@ -1611,9 +1662,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Import a Strava route into the inbox
-  app.post("/api/strava/import/route/:stravaId", isAuthenticated, async (req: any, res) => {
+  app.post("/api/strava/import/route/:stravaId", requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.dbUser.id;
       const { stravaId } = req.params;
 
       // Dedup check (scoped to source so activity/route IDs don't collide)
@@ -1650,9 +1701,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Associate a Strava activity/route with a manually created trip
   // (creates a lightweight inbox entry so promote still works, but no GPX download)
-  app.post("/api/strava/associate/:type/:stravaId", isAuthenticated, async (req: any, res) => {
+  app.post("/api/strava/associate/:type/:stravaId", requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.dbUser.id;
       const type = req.params.type;
       if (type !== "activity" && type !== "route") {
         return res.status(400).json({ message: "Invalid type. Must be 'activity' or 'route'." });
@@ -1698,6 +1749,190 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (err.message?.includes("not connected")) return res.status(401).json({ message: "Strava not connected" });
       console.error("Strava associate error:", err);
       res.status(500).json({ message: "Failed to associate" });
+    }
+  });
+
+  // ── Publishing ────────────────────────────────────────────────────────────
+
+  function slugify(title: string): string {
+    return title
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .trim()
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .slice(0, 60);
+  }
+
+  async function uniqueSlug(base: string, check: (s: string) => Promise<boolean>): Promise<string> {
+    let slug = base || "untitled";
+    if (await check(slug)) return slug;
+    for (let i = 2; i <= 99; i++) {
+      const candidate = `${slug}-${i}`;
+      if (await check(candidate)) return candidate;
+    }
+    return `${slug}-${Date.now()}`;
+  }
+
+  // Publish a field note
+  app.post("/api/field-notes/:id/publish", requireAuth, async (req: any, res) => {
+    try {
+      const note = await getOwnedFieldNote(req.params.id, req.dbUser.id);
+      if (!note) return res.status(404).json({ message: "Field note not found" });
+
+      const baseSlug = slugify(note.title);
+      const slug = note.slug ?? await uniqueSlug(baseSlug, async (s) => !await storage.getPublishedFieldNoteBySlug(s));
+      const updated = await storage.publishFieldNote(note.id, slug);
+      res.json(updated);
+    } catch (err) {
+      console.error("Publish field note error:", err);
+      res.status(500).json({ message: "Failed to publish" });
+    }
+  });
+
+  app.post("/api/field-notes/:id/unpublish", requireAuth, async (req: any, res) => {
+    try {
+      if (!await getOwnedFieldNote(req.params.id, req.dbUser.id)) {
+        return res.status(404).json({ message: "Field note not found" });
+      }
+      const updated = await storage.unpublishFieldNote(req.params.id);
+      if (!updated) return res.status(404).json({ message: "Field note not found" });
+      res.json(updated);
+    } catch (err) {
+      console.error("Unpublish field note error:", err);
+      res.status(500).json({ message: "Failed to unpublish" });
+    }
+  });
+
+  // ── Expeditions ───────────────────────────────────────────────────────────
+
+  app.get("/api/expeditions", requireAuth, async (req, res) => {
+    try {
+      const userId = (req as any).dbUser.id;
+      const exps = await storage.getExpeditionsByUser(userId);
+      res.json(exps);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to fetch expeditions" });
+    }
+  });
+
+  app.get("/api/expeditions/:id", requireAuth, async (req: any, res) => {
+    try {
+      const exp = await getOwnedExpedition(req.params.id, req.dbUser.id);
+      if (!exp) return res.status(404).json({ message: "Expedition not found" });
+      const fieldNotes = await storage.getExpeditionFieldNotes(exp.id);
+      res.json({ ...exp, fieldNotes });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to fetch expedition" });
+    }
+  });
+
+  app.post("/api/expeditions", requireAuth, async (req: any, res) => {
+    try {
+      const userId = (req as any).dbUser.id;
+      const { fieldNoteIds, ...body } = req.body;
+      const parsed = insertExpeditionSchema.safeParse({ ...body, userId });
+      if (!parsed.success) return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
+      if (Array.isArray(fieldNoteIds) && !await ownsEveryFieldNote(userId, fieldNoteIds)) {
+        return res.status(400).json({ message: "One or more field notes are unavailable" });
+      }
+      const exp = await storage.createExpedition(parsed.data);
+      if (Array.isArray(fieldNoteIds) && fieldNoteIds.length > 0) {
+        await storage.setExpeditionFieldNotes(exp.id, fieldNoteIds);
+      }
+      res.status(201).json(exp);
+    } catch (err) {
+      console.error("Create expedition error:", err);
+      res.status(500).json({ message: "Failed to create expedition" });
+    }
+  });
+
+  app.put("/api/expeditions/:id", requireAuth, async (req: any, res) => {
+    try {
+      const userId = req.dbUser.id;
+      const existing = await getOwnedExpedition(req.params.id, userId);
+      if (!existing) return res.status(404).json({ message: "Expedition not found" });
+      const { fieldNoteIds, userId: _ignoredUserId, ...body } = req.body;
+      if (Array.isArray(fieldNoteIds) && !await ownsEveryFieldNote(userId, fieldNoteIds)) {
+        return res.status(400).json({ message: "One or more field notes are unavailable" });
+      }
+      const exp = await storage.updateExpedition(req.params.id, body);
+      if (!exp) return res.status(404).json({ message: "Expedition not found" });
+      if (Array.isArray(fieldNoteIds)) {
+        await storage.setExpeditionFieldNotes(exp.id, fieldNoteIds);
+      }
+      res.json(exp);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to update expedition" });
+    }
+  });
+
+  app.delete("/api/expeditions/:id", requireAuth, async (req: any, res) => {
+    try {
+      if (!await getOwnedExpedition(req.params.id, req.dbUser.id)) {
+        return res.status(404).json({ message: "Expedition not found" });
+      }
+      const deleted = await storage.deleteExpedition(req.params.id);
+      if (!deleted) return res.status(404).json({ message: "Expedition not found" });
+      res.status(204).send();
+    } catch (err) {
+      res.status(500).json({ message: "Failed to delete expedition" });
+    }
+  });
+
+  app.post("/api/expeditions/:id/publish", requireAuth, async (req: any, res) => {
+    try {
+      const exp = await getOwnedExpedition(req.params.id, req.dbUser.id);
+      if (!exp) return res.status(404).json({ message: "Expedition not found" });
+      const baseSlug = slugify(exp.title);
+      const slug = exp.slug ?? await uniqueSlug(baseSlug, async (s) => !await storage.getPublishedExpeditionBySlug(s));
+      const updated = await storage.publishExpedition(exp.id, slug);
+      res.json(updated);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to publish expedition" });
+    }
+  });
+
+  app.post("/api/expeditions/:id/unpublish", requireAuth, async (req: any, res) => {
+    try {
+      if (!await getOwnedExpedition(req.params.id, req.dbUser.id)) {
+        return res.status(404).json({ message: "Expedition not found" });
+      }
+      const updated = await storage.unpublishExpedition(req.params.id);
+      if (!updated) return res.status(404).json({ message: "Expedition not found" });
+      res.json(updated);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to unpublish expedition" });
+    }
+  });
+
+  // ── Public endpoints (no auth) ────────────────────────────────────────────
+
+  app.get("/api/public/field-notes/:slug", async (req, res) => {
+    try {
+      const note = await storage.getPublishedFieldNoteBySlug(req.params.slug);
+      if (!note) return res.status(404).json({ message: "Not found" });
+      const photos = await storage.getPhotosByFieldNoteId(note.id);
+      res.json({ ...note, photos });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to fetch field note" });
+    }
+  });
+
+  app.get("/api/public/expeditions/:slug", async (req, res) => {
+    try {
+      const exp = await storage.getPublishedExpeditionBySlug(req.params.slug);
+      if (!exp) return res.status(404).json({ message: "Not found" });
+      const rows = await storage.getExpeditionFieldNotes(exp.id);
+      const fieldNotes = await Promise.all(
+        rows.filter(({ fieldNote }) => fieldNote.userId === exp.userId).map(async ({ fieldNote, position }) => {
+          const photos = await storage.getPhotosByFieldNoteId(fieldNote.id);
+          return { ...fieldNote, photos, position };
+        })
+      );
+      res.json({ ...exp, fieldNotes });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to fetch expedition" });
     }
   });
 

@@ -1,11 +1,20 @@
 import express, { type Request, Response, NextFunction } from "express";
+import cors from "cors";
+import { clerkMiddleware } from "@clerk/express";
+import { publishableKeyFromHost } from "@clerk/shared/keys";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
+import {
+  CLERK_PROXY_PATH,
+  clerkProxyMiddleware,
+  getClerkProxyHost,
+} from "./middlewares/clerkProxyMiddleware";
 import { pool } from "./db";
 
 const app = express();
+app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 // Increase body size limit to handle large GPX files (50MB limit)
+app.use(cors({ credentials: true, origin: true }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -118,6 +127,41 @@ async function runStartupMigrations() {
       );
       CREATE INDEX IF NOT EXISTS mobile_tokens_token_idx ON mobile_tokens (token);
     `);
+    // Publishing fields on field_notes
+    await client.query(`
+      ALTER TABLE field_notes
+        ADD COLUMN IF NOT EXISTS user_id text,
+        ADD COLUMN IF NOT EXISTS is_published boolean NOT NULL DEFAULT false,
+        ADD COLUMN IF NOT EXISTS published_at timestamp,
+        ADD COLUMN IF NOT EXISTS slug text;
+      CREATE INDEX IF NOT EXISTS field_notes_user_id_idx ON field_notes (user_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS field_notes_slug_idx ON field_notes (slug)
+        WHERE slug IS NOT NULL;
+    `);
+    // Expeditions + expedition_field_notes
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS expeditions (
+        id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id text NOT NULL,
+        title text NOT NULL,
+        description text,
+        cover_photo_url text,
+        slug text UNIQUE,
+        is_published boolean NOT NULL DEFAULT false,
+        published_at timestamp,
+        created_at timestamp DEFAULT now() NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS expeditions_user_id_idx ON expeditions (user_id);
+      CREATE TABLE IF NOT EXISTS expedition_field_notes (
+        id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        expedition_id varchar NOT NULL REFERENCES expeditions(id) ON DELETE CASCADE,
+        field_note_id varchar NOT NULL REFERENCES field_notes(id) ON DELETE CASCADE,
+        position integer NOT NULL DEFAULT 0,
+        UNIQUE(expedition_id, field_note_id)
+      );
+      CREATE INDEX IF NOT EXISTS expedition_field_notes_expedition_idx
+        ON expedition_field_notes (expedition_id);
+    `);
     log("Startup migrations complete");
   } catch (err) {
     log(`Startup migration warning: ${(err as Error).message}`);
@@ -128,8 +172,14 @@ async function runStartupMigrations() {
 
 (async () => {
   await runStartupMigrations();
-  await setupAuth(app);
-  registerAuthRoutes(app);
+  app.use(
+    clerkMiddleware((req) => ({
+      publishableKey: publishableKeyFromHost(
+        getClerkProxyHost(req) ?? "",
+        process.env.CLERK_PUBLISHABLE_KEY,
+      ),
+    })),
+  );
 
   app.use((req, res, next) => {
     const start = Date.now();

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title">
+  <title id="title">Big Miles</title>
+  <rect width="96" height="96" rx="24" fill="#27211f"/>
+  <path d="M20 68c10-3 17-10 23-22 5-10 12-17 28-21" fill="none" stroke="#f5f0e8" stroke-linecap="round" stroke-width="8"/>
+  <circle cx="22" cy="68" r="5" fill="#e6bb77"/>
+  <circle cx="72" cy="25" r="5" fill="#e6bb77"/>
+</svg>

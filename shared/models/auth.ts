@@ -1,8 +1,8 @@
 import { sql } from "drizzle-orm";
 import { index, jsonb, pgTable, timestamp, varchar } from "drizzle-orm/pg-core";
 
-// Session storage table.
-// (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
+// Legacy session storage table retained for existing database compatibility.
+// Clerk authentication does not read or write this table.
 export const sessions = pgTable(
   "sessions",
   {
@@ -13,8 +13,8 @@ export const sessions = pgTable(
   (table) => [index("IDX_session_expire").on(table.expire)]
 );
 
-// User storage table.
-// (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
+// Application user storage table. Clerk sessions are bridged to these records
+// using the preserved migration user ID in the Clerk session claims.
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   email: varchar("email").unique(),

@@ -83,8 +83,7 @@ export default function AdminPage() {
   const { data: existingFieldNote, isLoading: isLoadingFieldNote } = useQuery<FieldNote>({
     queryKey: ["/api/field-notes", id],
     queryFn: async () => {
-      const response = await fetch(`/api/field-notes/${id}`);
-      if (!response.ok) throw new Error("Failed to fetch field note");
+      const response = await apiRequest(`/api/field-notes/${id}`, "GET");
       return response.json();
     },
     enabled: isEditing,
@@ -228,9 +227,9 @@ export default function AdminPage() {
       form.reset({
         title: existingFieldNote.title,
         description: existingFieldNote.description,
-        tripType: existingFieldNote.tripType,
+        tripType: existingFieldNote.tripType[0] ?? "hiking",
       });
-      setSelectedTripType(existingFieldNote.tripType);
+      setSelectedTripType(existingFieldNote.tripType[0] ?? "hiking");
       setGpxContent(existingFieldNote.gpxData as string);
     }
   }, [existingFieldNote, form]);

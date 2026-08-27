@@ -67,8 +67,7 @@ export default function AdminPage() {
   const { data: existingFieldNote, isLoading: isLoadingFieldNote } = useQuery<FieldNote>({
     queryKey: ["/api/field-notes", id],
     queryFn: async () => {
-      const response = await fetch(`/api/field-notes/${id}`);
-      if (!response.ok) throw new Error("Failed to fetch field note");
+      const response = await apiRequest(`/api/field-notes/${id}`, "GET");
       return response.json();
     },
     enabled: isEditing,
@@ -77,8 +76,7 @@ export default function AdminPage() {
   const { data: existingPhotos = [] } = useQuery({
     queryKey: ["/api/field-notes", id, "photos"],
     queryFn: async () => {
-      const response = await fetch(`/api/field-notes/${id}/photos`);
-      if (!response.ok) throw new Error("Failed to fetch photos");
+      const response = await apiRequest(`/api/field-notes/${id}/photos`, "GET");
       return response.json();
     },
     enabled: isEditing,
@@ -127,14 +125,7 @@ export default function AdminPage() {
   };
 
   const handlePhotoUpload = async () => {
-    const response = await fetch("/api/photos/upload", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-    });
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to get upload URL: ${response.status} - ${errorText}`);
-    }
+    const response = await apiRequest("/api/photos/upload", "POST");
     const data = await response.json();
     return { method: "PUT" as const, url: data.uploadURL };
   };
@@ -160,7 +151,7 @@ export default function AdminPage() {
         url: normalize((upload as { uploadURL: string }).uploadURL),
         filename: upload.name ?? "photo",
         caption: "",
-        exifData: exifDataArray?.[index],
+        exifData: exifDataArray?.[index] ?? undefined,
       }));
       setUploadedPhotos((prev) => [...prev, ...newPhotos]);
 

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
-import { apiRequest } from "@/lib/queryClient";
+import { ApiError, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
@@ -171,29 +171,19 @@ function StravaPanel({ onImported, onAssociate }: { onImported: (hint: ImportedH
     const key = `${type}-${id}`;
     setImportingId(key);
     try {
-      // Use raw fetch — apiRequest throws on non-2xx, which swallows our 409 handling
-      const resp = await fetch(`/api/strava/import/${type}/${id}`, {
-        method: "POST",
-        credentials: "include",
-      });
       let item: GpxInboxItem | null = null;
-      const isDuplicate = resp.status === 409;
-
-      if (isDuplicate) {
-        const data = await resp.json().catch(() => ({} as any));
-        if (data?.inboxItemId) {
-          const listResp = await fetch("/api/inbox", { credentials: "include" });
-          if (listResp.ok) {
-            const list: GpxInboxItem[] = await listResp.json();
-            item = list.find(i => i.id === data.inboxItemId) ?? null;
-          }
+      let isDuplicate = false;
+      try {
+        const response = await apiRequest(`/api/strava/import/${type}/${id}`, "POST");
+        item = await response.json().catch(() => null);
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.status !== 409) throw error;
+        isDuplicate = true;
+        const data = error.data as { inboxItemId?: string };
+        if (data.inboxItemId) {
+          const list = await (await apiRequest("/api/inbox", "GET")).json() as GpxInboxItem[];
+          item = list.find(i => i.id === data.inboxItemId) ?? null;
         }
-      } else if (!resp.ok) {
-        const data = await resp.json().catch(() => ({}));
-        toast({ title: "Import failed", description: (data as any).message ?? "Unknown error", variant: "destructive" });
-        return;
-      } else {
-        item = await resp.json().catch(() => null);
       }
 
       setImportedIds(prev => new Set(Array.from(prev).concat(key)));
@@ -522,13 +512,11 @@ export default function InboxPage() {
 
   const linkMutation = useMutation({
     mutationFn: async ({ fieldNoteId, stravaId, stravaSource }: { fieldNoteId: string; stravaId: string; stravaSource: string }) => {
-      const res = await fetch(`/api/field-notes/${fieldNoteId}/strava`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stravaId, stravaSource }),
-      });
-      if (!res.ok) throw new Error("Failed to link");
+      const res = await apiRequest(
+        `/api/field-notes/${fieldNoteId}/strava`,
+        "POST",
+        { stravaId, stravaSource },
+      );
       return res.json();
     },
     onSuccess: (_data, vars) => {

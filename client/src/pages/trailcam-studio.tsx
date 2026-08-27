@@ -18,6 +18,7 @@ import { NewProjectModal } from "@/components/new-project-modal";
 import { ChunkedVideoUploader } from "@/components/chunked-video-uploader";
 import MapboxMap, { ClipMarker } from "@/components/mapbox-map";
 import type { TrailcamProject, VideoClip, InsertVideoClip } from "@shared/schema";
+import { apiRequest } from "@/lib/queryClient";
 
 function pillButtonClass(active = false) {
   return `meta-mono px-3 py-1.5 rounded-full border transition-colors ${
@@ -40,8 +41,7 @@ export default function TrailcamStudio() {
   const { data: projects = [], isLoading: projectsLoading } = useQuery<TrailcamProject[]>({
     queryKey: ["/api/trailcam-projects"],
     queryFn: async () => {
-      const response = await fetch("/api/trailcam-projects");
-      if (!response.ok) throw new Error("Failed to fetch projects");
+      const response = await apiRequest("/api/trailcam-projects", "GET");
       return response.json();
     },
   });
@@ -50,8 +50,7 @@ export default function TrailcamStudio() {
     queryKey: ["/api/video-clips", selectedProject?.id],
     queryFn: async () => {
       if (!selectedProject?.id) return [];
-      const response = await fetch(`/api/video-clips?projectId=${selectedProject.id}`);
-      if (!response.ok) throw new Error("Failed to fetch clips");
+      const response = await apiRequest(`/api/video-clips?projectId=${selectedProject.id}`, "GET");
       return response.json();
     },
     enabled: !!selectedProject?.id,
@@ -65,12 +64,7 @@ export default function TrailcamStudio() {
 
   const createClipMutation = useMutation({
     mutationFn: async (clipData: InsertVideoClip) => {
-      const response = await fetch("/api/video-clips", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(clipData),
-      });
-      if (!response.ok) throw new Error("Failed to create video clip");
+      const response = await apiRequest("/api/video-clips", "POST", clipData);
       return response.json();
     },
     onSuccess: (clip: VideoClip) => {
@@ -327,7 +321,7 @@ export default function TrailcamStudio() {
                     <button
                       type="button"
                       onClick={() => {
-                        fetch(`/api/video-clips/${selectedClip.id}/reprocess`, { method: "POST" })
+                        apiRequest(`/api/video-clips/${selectedClip.id}/reprocess`, "POST")
                           .then(() => {
                             toast({ title: "Reprocessing started" });
                             queryClient.invalidateQueries({ queryKey: ["/api/video-clips", selectedProject?.id] });

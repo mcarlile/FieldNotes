@@ -16,6 +16,7 @@ import { Upload, Pause, Play, Close } from "@carbon/icons-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { apiRequest } from "@/lib/queryClient";
 
 const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB chunks
 const MAX_FILE_SIZE = 1.5 * 1024 * 1024 * 1024; // 1.5GB
@@ -115,16 +116,7 @@ export function ChunkedVideoUploader({
   }, []);
 
   const initUpload = async (): Promise<{ uploadKey: string; token: string }> => {
-    const response = await fetch('/api/video/init-upload', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    });
-    
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: 'Failed to initialize upload' }));
-      throw new Error(error.message || 'Failed to initialize upload');
-    }
-    
+    const response = await apiRequest("/api/video/init-upload", "POST");
     return response.json();
   };
 
@@ -148,16 +140,7 @@ export function ChunkedVideoUploader({
     
     for (let attempt = 0; attempt < retries; attempt++) {
       try {
-        const response = await fetch('/api/video/upload-chunk', {
-          method: 'POST',
-          body: formData,
-          signal,
-        });
-
-        if (!response.ok) {
-          const error = await response.json().catch(() => ({ message: 'Upload failed' }));
-          throw new Error(error.message || 'Failed to upload chunk');
-        }
+        await apiRequest("/api/video/upload-chunk", "POST", formData, { signal });
         
         return; // Success
       } catch (error) {
@@ -179,16 +162,11 @@ export function ChunkedVideoUploader({
   };
 
   const completeUpload = async (uploadKey: string, token: string, filename: string, contentType: string): Promise<string> => {
-    const response = await fetch('/api/video/complete-upload', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uploadKey, token, filename, contentType }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: 'Failed to complete upload' }));
-      throw new Error(error.message || 'Failed to complete upload');
-    }
+    const response = await apiRequest(
+      "/api/video/complete-upload",
+      "POST",
+      { uploadKey, token, filename, contentType },
+    );
 
     const result = await response.json();
     return result.url;
@@ -333,12 +311,7 @@ export function ChunkedVideoUploader({
 
   const getUploadStatus = async (uploadKey: string, token: string): Promise<{ receivedChunks: number[] } | null> => {
     try {
-      const response = await fetch(`/api/video/upload/${uploadKey}/status`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
-      });
-      if (!response.ok) return null;
+      const response = await apiRequest(`/api/video/upload/${uploadKey}/status`, "POST", { token });
       return response.json();
     } catch {
       return null;

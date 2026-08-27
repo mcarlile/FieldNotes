@@ -16,6 +16,7 @@ import {
 } from "@carbon/react";
 import { Add, Search, Filter } from "@carbon/icons-react";
 import FieldNoteCard from "@/components/field-note-card";
+import { apiRequest } from "@/lib/queryClient";
 import type { FieldNote } from "@shared/schema";
 
 export default function Home() {
@@ -31,8 +32,7 @@ export default function Home() {
       if (tripType && tripType !== "all") params.append("tripType", tripType);
       if (sortOrder) params.append("sortOrder", sortOrder);
       
-      const response = await fetch(`/api/field-notes?${params}`);
-      if (!response.ok) throw new Error("Failed to fetch field notes");
+      const response = await apiRequest(`/api/field-notes?${params}`, "GET");
       return response.json();
     },
   });

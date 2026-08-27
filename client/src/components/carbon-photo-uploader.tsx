@@ -9,6 +9,7 @@ import {
 import { Upload } from "@carbon/icons-react";
 import type { UploadResult } from "@uppy/core";
 import { type PhotoExifData } from "@/lib/exif-extractor";
+import { apiRequest } from "@/lib/queryClient";
 
 interface CarbonPhotoUploaderProps {
   maxNumberOfFiles?: number;
@@ -112,19 +113,14 @@ export function CarbonPhotoUploader({
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
       
-      const exifResponse = await fetch('/api/photos/extract-exif', {
-        method: 'POST',
-        body: formData,
-        credentials: 'include',
-        signal: controller.signal,
-      });
+      const exifResponse = await apiRequest(
+        "/api/photos/extract-exif",
+        "POST",
+        formData,
+        { signal: controller.signal },
+      );
       
       clearTimeout(timeoutId);
-      
-      if (!exifResponse.ok) {
-        console.error('EXIF extraction failed:', exifResponse.statusText);
-        return null;
-      }
       
       const exifData = await exifResponse.json();
       return exifData;

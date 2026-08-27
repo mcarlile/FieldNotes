@@ -7,6 +7,7 @@ import FieldNoteCard from "@/components/field-note-card";
 import HeatMapView from "@/components/heat-map-view";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
+import { apiRequest } from "@/lib/queryClient";
 import type { FieldNote } from "@shared/schema";
 
 const availableTripTypes = [
@@ -83,8 +84,7 @@ export default function Dashboard() {
       const params = new URLSearchParams();
       if (search) params.append("search", search);
       if (sortOrder) params.append("sortOrder", sortOrder);
-      const response = await fetch(`/api/field-notes?${params}`);
-      if (!response.ok) throw new Error("Failed to fetch field notes");
+      const response = await apiRequest(`/api/field-notes?${params}`, "GET");
       return response.json();
     },
   });

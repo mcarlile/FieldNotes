@@ -1,4 +1,4 @@
-import { fieldNotes, photos, trailcamProjects, videoClips, webhookTokens, gpxInbox, stravaConnections, type FieldNote, type Photo, type InsertFieldNote, type InsertPhoto, type TrailcamProject, type VideoClip, type InsertTrailcamProject, type InsertVideoClip, type WebhookToken, type GpxInboxItem, type StravaConnection, type InsertStravaConnection } from "@shared/schema";
+import { fieldNotes, photos, trailcamProjects, videoClips, webhookTokens, gpxInbox, stravaConnections, expeditions, expeditionFieldNotes, type FieldNote, type Photo, type InsertFieldNote, type InsertPhoto, type TrailcamProject, type VideoClip, type InsertTrailcamProject, type InsertVideoClip, type WebhookToken, type GpxInboxItem, type StravaConnection, type InsertStravaConnection, type Expedition, type InsertExpedition, type ExpeditionFieldNote } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, like, ilike, and, or, sql } from "drizzle-orm";
 
@@ -13,7 +13,7 @@ export interface IStorage {
   createFieldNote(fieldNote: InsertFieldNote): Promise<FieldNote>;
   updateFieldNote(id: string, fieldNote: Partial<InsertFieldNote>): Promise<FieldNote | undefined>;
   deleteFieldNote(id: string): Promise<boolean>;
-  
+
   // Photos
   getPhotosByFieldNoteId(fieldNoteId: string): Promise<Photo[]>;
   getPhotoById(id: string): Promise<Photo | undefined>;
@@ -21,7 +21,7 @@ export interface IStorage {
   updatePhoto(id: string, photo: Partial<InsertPhoto>): Promise<Photo | undefined>;
   deletePhoto(id: string): Promise<boolean>;
   updateFieldNotePhotos(fieldNoteId: string, photosData: any[]): Promise<Photo[]>;
-  
+
   // TrailCam Projects
   getTrailcamProjects(options?: {
     search?: string;
@@ -31,7 +31,7 @@ export interface IStorage {
   createTrailcamProject(project: InsertTrailcamProject): Promise<TrailcamProject>;
   updateTrailcamProject(id: string, project: Partial<InsertTrailcamProject>): Promise<TrailcamProject | undefined>;
   deleteTrailcamProject(id: string): Promise<boolean>;
-  
+
   // Video Clips
   getVideoClipsByProjectId(projectId: string): Promise<VideoClip[]>;
   getVideoClipById(id: string): Promise<VideoClip | undefined>;
@@ -62,6 +62,23 @@ export interface IStorage {
   getMobileToken(token: string): Promise<{ userId: string; expiresAt: Date } | undefined>;
   createMobileToken(userId: string, token: string, expiresAt: Date): Promise<void>;
   deleteMobileTokensByUser(userId: string): Promise<void>;
+
+  // Publishing — field notes
+  publishFieldNote(id: string, slug: string): Promise<FieldNote | undefined>;
+  unpublishFieldNote(id: string): Promise<FieldNote | undefined>;
+  getPublishedFieldNoteBySlug(slug: string): Promise<FieldNote | undefined>;
+
+  // Expeditions
+  getExpeditionsByUser(userId: string): Promise<Expedition[]>;
+  getExpeditionById(id: string): Promise<Expedition | undefined>;
+  createExpedition(data: InsertExpedition): Promise<Expedition>;
+  updateExpedition(id: string, data: Partial<InsertExpedition>): Promise<Expedition | undefined>;
+  deleteExpedition(id: string): Promise<boolean>;
+  publishExpedition(id: string, slug: string): Promise<Expedition | undefined>;
+  unpublishExpedition(id: string): Promise<Expedition | undefined>;
+  getPublishedExpeditionBySlug(slug: string): Promise<Expedition | undefined>;
+  setExpeditionFieldNotes(expeditionId: string, fieldNoteIds: string[]): Promise<void>;
+  getExpeditionFieldNotes(expeditionId: string): Promise<Array<{ fieldNote: FieldNote; position: number }>>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -71,9 +88,9 @@ export class DatabaseStorage implements IStorage {
     sortOrder?: 'recent' | 'oldest' | 'name';
   } = {}): Promise<FieldNote[]> {
     let query = db.select().from(fieldNotes);
-    
+
     const conditions = [];
-    
+
     if (options.search) {
       const searchTerm = options.search.trim();
       if (searchTerm) {
@@ -86,15 +103,15 @@ export class DatabaseStorage implements IStorage {
         );
       }
     }
-    
+
     if (options.tripType) {
       conditions.push(sql`${fieldNotes.tripType} @> ARRAY[${options.tripType}]::text[]`);
     }
-    
+
     if (conditions.length > 0) {
       query = query.where(and(...conditions)) as typeof query;
     }
-    
+
     // Apply sorting
     switch (options.sortOrder) {
       case 'oldest':
@@ -108,7 +125,7 @@ export class DatabaseStorage implements IStorage {
         query = query.orderBy(desc(fieldNotes.date)) as typeof query;
         break;
     }
-    
+
     return await query;
   }
 
@@ -137,7 +154,7 @@ export class DatabaseStorage implements IStorage {
   async deleteFieldNote(id: string): Promise<boolean> {
     // First delete all associated photos
     await db.delete(photos).where(eq(photos.fieldNoteId, id));
-    
+
     // Then delete the field note
     const result = await db.delete(fieldNotes).where(eq(fieldNotes.id, id));
     return result.rowCount !== null && result.rowCount > 0;
@@ -176,19 +193,19 @@ export class DatabaseStorage implements IStorage {
 
   async updateFieldNotePhotos(fieldNoteId: string, photosData: any[]): Promise<Photo[]> {
     console.log('Updating field note photos:', fieldNoteId, photosData);
-    
+
     // Get existing photos to compare
     const existingPhotos = await this.getPhotosByFieldNoteId(fieldNoteId);
     const existingPhotoIds = new Set(existingPhotos.map(p => p.id));
-    
+
     // Track which photos should remain (either existing ones with ID or new ones)
     const keepPhotoIds = new Set();
     const newPhotos: Photo[] = [];
-    
+
     // Process each photo from the form
     for (const photoData of photosData) {
       console.log('Processing photo:', photoData);
-      
+
       if (photoData.id && existingPhotoIds.has(photoData.id)) {
         // This is an existing photo to keep
         keepPhotoIds.add(photoData.id);
@@ -215,14 +232,14 @@ export class DatabaseStorage implements IStorage {
         newPhotos.push(newPhoto);
       }
     }
-    
+
     // Delete photos that are no longer in the list
     for (const existingPhoto of existingPhotos) {
       if (!keepPhotoIds.has(existingPhoto.id)) {
         await this.deletePhoto(existingPhoto.id);
       }
     }
-    
+
     // Return all current photos for this field note
     return await this.getPhotosByFieldNoteId(fieldNoteId);
   }
@@ -233,9 +250,9 @@ export class DatabaseStorage implements IStorage {
     sortOrder?: 'recent' | 'oldest' | 'name';
   } = {}): Promise<TrailcamProject[]> {
     let query = db.select().from(trailcamProjects);
-    
+
     const conditions = [];
-    
+
     if (options.search) {
       const searchTerm = options.search.trim();
       if (searchTerm) {
@@ -247,11 +264,11 @@ export class DatabaseStorage implements IStorage {
         );
       }
     }
-    
+
     if (conditions.length > 0) {
       query = query.where(and(...conditions)) as typeof query;
     }
-    
+
     // Apply sorting
     switch (options.sortOrder) {
       case 'oldest':
@@ -265,7 +282,7 @@ export class DatabaseStorage implements IStorage {
         query = query.orderBy(desc(trailcamProjects.createdAt)) as typeof query;
         break;
     }
-    
+
     return await query;
   }
 
@@ -294,7 +311,7 @@ export class DatabaseStorage implements IStorage {
   async deleteTrailcamProject(id: string): Promise<boolean> {
     // First delete all associated video clips
     await db.delete(videoClips).where(eq(videoClips.projectId, id));
-    
+
     // Then delete the project
     const result = await db.delete(trailcamProjects).where(eq(trailcamProjects.id, id));
     return result.rowCount !== null && result.rowCount > 0;
@@ -466,6 +483,110 @@ export class DatabaseStorage implements IStorage {
     const { pool } = await import("./db");
     await pool.query("DELETE FROM mobile_tokens WHERE user_id = $1", [userId]);
   }
+
+  // Publishing — field notes
+  async publishFieldNote(id: string, slug: string): Promise<FieldNote | undefined> {
+    const [note] = await db
+      .update(fieldNotes)
+      .set({ isPublished: true, publishedAt: new Date(), slug })
+      .where(eq(fieldNotes.id, id))
+      .returning();
+    return note;
+  }
+
+  async unpublishFieldNote(id: string): Promise<FieldNote | undefined> {
+    const [note] = await db
+      .update(fieldNotes)
+      .set({ isPublished: false })
+      .where(eq(fieldNotes.id, id))
+      .returning();
+    return note;
+  }
+
+  async getPublishedFieldNoteBySlug(slug: string): Promise<FieldNote | undefined> {
+    const [note] = await db
+      .select()
+      .from(fieldNotes)
+      .where(and(eq(fieldNotes.slug, slug), eq(fieldNotes.isPublished, true)));
+    return note;
+  }
+
+  // Expeditions
+  async getExpeditionsByUser(userId: string): Promise<Expedition[]> {
+    return db
+      .select()
+      .from(expeditions)
+      .where(eq(expeditions.userId, userId))
+      .orderBy(desc(expeditions.createdAt));
+  }
+
+  async getExpeditionById(id: string): Promise<Expedition | undefined> {
+    const [exp] = await db.select().from(expeditions).where(eq(expeditions.id, id));
+    return exp;
+  }
+
+  async createExpedition(data: InsertExpedition): Promise<Expedition> {
+    const [exp] = await db.insert(expeditions).values(data).returning();
+    return exp;
+  }
+
+  async updateExpedition(id: string, data: Partial<InsertExpedition>): Promise<Expedition | undefined> {
+    const [exp] = await db
+      .update(expeditions)
+      .set(data)
+      .where(eq(expeditions.id, id))
+      .returning();
+    return exp;
+  }
+
+  async deleteExpedition(id: string): Promise<boolean> {
+    const result = await db.delete(expeditions).where(eq(expeditions.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async publishExpedition(id: string, slug: string): Promise<Expedition | undefined> {
+    const [exp] = await db
+      .update(expeditions)
+      .set({ isPublished: true, publishedAt: new Date(), slug })
+      .where(eq(expeditions.id, id))
+      .returning();
+    return exp;
+  }
+
+  async unpublishExpedition(id: string): Promise<Expedition | undefined> {
+    const [exp] = await db
+      .update(expeditions)
+      .set({ isPublished: false })
+      .where(eq(expeditions.id, id))
+      .returning();
+    return exp;
+  }
+
+  async getPublishedExpeditionBySlug(slug: string): Promise<Expedition | undefined> {
+    const [exp] = await db
+      .select()
+      .from(expeditions)
+      .where(and(eq(expeditions.slug, slug), eq(expeditions.isPublished, true)));
+    return exp;
+  }
+
+  async setExpeditionFieldNotes(expeditionId: string, fieldNoteIds: string[]): Promise<void> {
+    await db.delete(expeditionFieldNotes).where(eq(expeditionFieldNotes.expeditionId, expeditionId));
+    if (fieldNoteIds.length === 0) return;
+    await db.insert(expeditionFieldNotes).values(
+      fieldNoteIds.map((fieldNoteId, position) => ({ expeditionId, fieldNoteId, position }))
+    );
+  }
+
+  async getExpeditionFieldNotes(expeditionId: string): Promise<Array<{ fieldNote: FieldNote; position: number }>> {
+    const rows = await db
+      .select({ fieldNote: fieldNotes, position: expeditionFieldNotes.position })
+      .from(expeditionFieldNotes)
+      .innerJoin(fieldNotes, eq(expeditionFieldNotes.fieldNoteId, fieldNotes.id))
+      .where(eq(expeditionFieldNotes.expeditionId, expeditionId))
+      .orderBy(asc(expeditionFieldNotes.position));
+    return rows;
+  }
 }
 
 // Temporary in-memory storage with sample data for demonstration
@@ -473,7 +594,7 @@ export class MemStorage implements IStorage {
   async updateFieldNote(id: string, updateFieldNote: Partial<InsertFieldNote>): Promise<FieldNote | undefined> {
     const index = this.fieldNotesData.findIndex(note => note.id === id);
     if (index === -1) return undefined;
-    
+
     this.fieldNotesData[index] = { ...this.fieldNotesData[index], ...updateFieldNote };
     return this.fieldNotesData[index];
   }
@@ -481,7 +602,7 @@ export class MemStorage implements IStorage {
   async deleteFieldNote(id: string): Promise<boolean> {
     const index = this.fieldNotesData.findIndex(note => note.id === id);
     if (index === -1) return false;
-    
+
     // Delete associated photos
     this.photosData = this.photosData.filter(photo => photo.fieldNoteId !== id);
     // Delete field note
@@ -492,13 +613,14 @@ export class MemStorage implements IStorage {
   async updatePhoto(id: string, updatePhoto: Partial<InsertPhoto>): Promise<Photo | undefined> {
     const index = this.photosData.findIndex(photo => photo.id === id);
     if (index === -1) return undefined;
-    
+
     this.photosData[index] = { ...this.photosData[index], ...updatePhoto };
     return this.photosData[index];
   }
   private fieldNotesData: FieldNote[] = [
     {
       id: "1",
+      userId: null,
       title: "Mount Whitney Summit Trail",
       description: "A challenging 22-mile round trip hike to the highest peak in the contiguous United States. The trail offers stunning alpine scenery, crystal-clear mountain lakes, and breathtaking views from the summit at 14,505 feet.",
       tripType: ["Hiking"],
@@ -516,10 +638,14 @@ export class MemStorage implements IStorage {
       },
       stravaId: null,
       stravaSource: null,
+      isPublished: false,
+      publishedAt: null,
+      slug: null,
       createdAt: new Date("2024-07-16T10:00:00Z")
     },
     {
       id: "2",
+      userId: null,
       title: "Yosemite Valley Loop",
       description: "A scenic bike ride through the iconic Yosemite Valley, passing by El Capitan, Bridalveil Fall, and Half Dome. Perfect for families and offering incredible photographic opportunities.",
       tripType: ["Cycling"],
@@ -536,6 +662,9 @@ export class MemStorage implements IStorage {
       },
       stravaId: null,
       stravaSource: null,
+      isPublished: false,
+      publishedAt: null,
+      slug: null,
       createdAt: new Date("2024-06-21T09:15:00Z")
     }
   ];
@@ -610,7 +739,7 @@ export class MemStorage implements IStorage {
     if (options.search) {
       const searchLower = options.search.toLowerCase().trim();
       if (searchLower) {
-        filtered = filtered.filter(note => 
+        filtered = filtered.filter(note =>
           note.title.toLowerCase().includes(searchLower) ||
           note.description.toLowerCase().includes(searchLower) ||
           note.tripType.some(t => t.toLowerCase().includes(searchLower))
@@ -647,11 +776,15 @@ export class MemStorage implements IStorage {
     const fieldNote: FieldNote = {
       id: Math.random().toString(36).substr(2, 9),
       ...insertFieldNote,
+      userId: insertFieldNote.userId ?? null,
       distance: insertFieldNote.distance ?? null,
       elevationGain: insertFieldNote.elevationGain ?? null,
       gpxData: insertFieldNote.gpxData ?? null,
       stravaId: insertFieldNote.stravaId ?? null,
       stravaSource: insertFieldNote.stravaSource ?? null,
+      isPublished: false,
+      publishedAt: null,
+      slug: null,
       createdAt: new Date()
     };
     this.fieldNotesData.push(fieldNote);
@@ -716,7 +849,7 @@ export class MemStorage implements IStorage {
     if (options.search) {
       const searchLower = options.search.toLowerCase().trim();
       if (searchLower) {
-        filtered = filtered.filter(project => 
+        filtered = filtered.filter(project =>
           project.title.toLowerCase().includes(searchLower) ||
           (project.description && project.description.toLowerCase().includes(searchLower))
         );
@@ -761,7 +894,7 @@ export class MemStorage implements IStorage {
   async updateTrailcamProject(id: string, updateProject: Partial<InsertTrailcamProject>): Promise<TrailcamProject | undefined> {
     const index = this.trailcamProjectsData.findIndex(project => project.id === id);
     if (index === -1) return undefined;
-    
+
     this.trailcamProjectsData[index] = { ...this.trailcamProjectsData[index], ...updateProject };
     return this.trailcamProjectsData[index];
   }
@@ -769,7 +902,7 @@ export class MemStorage implements IStorage {
   async deleteTrailcamProject(id: string): Promise<boolean> {
     const index = this.trailcamProjectsData.findIndex(project => project.id === id);
     if (index === -1) return false;
-    
+
     // Delete associated video clips
     this.videoClipsData = this.videoClipsData.filter(clip => clip.projectId !== id);
     // Delete project
@@ -792,6 +925,15 @@ export class MemStorage implements IStorage {
     const clip: VideoClip = {
       id: Math.random().toString(36).substr(2, 9),
       ...insertClip,
+      transcodedUrl: insertClip.transcodedUrl ?? null,
+      thumbnailUrl: insertClip.thumbnailUrl ?? null,
+      processingStatus: insertClip.processingStatus ?? "pending",
+      processingError: insertClip.processingError ?? null,
+      startLatitude: insertClip.startLatitude ?? null,
+      startLongitude: insertClip.startLongitude ?? null,
+      endLatitude: insertClip.endLatitude ?? null,
+      endLongitude: insertClip.endLongitude ?? null,
+      color: insertClip.color ?? null,
       fileSize: insertClip.fileSize ?? null,
       videoFormat: insertClip.videoFormat ?? null,
       createdAt: new Date()
@@ -803,7 +945,7 @@ export class MemStorage implements IStorage {
   async updateVideoClip(id: string, updateClip: Partial<InsertVideoClip>): Promise<VideoClip | undefined> {
     const index = this.videoClipsData.findIndex(clip => clip.id === id);
     if (index === -1) return undefined;
-    
+
     this.videoClipsData[index] = { ...this.videoClipsData[index], ...updateClip };
     return this.videoClipsData[index];
   }
@@ -840,6 +982,21 @@ export class MemStorage implements IStorage {
   async getMobileToken(_token: string): Promise<{ userId: string; expiresAt: Date } | undefined> { return undefined; }
   async createMobileToken(_userId: string, _token: string, _expiresAt: Date): Promise<void> {}
   async deleteMobileTokensByUser(_userId: string): Promise<void> {}
+
+  // Publishing + expeditions (stubs)
+  async publishFieldNote(_id: string, _slug: string): Promise<FieldNote | undefined> { return undefined; }
+  async unpublishFieldNote(_id: string): Promise<FieldNote | undefined> { return undefined; }
+  async getPublishedFieldNoteBySlug(_slug: string): Promise<FieldNote | undefined> { return undefined; }
+  async getExpeditionsByUser(_userId: string): Promise<Expedition[]> { return []; }
+  async getExpeditionById(_id: string): Promise<Expedition | undefined> { return undefined; }
+  async createExpedition(_data: InsertExpedition): Promise<Expedition> { throw new Error("Not implemented"); }
+  async updateExpedition(_id: string, _data: Partial<InsertExpedition>): Promise<Expedition | undefined> { return undefined; }
+  async deleteExpedition(_id: string): Promise<boolean> { return false; }
+  async publishExpedition(_id: string, _slug: string): Promise<Expedition | undefined> { return undefined; }
+  async unpublishExpedition(_id: string): Promise<Expedition | undefined> { return undefined; }
+  async getPublishedExpeditionBySlug(_slug: string): Promise<Expedition | undefined> { return undefined; }
+  async setExpeditionFieldNotes(_expeditionId: string, _fieldNoteIds: string[]): Promise<void> {}
+  async getExpeditionFieldNotes(_expeditionId: string): Promise<Array<{ fieldNote: FieldNote; position: number }>> { return []; }
 }
 
 // Use database storage for permanent data persistence
