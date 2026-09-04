@@ -428,7 +428,7 @@ export default function AdminPage() {
                 Photos {uploadedPhotos.length > 0 && `· ${uploadedPhotos.length}`}
               </label>
               <AutoPhotoUploader
-                maxNumberOfFiles={10}
+                maxNumberOfFiles={100}
                 maxFileSize={52428800}
                 onGetUploadParameters={handlePhotoUpload}
                 onComplete={handlePhotoUploadComplete}
