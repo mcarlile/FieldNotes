@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
 import { ApiError, apiRequest } from "@/lib/queryClient";
+import { trackEvent } from "@/lib/analytics";
 import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
@@ -175,6 +176,7 @@ function StravaPanel({ onImported, onAssociate }: { onImported: (hint: ImportedH
       let isDuplicate = false;
       try {
         const response = await apiRequest(`/api/strava/import/${type}/${id}`, "POST");
+        trackEvent("strava_import_completed", { type });
         item = await response.json().catch(() => null);
       } catch (error) {
         if (!(error instanceof ApiError) || error.status !== 409) throw error;
@@ -455,6 +457,7 @@ export default function InboxPage() {
     mutationFn: ({ id, title, description, tripType }: { id: string; title: string; description: string; tripType: string[] }) =>
       apiRequest(`/api/inbox/${id}/promote`, "POST", { title, description, tripType }),
     onSuccess: async (res) => {
+      trackEvent("field_note_created", { source: "inbox" });
       const data = await res.json();
       queryClient.invalidateQueries({ queryKey: ["/api/inbox"] });
       queryClient.invalidateQueries({ queryKey: ["/api/field-notes"] });

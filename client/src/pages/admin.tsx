@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
+import { trackEvent } from "@/lib/analytics";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -201,6 +202,7 @@ export default function AdminPage() {
         photos: buildPhotoPayload(),
       }),
     onSuccess: () => {
+      trackEvent("field_note_created", { source: "editor" });
       toast({ title: "Field note created", variant: "success" });
       queryClient.invalidateQueries({ queryKey: ["/api/field-notes"] });
       setLocation("/dashboard");
@@ -221,6 +223,7 @@ export default function AdminPage() {
         photos: buildPhotoPayload(),
       }),
     onSuccess: () => {
+      trackEvent("field_note_updated");
       toast({ title: "Field note updated", variant: "success" });
       queryClient.invalidateQueries({ queryKey: ["/api/field-notes"] });
       queryClient.invalidateQueries({ queryKey: ["/api/field-notes", id] });

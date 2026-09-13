@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
+import { trackEvent } from "@/lib/analytics";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
@@ -123,6 +124,7 @@ export default function FieldNoteDetail() {
   const deleteFieldNoteMutation = useMutation({
     mutationFn: async () => apiRequest(`/api/field-notes/${id}`, "DELETE"),
     onSuccess: () => {
+      trackEvent("field_note_deleted");
       toast({ title: "Success", description: "Field note deleted successfully!" });
       queryClient.invalidateQueries({ queryKey: ["/api/field-notes"] });
       setLocation("/dashboard");
