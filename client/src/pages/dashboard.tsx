@@ -2,7 +2,7 @@ import { useState, forwardRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Loading } from "@carbon/react";
-import { LayoutGrid, Flame } from "lucide-react";
+import { LayoutGrid, Flame, List } from "lucide-react";
 import FieldNoteCard from "@/components/field-note-card";
 import HeatMapView from "@/components/heat-map-view";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -74,7 +74,7 @@ export default function Dashboard() {
   const [search, setSearch] = useState("");
   const [tripTypes, setTripTypes] = useState<string[]>([]);
   const [sortOrder, setSortOrder] = useState("recent");
-  const [viewMode, setViewMode] = useState<"notes" | "heatmap">("notes");
+  const [viewMode, setViewMode] = useState<"notes" | "table" | "heatmap">("notes");
   const [distanceFilter, setDistanceFilter] = useState("any");
   const [elevationFilter, setElevationFilter] = useState("any");
 
@@ -165,7 +165,21 @@ export default function Dashboard() {
         data-testid="mode-notes"
       >
         <LayoutGrid className="h-3 w-3" />
-        Field notes
+        Cards
+      </button>
+      <button
+        role="tab"
+        aria-selected={viewMode === "table"}
+        onClick={() => setViewMode("table")}
+        className={`meta-mono flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors ${
+          viewMode === "table"
+            ? "bg-background text-foreground shadow-[0_1px_2px_rgba(26,24,21,0.08)]"
+            : "text-muted-foreground hover:text-foreground"
+        }`}
+        data-testid="mode-table"
+      >
+        <List className="h-3 w-3" />
+        Table
       </button>
       <button
         role="tab"
@@ -336,7 +350,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Masonry grid */}
+      {/* Content */}
       <main className="px-5 sm:px-8 pb-12">
         {isLoading ? (
           <div className="flex justify-center py-20">
@@ -353,6 +367,55 @@ export default function Dashboard() {
             >
               Add your first &rarr;
             </Link>
+          </div>
+        ) : viewMode === "table" ? (
+          <div className="w-full overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="meta-mono text-left text-muted-foreground font-normal pb-2 pr-6">Title</th>
+                  <th className="meta-mono text-left text-muted-foreground font-normal pb-2 pr-6">Type</th>
+                  <th className="meta-mono text-left text-muted-foreground font-normal pb-2 pr-6">Date</th>
+                  <th className="meta-mono text-right text-muted-foreground font-normal pb-2 pr-6">Distance</th>
+                  <th className="meta-mono text-right text-muted-foreground font-normal pb-2">Elevation</th>
+                </tr>
+              </thead>
+              <tbody>
+                {fieldNotes.map((note) => {
+                  const dateStr = new Date(note.date.toString()).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  });
+                  const typeStr = Array.isArray(note.tripType) ? note.tripType.join(", ") : note.tripType;
+                  return (
+                    <tr key={note.id} className="border-b border-border group/row">
+                      <td className="py-2.5 pr-6">
+                        <Link
+                          href={`/field-notes/${note.id}`}
+                          className="font-serif text-foreground hover:opacity-70 transition-opacity"
+                          style={{ fontSize: "1.05rem" }}
+                        >
+                          {note.title}
+                        </Link>
+                      </td>
+                      <td className="meta-mono text-muted-foreground py-2.5 pr-6 whitespace-nowrap">
+                        {typeStr}
+                      </td>
+                      <td className="meta-mono text-muted-foreground py-2.5 pr-6 whitespace-nowrap">
+                        {dateStr}
+                      </td>
+                      <td className="meta-mono text-muted-foreground py-2.5 pr-6 text-right whitespace-nowrap">
+                        {note.distance != null ? `${note.distance} mi` : "—"}
+                      </td>
+                      <td className="meta-mono text-muted-foreground py-2.5 text-right whitespace-nowrap">
+                        {note.elevationGain != null ? `${note.elevationGain} ft` : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         ) : (
           <div className="columns-1 sm:columns-2 lg:columns-3 gap-3 sm:gap-4">
