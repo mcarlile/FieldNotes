@@ -361,7 +361,7 @@ export default function AdminPage() {
                   </label>
                   
                   <ObjectUploader
-                    maxNumberOfFiles={10}
+                    maxNumberOfFiles={100}
                     maxFileSize={52428800} // 50MB
                     onGetUploadParameters={handlePhotoUpload}
                     onComplete={handlePhotoUploadComplete}
