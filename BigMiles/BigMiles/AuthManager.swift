@@ -47,15 +47,7 @@ class AuthManager: ObservableObject {
         }
     }
 
-    func logout() async {
-        if let token = storedToken,
-           let url = URL(string: "https://bigmiles.app/api/auth/mobile-logout") {
-            var request = URLRequest(url: url)
-            request.httpMethod = "DELETE"
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            _ = try? await URLSession.shared.data(for: request)
-        }
-
+    func logout() {
         Keychain.delete(AuthManager.tokenKey)
         currentUser = nil
         isAuthenticated = false

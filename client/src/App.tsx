@@ -183,6 +183,7 @@ function AppContent() {
         <Route path="/expeditions">{() => <RequireAuth component={Expeditions} />}</Route>
         <Route path="/expeditions/new">{() => <RequireAuth component={ExpeditionAdmin} />}</Route>
         <Route path="/expeditions/:id/edit">{() => <RequireAuth component={ExpeditionAdmin} />}</Route>
+        {/* Public routes — no auth required */}
         <Route path="/trips/:slug" component={PublicExpeditionPage} />
         <Route path="/notes/:slug" component={PublicFieldNotePage} />
         <Route component={NotFound} />
