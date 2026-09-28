@@ -6,6 +6,7 @@ import { ObjectStorageService, ObjectNotFoundError, objectStorageService } from 
 import { extractExifData, extractExifFromBuffer } from "./exif-extractor";
 import { startVideoProcessing } from "./videoProcessor";
 import { resolveClipCoordinates } from "@shared/gpx-utils";
+import { validateTripPhotos, MAX_TRIP_PHOTOS } from "@shared/photo-limit";
 import { requireAuth } from "./middlewares/clerkAuth";
 import multer from 'multer';
 import * as fs from 'fs';
@@ -396,6 +397,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       // Extract photos from the request body
       const { photos: photosData, ...fieldNoteData } = req.body;
+      const photoError = validateTripPhotos(photosData);
+      if (photoError) return res.status(400).json({ message: photoError });
 
       // Convert string date to Date object
       const bodyWithDate = {
@@ -438,6 +441,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Extract photos from the request body
       const { photos: photosData, userId: _ignoredUserId, ...fieldNoteData } = req.body;
+      const existingPhotoIds = photosData === undefined
+        ? []
+        : (await storage.getPhotosByFieldNoteId(id)).map((photo) => photo.id);
+      const photoError = validateTripPhotos(photosData, existingPhotoIds);
+      if (photoError) return res.status(400).json({ message: photoError });
 
       // Convert string date to Date object
       const bodyWithDate = {
@@ -570,7 +578,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Create the photo record after verifying the upload
-      const photo = await storage.createPhoto(validatedData);
+      const photo = await storage.createPhotoWithinLimit(validatedData);
+      if (!photo) {
+        return res.status(400).json({ message: `A trip can have at most ${MAX_TRIP_PHOTOS} photos` });
+      }
       res.status(201).json(photo);
 
       // Process EXIF data asynchronously in the background

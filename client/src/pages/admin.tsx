@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { trackEvent } from "@/lib/analytics";
 import { useForm } from "react-hook-form";
@@ -54,8 +54,12 @@ export default function AdminPage() {
     filename: string;
     caption: string;
     id?: string;
+    uploadId?: string;
     exifData?: PhotoExifData;
   }>>([]);
+  const [acknowledgedUploadIds, setAcknowledgedUploadIds] = useState<string[]>([]);
+  const [photosUploading, setPhotosUploading] = useState(false);
+  const hydratedPhotosFor = useRef<string | null>(null);
   const [selectedTripTypes, setSelectedTripTypes] = useState<string[]>(["hiking"]);
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -74,7 +78,7 @@ export default function AdminPage() {
     enabled: isEditing,
   });
 
-  const { data: existingPhotos = [] } = useQuery({
+  const { data: existingPhotos = [], isSuccess: photosLoaded, isError: photosLoadFailed, refetch: retryPhotos } = useQuery({
     queryKey: ["/api/field-notes", id, "photos"],
     queryFn: async () => {
       const response = await apiRequest(`/api/field-notes/${id}/photos`, "GET");
@@ -150,18 +154,21 @@ export default function AdminPage() {
 
       const newPhotos = result.successful.map((upload, index) => ({
         url: normalize((upload as { uploadURL: string }).uploadURL),
+        uploadId: (upload as { id: string }).id,
         filename: upload.name ?? "photo",
         caption: "",
         exifData: exifDataArray?.[index] ?? undefined,
       }));
       setUploadedPhotos((prev) => [...prev, ...newPhotos]);
+      setAcknowledgedUploadIds(prev => [...prev, ...newPhotos.map(p => p.uploadId)]);
 
       const photosWithGps = newPhotos.filter((p) => p.exifData?.latitude && p.exifData?.longitude);
       toast({
         title: "Upload complete",
         description: `${result.successful.length} photo(s) uploaded${photosWithGps.length > 0 ? ` · ${photosWithGps.length} with GPS` : ""}`,
       });
-    } else if (result.failed && result.failed.length > 0) {
+    }
+    if (result.failed && result.failed.length > 0) {
       toast({ title: "Upload failed", description: `${result.failed.length} photo(s) failed`, variant: "destructive" });
     }
   };
@@ -174,6 +181,7 @@ export default function AdminPage() {
 
   const buildPhotoPayload = () =>
     uploadedPhotos.map((photo) => ({
+      ...(photo.id ? { id: photo.id } : {}),
       filename: photo.filename,
       url: photo.url,
       caption: photo.caption,
@@ -235,6 +243,20 @@ export default function AdminPage() {
   });
 
   const onSubmit = (data: FieldNoteFormData) => {
+    if (isEditing && (!photosLoaded || hydratedPhotosFor.current !== id)) {
+      toast({ title: "Photos unavailable", description: "Wait for the existing photos to load before saving.", variant: "destructive" });
+      return;
+    }
+    if (photosUploading) {
+      toast({ title: "Uploads in progress", description: "Wait for photos to finish uploading before saving.", variant: "destructive" });
+      return;
+    }
+    if (uploadedPhotos.length > 100 &&
+      !(isEditing && existingPhotos.length > 100 &&
+        uploadedPhotos.length <= existingPhotos.length && uploadedPhotos.every(p => p.id))) {
+      toast({ title: "Photo limit", description: "A trip can have at most 100 photos", variant: "destructive" });
+      return;
+    }
     if (selectedTripTypes.length === 0) {
       toast({ title: "Trip type required", description: "Select at least one trip type", variant: "destructive" });
       return;
@@ -262,7 +284,7 @@ export default function AdminPage() {
   }, [existingFieldNote, form]);
 
   useEffect(() => {
-    if (isEditing && existingPhotos && existingPhotos.length > 0) {
+    if (isEditing && photosLoaded && hydratedPhotosFor.current !== id) {
       const formattedPhotos = (existingPhotos as Array<{
         id: string;
         url: string;
@@ -276,17 +298,28 @@ export default function AdminPage() {
         id: photo.id,
       }));
       setUploadedPhotos(formattedPhotos);
-    } else if (!isEditing) {
+      hydratedPhotosFor.current = id ?? null;
+    } else if (!isEditing && hydratedPhotosFor.current !== null) {
+      hydratedPhotosFor.current = null;
       setUploadedPhotos([]);
     }
-  }, [existingPhotos, isEditing, id]);
+  }, [existingPhotos, isEditing, id, photosLoaded]);
 
   const isPending = createMutation.isPending || updateMutation.isPending;
 
-  if (isLoadingFieldNote) {
+  if (isLoadingFieldNote || (isEditing && !photosLoaded && !photosLoadFailed)) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (isEditing && photosLoadFailed) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-3">
+        <p>Unable to load the existing photos. Saving is unavailable until they load.</p>
+        <button type="button" onClick={() => retryPhotos()} className="underline">Retry loading photos</button>
       </div>
     );
   }
@@ -422,15 +455,19 @@ export default function AdminPage() {
               <label className="meta-mono text-muted-foreground">
                 Photos {uploadedPhotos.length > 0 && `· ${uploadedPhotos.length}`}
               </label>
-              <AutoPhotoUploader
+              {(!isEditing || (photosLoaded && hydratedPhotosFor.current === id)) && <AutoPhotoUploader
+                key={id ?? "new"}
                 maxNumberOfFiles={100}
+                existingPhotoCount={uploadedPhotos.length}
+                acknowledgedUploadIds={acknowledgedUploadIds}
+                onPendingChange={setPhotosUploading}
                 maxFileSize={52428800}
                 onGetUploadParameters={handlePhotoUpload}
                 onComplete={handlePhotoUploadComplete}
                 buttonClassName="meta-mono px-3 py-1.5 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors"
               >
                 <span>+ Upload</span>
-              </AutoPhotoUploader>
+              </AutoPhotoUploader>}
             </div>
 
             {uploadedPhotos.length > 0 && (
@@ -477,7 +514,7 @@ export default function AdminPage() {
           <div className="pt-4 border-t border-border flex items-center gap-6">
             <button
               type="submit"
-              disabled={isPending}
+              disabled={isPending || photosUploading || (isEditing && (!photosLoaded || hydratedPhotosFor.current !== id))}
               className="meta-mono text-foreground underline underline-offset-4 hover:opacity-70 transition-opacity disabled:opacity-50 flex items-center gap-2"
               data-testid="button-submit"
             >

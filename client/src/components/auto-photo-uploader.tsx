@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useRef } from "react";
 import { 
   Button as CarbonButton,
   Modal,
@@ -11,9 +11,15 @@ import { Upload } from "@carbon/icons-react";
 import type { UploadResult } from "@uppy/core";
 import { type PhotoExifData } from "@/lib/exif-extractor";
 import { apiRequest } from "@/lib/queryClient";
+import { countOccupiedPhotoSlots, runUploadQueue, summarizeUploadBatch } from "@/lib/upload-queue";
 
 interface AutoPhotoUploaderProps {
   maxNumberOfFiles?: number;
+  // Photos already in the editor (including successful uploads reported to onComplete).
+  existingPhotoCount?: number;
+  // All successful IDs ever delivered to the editor, even if removed afterwards.
+  acknowledgedUploadIds?: string[];
+  onPendingChange?: (pending: boolean) => void;
   maxFileSize?: number;
   onGetUploadParameters: () => Promise<{
     method: "PUT";
@@ -25,8 +31,9 @@ interface AutoPhotoUploaderProps {
 }
 
 interface FileUploadState {
+  id: string;
   file: File;
-  status: 'processing' | 'uploading' | 'complete' | 'error';
+  status: 'queued' | 'processing' | 'uploading' | 'complete' | 'error';
   progress: number;
   uploadUrl?: string;
   errorMessage?: string;
@@ -36,6 +43,9 @@ interface FileUploadState {
 
 export function AutoPhotoUploader({
   maxNumberOfFiles = 1,
+  existingPhotoCount = 0,
+  acknowledgedUploadIds = [],
+  onPendingChange,
   maxFileSize = 10485760, // 10MB default
   onGetUploadParameters,
   onComplete,
@@ -44,6 +54,22 @@ export function AutoPhotoUploader({
 }: AutoPhotoUploaderProps) {
   const [showModal, setShowModal] = useState(false);
   const [files, setFiles] = useState<FileUploadState[]>([]);
+  const filesRef = useRef<FileUploadState[]>([]);
+  const nextId = useRef(0);
+  const sessionId = useRef(crypto.randomUUID());
+  const batchTail = useRef<Promise<void>>(Promise.resolve());
+  const pendingBatches = useRef(0);
+  // Keep reservations for completed uploads until the editor acknowledges them,
+  // even when the user closes an individual status row first.
+  const unacknowledgedCompleted = useRef(new Set<string>());
+  const [notice, setNotice] = useState("");
+  const notifyPending = () => onPendingChange?.(pendingBatches.current > 0);
+  const updateFiles = (update: (prev: FileUploadState[]) => FileUploadState[]) => {
+    filesRef.current = update(filesRef.current);
+    setFiles(filesRef.current);
+  };
+  const updateFile = (id: string, patch: Partial<FileUploadState>) =>
+    updateFiles(prev => prev.map(f => f.id === id ? { ...f, ...patch } : f));
 
   const extractExifFromFile = async (file: File): Promise<PhotoExifData | null> => {
     try {
@@ -52,18 +78,14 @@ export function AutoPhotoUploader({
       
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15000);
-      
-      const exifResponse = await apiRequest(
-        "/api/photos/extract-exif",
-        "POST",
-        formData,
-        { signal: controller.signal },
-      );
-      
-      clearTimeout(timeoutId);
-      
-      const exifData = await exifResponse.json();
-      return exifData;
+      try {
+        const exifResponse = await apiRequest(
+          "/api/photos/extract-exif", "POST", formData, { signal: controller.signal },
+        );
+        return await exifResponse.json();
+      } finally {
+        clearTimeout(timeoutId);
+      }
     } catch (error) {
       if ((error as Error).name === 'AbortError') {
         console.warn('EXIF extraction timed out for file:', file.name);
@@ -74,50 +96,41 @@ export function AutoPhotoUploader({
     }
   };
 
-  const uploadSingleFile = async (fileState: FileUploadState, index: number): Promise<any> => {
+  const uploadSingleFile = async (fileState: FileUploadState) => {
+    const id = fileState.id;
+    const upload = { id, name: fileState.file.name, size: fileState.file.size, type: fileState.file.type };
     try {
-      // Step 1: Extract EXIF data
-      setFiles(prev => prev.map((f, idx) => 
-        idx === index ? { ...f, statusMessage: 'Processing image data...', progress: 20 } : f
-      ));
+      updateFile(id, { status: 'processing', statusMessage: 'Processing image data...', progress: 20, errorMessage: undefined });
 
       const exifData = await extractExifFromFile(fileState.file);
       
       // Step 2: Get upload URL
-      setFiles(prev => prev.map((f, idx) => 
-        idx === index ? { 
-          ...f, 
-          statusMessage: 'Getting upload URL...', 
-          progress: 40,
-          exifData: exifData || undefined 
-        } : f
-      ));
+      updateFile(id, { statusMessage: 'Getting upload URL...', progress: 40, exifData: exifData || undefined });
 
+      let urlTimeout: ReturnType<typeof setTimeout> | undefined;
       const uploadParams = await Promise.race([
         onGetUploadParameters(),
-        new Promise<never>((_, reject) => 
-          setTimeout(() => reject(new Error('Upload URL request timed out')), 10000)
-        )
-      ]);
+        new Promise<never>((_, reject) => {
+          urlTimeout = setTimeout(() => reject(new Error('Upload URL request timed out')), 15000);
+        }),
+      ]).finally(() => clearTimeout(urlTimeout));
       
       // Step 3: Upload file
-      setFiles(prev => prev.map((f, idx) => 
-        idx === index ? { 
-          ...f, 
-          status: 'uploading', 
-          statusMessage: 'Uploading...', 
-          progress: 60, 
-          uploadUrl: uploadParams.url 
-        } : f
-      ));
+      updateFile(id, { status: 'uploading', statusMessage: 'Uploading...', progress: 60, uploadUrl: uploadParams.url });
 
-      const response = await fetch(uploadParams.url, {
-        method: uploadParams.method,
-        body: fileState.file,
-        headers: {
-          'Content-Type': fileState.file.type,
-        },
-      });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), Math.max(60000, fileState.file.size / 1024));
+      let response: Response;
+      try {
+        response = await fetch(uploadParams.url, {
+          method: uploadParams.method,
+          body: fileState.file,
+          headers: { 'Content-Type': fileState.file.type },
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -125,97 +138,82 @@ export function AutoPhotoUploader({
       }
 
       // Step 4: Complete
-      setFiles(prev => prev.map((f, idx) => 
-        idx === index ? { 
-          ...f, 
-          status: 'complete', 
-          statusMessage: 'Upload complete!', 
-          progress: 100 
-        } : f
-      ));
+      unacknowledgedCompleted.current.add(id);
+      updateFile(id, { status: 'complete', statusMessage: 'Upload complete!', progress: 100 });
 
       return {
-        successful: [{
-          name: fileState.file.name,
-          size: fileState.file.size,
-          type: fileState.file.type,
-          uploadURL: uploadParams.url,
-        }],
+        successful: { ...upload, uploadURL: uploadParams.url },
         exifData: exifData || null,
+        failed: null,
       };
 
     } catch (error) {
       console.error('Upload error:', error);
-      setFiles(prev => prev.map((f, idx) => 
-        idx === index ? { 
-          ...f, 
-          status: 'error', 
-          statusMessage: `Error: ${(error as Error).message}`,
-          progress: 0 
-        } : f
-      ));
-      return null;
+      const errorMessage = error instanceof Error ? error.message : 'Upload failed';
+      updateFile(id, { status: 'error', statusMessage: 'Upload failed', errorMessage, progress: 0 });
+      return { successful: null, exifData: null, failed: { ...upload, error: new Error(errorMessage) } };
     }
   };
 
-  const processNewFiles = async (newFiles: File[]) => {
-    // Check file limits
-    if (files.length + newFiles.length > maxNumberOfFiles) {
-      alert(`Maximum ${maxNumberOfFiles} files allowed`);
-      return;
-    }
+  const occupiedSlots = () => {
+    return countOccupiedPhotoSlots(existingPhotoCount, filesRef.current, unacknowledgedCompleted.current, acknowledgedUploadIds);
+  };
 
-    // Check file sizes and types
+  const processNewFiles = async (newFiles: File[]) => {
+    setNotice("");
     const validFiles = newFiles.filter(file => {
       if (file.size > maxFileSize) {
-        alert(`File ${file.name} is too large. Maximum size is ${Math.round(maxFileSize / 1024 / 1024)}MB`);
+        setNotice(`${file.name} is too large (maximum ${Math.round(maxFileSize / 1024 / 1024)} MB).`);
         return false;
       }
       if (!file.type.startsWith('image/')) {
-        alert(`File ${file.name} is not an image`);
+        setNotice(`${file.name} is not an image.`);
         return false;
       }
       return true;
     });
 
     if (validFiles.length === 0) return;
-
-    // Add files to state with initial processing status
+    // Count active reservations and successful uploads not yet reflected in the editor.
+    // Failed files do not reserve space until explicitly retried.
+    const occupied = occupiedSlots();
+    if (occupied + validFiles.length > maxNumberOfFiles) {
+      setNotice(`A trip can have at most ${maxNumberOfFiles} photos. ${Math.max(0, maxNumberOfFiles - occupied)} slots available.`);
+      return;
+    }
     const newFileStates: FileUploadState[] = validFiles.map(file => ({
+      id: `${sessionId.current}-${nextId.current++}`,
       file,
-      status: 'processing',
+      status: 'queued',
       progress: 0,
-      statusMessage: 'Starting upload...'
+      statusMessage: 'Waiting to upload...'
     }));
 
-    const startIndex = files.length;
-    setFiles(prev => [...prev, ...newFileStates]);
+    updateFiles(prev => [...prev, ...newFileStates]);
+    await enqueueBatch(newFileStates);
+  };
 
-    // Start uploading each file immediately
-    const uploadPromises = validFiles.map((file, i) => 
-      uploadSingleFile(newFileStates[i], startIndex + i)
-    );
+  const enqueueBatch = (batch: FileUploadState[]) => {
+    pendingBatches.current++;
+    notifyPending();
+    const task = batchTail.current.catch(() => {}).then(() => processBatch(batch)).finally(() => {
+      pendingBatches.current--;
+      notifyPending();
+    });
+    batchTail.current = task;
+    return task;
+  };
 
-    // Wait for all uploads to complete
-    const results = await Promise.all(uploadPromises);
-    const successfulResults = results.filter(result => result !== null);
-
-    // EXIF data aligned with each successful upload, in order
-    const allExifData: PhotoExifData[] = successfulResults.map(
-      (r) => (r.exifData as PhotoExifData) ?? ({} as PhotoExifData),
-    );
-
-    if (successfulResults.length > 0 && onComplete) {
-      const combinedResult = {
-        successful: successfulResults.flatMap(r => r.successful),
-        failed: []
-      };
-      onComplete(combinedResult as any, allExifData);
-    }
+  const processBatch = async (batch: FileUploadState[]) => {
+    const results = await runUploadQueue(batch, uploadSingleFile, 3);
+    const { successful, failed, exifData } = summarizeUploadBatch(results, () => ({} as PhotoExifData));
+    // Emit once per batch, including all-failed batches. Retrying only emits the retried files.
+    onComplete?.({ successful, failed } as unknown as UploadResult<Record<string, unknown>, Record<string, unknown>>, exifData);
   };
 
   const handleFileAdd = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(event.target.files || []);
+    event.target.value = "";
     await processNewFiles(selectedFiles);
   };
 
@@ -223,12 +221,23 @@ export function AutoPhotoUploader({
     await processNewFiles(newFiles);
   };
 
-  const removeFile = (index: number) => {
-    setFiles(prev => prev.filter((_, i) => i !== index));
+  const removeFile = (id: string) => {
+    updateFiles(prev => prev.filter(f => f.id !== id));
+  };
+  const retryFailed = async () => {
+    if (pendingBatches.current > 0) return;
+    const failed = filesRef.current.filter(f => f.status === 'error');
+    if (failed.length === 0) return;
+    const occupied = occupiedSlots();
+    if (occupied + failed.length > maxNumberOfFiles) {
+      setNotice(`Only ${Math.max(0, maxNumberOfFiles - occupied)} photo slots available. Remove failed files or photos before retrying.`);
+      return;
+    }
+    updateFiles(prev => prev.map(f => f.status === 'error' ? { ...f, status: 'queued', statusMessage: 'Waiting to retry...' } : f));
+    await enqueueBatch(failed);
   };
 
   const hasFailedUploads = files.some(f => f.status === 'error');
-  const hasCompletedUploads = files.some(f => f.status === 'complete');
   const allUploadsComplete = files.length > 0 && files.every(f => f.status === 'complete');
 
   return (
@@ -252,8 +261,9 @@ export function AutoPhotoUploader({
       >
         <div className="space-y-4">
           <p className="text-sm text-gray-600 mb-4">
-            Photos will upload automatically when selected. You can add up to {maxNumberOfFiles} photos.
+            Photos upload automatically when selected. Up to {maxNumberOfFiles} photos per trip.
           </p>
+          {notice && <InlineNotification kind="error" title="Cannot add photos" subtitle={notice} hideCloseButton />}
 
           <FileUploaderDropContainer
             labelText="Drag photos here or click to browse"
@@ -278,12 +288,10 @@ export function AutoPhotoUploader({
               <h4 className="text-sm font-semibold">Upload Status</h4>
               
               {hasFailedUploads && (
-                <InlineNotification
-                  kind="error"
-                  title="Some uploads failed"
-                  subtitle="Check individual file status below"
-                  hideCloseButton
-                />
+                <div>
+                  <InlineNotification kind="error" title="Some uploads failed" subtitle="Failed files can be retried or removed below." hideCloseButton />
+                  <CarbonButton kind="tertiary" size="sm" disabled={pendingBatches.current > 0} onClick={retryFailed}>Retry failed uploads</CarbonButton>
+                </div>
               )}
 
               {allUploadsComplete && (
@@ -294,13 +302,15 @@ export function AutoPhotoUploader({
                 />
               )}
 
-              {files.map((fileState, index) => (
-                <div key={index} className="border border-gray-200 rounded p-3">
+              {files.map((fileState) => (
+                <div key={fileState.id} className="border border-gray-200 rounded p-3">
                   <FileUploaderItem
                     name={fileState.file.name}
                     status={fileState.status === 'complete' ? 'complete' : 
                            fileState.status === 'error' ? 'edit' : 'uploading'}
-                    onDelete={() => removeFile(index)}
+                    onDelete={() => {
+                      if (fileState.status === 'error' || fileState.status === 'complete') removeFile(fileState.id);
+                    }}
                     size="md"
                   />
                   

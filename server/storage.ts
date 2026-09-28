@@ -1,6 +1,8 @@
 import { fieldNotes, photos, trailcamProjects, videoClips, webhookTokens, gpxInbox, stravaConnections, expeditions, expeditionFieldNotes, type FieldNote, type Photo, type InsertFieldNote, type InsertPhoto, type TrailcamProject, type VideoClip, type InsertTrailcamProject, type InsertVideoClip, type WebhookToken, type GpxInboxItem, type StravaConnection, type InsertStravaConnection, type Expedition, type InsertExpedition, type ExpeditionFieldNote } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, like, ilike, and, or, sql } from "drizzle-orm";
+import { MAX_TRIP_PHOTOS } from "@shared/photo-limit";
+import { existingPhotoCaptionPatch } from "./photo-caption";
 
 export interface IStorage {
   // Field Notes
@@ -18,6 +20,7 @@ export interface IStorage {
   getPhotosByFieldNoteId(fieldNoteId: string): Promise<Photo[]>;
   getPhotoById(id: string): Promise<Photo | undefined>;
   createPhoto(photo: InsertPhoto): Promise<Photo>;
+  createPhotoWithinLimit(photo: InsertPhoto): Promise<Photo | undefined>;
   updatePhoto(id: string, photo: Partial<InsertPhoto>): Promise<Photo | undefined>;
   deletePhoto(id: string): Promise<boolean>;
   updateFieldNotePhotos(fieldNoteId: string, photosData: any[]): Promise<Photo[]>;
@@ -177,6 +180,21 @@ export class DatabaseStorage implements IStorage {
     return photo;
   }
 
+  async createPhotoWithinLimit(insertPhoto: InsertPhoto): Promise<Photo | undefined> {
+    return db.transaction(async (tx) => {
+      // Lock the parent row: simultaneous direct photo POSTs for this trip
+      // serialize their count-and-insert without a schema migration.
+      const [note] = await tx.select({ id: fieldNotes.id })
+        .from(fieldNotes).where(eq(fieldNotes.id, insertPhoto.fieldNoteId)).for("update");
+      if (!note) return undefined;
+      const [count] = await tx.select({ total: sql<number>`count(*)::int` })
+        .from(photos).where(eq(photos.fieldNoteId, insertPhoto.fieldNoteId));
+      if (count.total >= MAX_TRIP_PHOTOS) return undefined;
+      const [photo] = await tx.insert(photos).values(insertPhoto).returning();
+      return photo;
+    });
+  }
+
   async updatePhoto(id: string, updatePhoto: Partial<InsertPhoto>): Promise<Photo | undefined> {
     const [photo] = await db
       .update(photos)
@@ -192,56 +210,50 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateFieldNotePhotos(fieldNoteId: string, photosData: any[]): Promise<Photo[]> {
-    console.log('Updating field note photos:', fieldNoteId, photosData);
+    return db.transaction(async (tx) => {
+      // Same parent-row lock as createPhotoWithinLimit; bulk replacements and
+      // direct photo POSTs cannot race one another past the cap.
+      await tx.select({ id: fieldNotes.id })
+        .from(fieldNotes).where(eq(fieldNotes.id, fieldNoteId)).for("update");
+      const existingPhotos = await tx.select().from(photos).where(eq(photos.fieldNoteId, fieldNoteId));
+      const existingPhotoIds = new Set(existingPhotos.map(p => p.id));
+      const keepPhotoIds = new Set<string>();
 
-    // Get existing photos to compare
-    const existingPhotos = await this.getPhotosByFieldNoteId(fieldNoteId);
-    const existingPhotoIds = new Set(existingPhotos.map(p => p.id));
-
-    // Track which photos should remain (either existing ones with ID or new ones)
-    const keepPhotoIds = new Set();
-    const newPhotos: Photo[] = [];
-
-    // Process each photo from the form
-    for (const photoData of photosData) {
-      console.log('Processing photo:', photoData);
-
-      if (photoData.id && existingPhotoIds.has(photoData.id)) {
-        // This is an existing photo to keep
-        keepPhotoIds.add(photoData.id);
-      } else if (!photoData.id && photoData.url && photoData.filename) {
-        // This is a new photo to create
-        const newPhoto = await this.createPhoto({
-          fieldNoteId,
-          filename: photoData.filename,
-          url: photoData.url,
-          altText: photoData.caption || '',
-          latitude: photoData.latitude ?? null,
-          longitude: photoData.longitude ?? null,
-          elevation: photoData.elevation ?? null,
-          timestamp: photoData.timestamp ? new Date(photoData.timestamp) : null,
-          camera: photoData.camera || null,
-          lens: photoData.lens || null,
-          aperture: photoData.aperture || null,
-          shutterSpeed: photoData.shutterSpeed || null,
-          iso: photoData.iso ?? null,
-          focalLength: photoData.focalLength || null,
-          fileSize: photoData.fileSize || null,
-        });
-        console.log('Created new photo:', newPhoto);
-        newPhotos.push(newPhoto);
+      for (const photoData of photosData) {
+        if (photoData.id && existingPhotoIds.has(photoData.id)) {
+          keepPhotoIds.add(photoData.id);
+          const captionPatch = existingPhotoCaptionPatch(photoData);
+          if (captionPatch) {
+            await tx.update(photos).set(captionPatch)
+              .where(and(eq(photos.id, photoData.id), eq(photos.fieldNoteId, fieldNoteId)));
+          }
+        } else if (!photoData.id && photoData.url && photoData.filename) {
+          await tx.insert(photos).values({
+            fieldNoteId,
+            filename: photoData.filename,
+            url: photoData.url,
+            altText: photoData.caption || '',
+            latitude: photoData.latitude ?? null,
+            longitude: photoData.longitude ?? null,
+            elevation: photoData.elevation ?? null,
+            timestamp: photoData.timestamp ? new Date(photoData.timestamp) : null,
+            camera: photoData.camera || null,
+            lens: photoData.lens || null,
+            aperture: photoData.aperture || null,
+            shutterSpeed: photoData.shutterSpeed || null,
+            iso: photoData.iso ?? null,
+            focalLength: photoData.focalLength || null,
+            fileSize: photoData.fileSize || null,
+          });
+        }
       }
-    }
-
-    // Delete photos that are no longer in the list
-    for (const existingPhoto of existingPhotos) {
-      if (!keepPhotoIds.has(existingPhoto.id)) {
-        await this.deletePhoto(existingPhoto.id);
+      for (const existingPhoto of existingPhotos) {
+        if (!keepPhotoIds.has(existingPhoto.id)) {
+          await tx.delete(photos).where(eq(photos.id, existingPhoto.id));
+        }
       }
-    }
-
-    // Return all current photos for this field note
-    return await this.getPhotosByFieldNoteId(fieldNoteId);
+      return tx.select().from(photos).where(eq(photos.fieldNoteId, fieldNoteId));
+    });
   }
 
   // TrailCam Projects
@@ -821,6 +833,14 @@ export class MemStorage implements IStorage {
     return photo;
   }
 
+  async createPhotoWithinLimit(insertPhoto: InsertPhoto): Promise<Photo | undefined> {
+    if (!this.fieldNotesData.some(note => note.id === insertPhoto.fieldNoteId) ||
+        this.photosData.filter(photo => photo.fieldNoteId === insertPhoto.fieldNoteId).length >= MAX_TRIP_PHOTOS) {
+      return undefined;
+    }
+    return this.createPhoto(insertPhoto);
+  }
+
   async deletePhoto(id: string): Promise<boolean> {
     const index = this.photosData.findIndex(photo => photo.id === id);
     if (index !== -1) {
@@ -831,8 +851,13 @@ export class MemStorage implements IStorage {
   }
 
   async updateFieldNotePhotos(fieldNoteId: string, photosData: any[]): Promise<Photo[]> {
-    // This is a simplified implementation for MemStorage
-    // In practice, you'd want the same logic as DatabaseStorage
+    // MemStorage is a non-production stub, but existing caption edits should
+    // have the same non-destructive behavior as DatabaseStorage.
+    for (const photoData of photosData) {
+      const photo = this.photosData.find(p => p.id === photoData.id && p.fieldNoteId === fieldNoteId);
+      const captionPatch = existingPhotoCaptionPatch(photoData);
+      if (photo && captionPatch) Object.assign(photo, captionPatch);
+    }
     return this.photosData.filter(photo => photo.fieldNoteId === fieldNoteId);
   }
 

@@ -1,7 +1,8 @@
-import { useState, lazy, Suspense } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { Button } from "@carbon/react";
 import { Maximize, View, Close } from "@carbon/icons-react";
 import { parseGpxData } from "@shared/gpx-utils";
+import { staticRoutePath, validRouteCoordinates } from "./static-route-path";
 
 // Lazy load the MapboxMap component
 const MapboxMap = lazy(() => import('./mapbox-map'));
@@ -56,15 +57,16 @@ interface MapPreviewProps {
 
 export default function MapPreview({ gpxData, className = "" }: MapPreviewProps) {
   const [showFullMap, setShowFullMap] = useState(false);
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
 
   // Parse GPX data to get coordinates for preview
   const coordinates = (() => {
     try {
       if (typeof gpxData === 'string') {
         const stats = parseGpxData(gpxData);
-        return stats.coordinates;
+        return validRouteCoordinates(stats.coordinates);
       } else if (gpxData && typeof gpxData === 'object' && 'coordinates' in gpxData) {
-        return (gpxData as any).coordinates;
+        return validRouteCoordinates(gpxData.coordinates);
       }
       return [];
     } catch (error) {
@@ -72,21 +74,24 @@ export default function MapPreview({ gpxData, className = "" }: MapPreviewProps)
       return [];
     }
   })();
-  const hasValidTrack = coordinates && coordinates.length > 0;
+  const hasValidTrack = coordinates.length >= 2;
 
   // Calculate bounds for preview image using all coordinates
   const getBounds = () => {
     if (!hasValidTrack) return null;
     
-    const lats = coordinates.map((coord: number[]) => coord[1]);
-    const lngs = coordinates.map((coord: number[]) => coord[0]);
-    
     const bounds = {
-      minLat: Math.min(...lats),
-      maxLat: Math.max(...lats),
-      minLng: Math.min(...lngs),
-      maxLng: Math.max(...lngs)
+      minLat: Infinity,
+      maxLat: -Infinity,
+      minLng: Infinity,
+      maxLng: -Infinity
     };
+    for (const [lng, lat] of coordinates) {
+      bounds.minLat = Math.min(bounds.minLat, lat);
+      bounds.maxLat = Math.max(bounds.maxLat, lat);
+      bounds.minLng = Math.min(bounds.minLng, lng);
+      bounds.maxLng = Math.max(bounds.maxLng, lng);
+    }
     
     // Ensure bounds are valid
     if (bounds.minLat === bounds.maxLat) {
@@ -127,14 +132,14 @@ export default function MapPreview({ gpxData, className = "" }: MapPreviewProps)
     else if (maxDiff > 0.005) zoom = 14;
     else zoom = 15;
 
-    const simplifiedCoords = coordinates.filter((_: number[], index: number) => index % Math.max(1, Math.floor(coordinates.length / 100)) === 0);
-    const pathString = simplifiedCoords.map((coord: number[]) => `${coord[0]},${coord[1]}`).join(',');
-    const pathOverlay = `path-3+1a1815-0.85(${encodeURIComponent(pathString)})`;
+    const pathOverlay = staticRoutePath(coordinates, 3);
+    if (!pathOverlay) return null;
 
-    return `https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/static/${pathOverlay}/${centerLng},${centerLat},${zoom}/400x300@2x?access_token=${accessToken}`;
+    return `https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/static/${pathOverlay}/${centerLng},${centerLat},${zoom}/400x300@2x?access_token=${encodeURIComponent(accessToken)}`;
   };
 
   const staticMapUrl = getStaticMapUrl();
+  useEffect(() => setFailedUrl(null), [staticMapUrl]);
 
   if (showFullMap) {
     return <FullScreenMapModal 
@@ -147,15 +152,13 @@ export default function MapPreview({ gpxData, className = "" }: MapPreviewProps)
     <div className={`relative ${className}`}>
       {/* Preview Image */}
       <div className="relative w-full h-64 sm:h-96 bg-gray-200 rounded overflow-hidden">
-        {staticMapUrl ? (
+        {staticMapUrl && failedUrl !== staticMapUrl ? (
           <img
             src={staticMapUrl}
             alt="Map preview"
             className="w-full h-full object-cover"
             loading="lazy"
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = 'none';
-            }}
+            onError={() => setFailedUrl(staticMapUrl)}
           />
         ) : hasValidTrack ? (
           // Fallback for when static map fails to load
