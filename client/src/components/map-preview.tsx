@@ -105,36 +105,20 @@ export default function MapPreview({ gpxData, className = "" }: MapPreviewProps)
 
   // Generate static map preview URL using Mapbox Static API
   const getStaticMapUrl = () => {
-    if (!bounds || !hasValidTrack) {
-      console.log('No bounds or invalid track:', { bounds, hasValidTrack, coordinatesLength: coordinates.length });
-      return null;
-    }
-    
-    const accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
-    if (!accessToken) {
-      console.error('VITE_MAPBOX_ACCESS_TOKEN not found');
-      return null;
-    }
+    if (!bounds || !hasValidTrack) return null;
 
-    // Calculate center and zoom level
+    const accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
+    if (!accessToken) return null;
+
     const centerLat = (bounds.minLat + bounds.maxLat) / 2;
     const centerLng = (bounds.minLng + bounds.maxLng) / 2;
-    
-    // Calculate zoom to fit the entire route with padding
+
     const latDiff = bounds.maxLat - bounds.minLat;
     const lngDiff = bounds.maxLng - bounds.minLng;
-    
-    // Add padding around the route (20% on each side)
     const latPadding = latDiff * 0.2;
     const lngPadding = lngDiff * 0.2;
-    
-    const paddedLatDiff = latDiff + (latPadding * 2);
-    const paddedLngDiff = lngDiff + (lngPadding * 2);
-    
-    // Calculate zoom based on the larger dimension to ensure entire route fits
-    const maxDiff = Math.max(paddedLatDiff, paddedLngDiff);
-    
-    // More conservative zoom calculation to ensure full route visibility
+    const maxDiff = Math.max(latDiff + latPadding * 2, lngDiff + lngPadding * 2);
+
     let zoom;
     if (maxDiff > 0.1) zoom = 10;
     else if (maxDiff > 0.05) zoom = 11;
@@ -143,27 +127,11 @@ export default function MapPreview({ gpxData, className = "" }: MapPreviewProps)
     else if (maxDiff > 0.005) zoom = 14;
     else zoom = 15;
 
-    // Create path string for the route - simplify to avoid URL length limits
     const simplifiedCoords = coordinates.filter((_: number[], index: number) => index % Math.max(1, Math.floor(coordinates.length / 100)) === 0);
     const pathString = simplifiedCoords.map((coord: number[]) => `${coord[0]},${coord[1]}`).join(',');
-    
-    // Try a different path encoding approach for better compatibility
-    const pathOverlay = `path-5+ff0000-0.8(${pathString})`;
-    console.log('Path overlay string length:', pathOverlay.length);
-    console.log('Sample path coords:', simplifiedCoords.slice(0, 3));
+    const pathOverlay = `path-3+1a1815-0.85(${encodeURIComponent(pathString)})`;
 
-    // Try without encoding first to see if that's the issue
-    const url = `https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/static/${pathOverlay}/${centerLng},${centerLat},${zoom}/400x300@2x?access_token=${accessToken}`;
-    console.log('Generated static map URL (simplified coords):', url.substring(0, 100) + '...');
-    console.log('Route stats:', {
-      originalCoords: coordinates.length,
-      simplifiedCoords: simplifiedCoords.length,
-      bounds,
-      zoom,
-      center: [centerLng, centerLat],
-      urlLength: url.length
-    });
-    return url;
+    return `https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/static/${pathOverlay}/${centerLng},${centerLat},${zoom}/400x300@2x?access_token=${accessToken}`;
   };
 
   const staticMapUrl = getStaticMapUrl();
@@ -186,11 +154,7 @@ export default function MapPreview({ gpxData, className = "" }: MapPreviewProps)
             className="w-full h-full object-cover"
             loading="lazy"
             onError={(e) => {
-              console.error('Failed to load static map:', staticMapUrl);
-              console.error('Error:', e);
-              // Hide the broken image and show fallback
-              const target = e.target as HTMLImageElement;
-              target.style.display = 'none';
+              (e.target as HTMLImageElement).style.display = 'none';
             }}
           />
         ) : hasValidTrack ? (
