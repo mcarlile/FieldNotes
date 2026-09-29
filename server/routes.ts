@@ -7,6 +7,7 @@ import { extractExifData, extractExifFromBuffer } from "./exif-extractor";
 import { startVideoProcessing } from "./videoProcessor";
 import { resolveClipCoordinates } from "@shared/gpx-utils";
 import { requireAuth } from "./middlewares/clerkAuth";
+import { registerOAuthRoutes, registerMcpHandler } from "./mcp/index";
 import multer from 'multer';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -1935,6 +1936,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to fetch expedition" });
     }
   });
+
+  // MCP connector: OAuth 2.1 + stateless Streamable HTTP endpoint
+  registerOAuthRoutes(app as any);
+  registerMcpHandler(app as any);
 
   const httpServer = createServer(app);
   return httpServer;

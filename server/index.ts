@@ -4,6 +4,7 @@ import { clerkMiddleware } from "@clerk/express";
 import { publishableKeyFromHost } from "@clerk/shared/keys";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { ensureOAuthTables } from "./mcp/index";
 import {
   CLERK_PROXY_PATH,
   clerkProxyMiddleware,
@@ -172,6 +173,7 @@ async function runStartupMigrations() {
 
 (async () => {
   await runStartupMigrations();
+  await ensureOAuthTables();
   app.use(
     clerkMiddleware((req) => ({
       publishableKey: publishableKeyFromHost(
