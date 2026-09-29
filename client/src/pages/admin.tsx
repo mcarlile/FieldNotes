@@ -68,6 +68,7 @@ export default function AdminPage() {
     resolver: zodResolver(fieldNoteFormSchema),
     defaultValues: { title: "", description: "" },
   });
+  const title = form.watch("title");
 
   const { data: existingFieldNote, isLoading: isLoadingFieldNote } = useQuery<FieldNote>({
     queryKey: ["/api/field-notes", id],
@@ -340,7 +341,7 @@ export default function AdminPage() {
             className="font-serif text-foreground"
             style={{ fontSize: "clamp(2rem, 4vw, 3rem)", lineHeight: 1.05, letterSpacing: "-0.015em" }}
           >
-            {isEditing ? "Edit field note" : "Add a new trip"}
+            {title.trim() || (isEditing ? "Edit field note" : "Add a new trip")}
           </h1>
         </div>
 
@@ -354,7 +355,7 @@ export default function AdminPage() {
               id="title"
               type="text"
               placeholder="Name your trip…"
-              value={form.watch("title")}
+              value={title}
               onChange={(e) => form.setValue("title", e.target.value)}
               className="w-full bg-transparent border-b border-border focus:border-foreground outline-none py-2 font-serif text-2xl text-foreground placeholder:text-muted-foreground/60 transition-colors"
               data-testid="input-title"
