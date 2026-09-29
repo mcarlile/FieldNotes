@@ -73,14 +73,6 @@ export default function GlobalHeader() {
                 Add Trip
               </Link>
               <Link
-                href="/trailcam-studio"
-                className={`text-sm transition-colors hover:text-foreground hover:underline underline-offset-4 ${
-                  location === "/trailcam-studio" ? "text-foreground" : "text-muted-foreground"
-                }`}
-              >
-                TrailCam
-              </Link>
-              <Link
                 href="/inbox"
                 className={`relative text-sm transition-colors hover:text-foreground hover:underline underline-offset-4 flex items-center gap-1.5 ${
                   location === "/inbox" ? "text-foreground" : "text-muted-foreground"
@@ -156,7 +148,6 @@ export default function GlobalHeader() {
           {navLink("/expeditions", "Expeditions")}
           {navLink("/inbox", "GPX Inbox")}
           {navLink("/admin", "Add Trip")}
-          {navLink("/trailcam-studio", "TrailCam Studio")}
 
           <div className="border-t border-border pt-3 flex flex-col gap-3">
             <button
