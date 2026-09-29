@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Menu, X, Sun, Moon, LogIn, LogOut, User, Inbox } from "lucide-react";
+import { Menu, X, Sun, Moon, LogIn, LogOut, User, Import } from "lucide-react";
 
 export default function GlobalHeader() {
   const { user } = useUser();
@@ -65,20 +65,12 @@ export default function GlobalHeader() {
                 Field notes
               </Link>
               <Link
-                href="/admin"
-                className={`text-sm transition-colors hover:text-foreground hover:underline underline-offset-4 ${
-                  location === "/admin" ? "text-foreground" : "text-muted-foreground"
-                }`}
-              >
-                Add field note
-              </Link>
-              <Link
                 href="/inbox"
                 className={`relative text-sm transition-colors hover:text-foreground hover:underline underline-offset-4 flex items-center gap-1.5 ${
                   location === "/inbox" ? "text-foreground" : "text-muted-foreground"
                 }`}
               >
-                <Inbox className="h-3.5 w-3.5" />
+                <Import className="h-3.5 w-3.5" aria-hidden="true" />
                 Import field note
               </Link>
             </>
@@ -147,7 +139,6 @@ export default function GlobalHeader() {
           {navLink("/dashboard", "Field notes")}
           {navLink("/expeditions", "Expeditions")}
           {navLink("/inbox", "Import field note")}
-          {navLink("/admin", "Add field note")}
 
           <div className="border-t border-border pt-3 flex flex-col gap-3">
             <button

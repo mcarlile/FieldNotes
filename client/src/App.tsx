@@ -10,12 +10,13 @@ import {
 import { publishableKeyFromHost } from "@clerk/react/internal";
 import { shadcn } from "@clerk/themes";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
-import { Switch, Route, useLocation, Redirect, Router as WouterRouter } from "wouter";
+import { Switch, Route, Link, useLocation, Redirect, Router as WouterRouter } from "wouter";
 import { Loader2 } from "lucide-react";
 import { queryClient } from "./lib/queryClient";
 import { CarbonNotificationContainer } from "@/components/carbon-notification";
 import { ThemeProvider } from "@/contexts/theme-context";
 import GlobalHeader from "@/components/global-header";
+import { useDesignPreview } from "@/hooks/use-design-preview";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import Dashboard from "@/pages/dashboard";
@@ -166,6 +167,8 @@ function ClerkQueryClientCacheInvalidator() {
 
 function AppContent() {
   const [location] = useLocation();
+  const { data: readOnlyPreview = false, isPending: previewLoading } = useDesignPreview();
+  const previewLocked = import.meta.env.DEV && previewLoading;
   const isTripWorkspace =
     location === "/admin" ||
     /^\/admin\/[^/]+\/?$/.test(location) ||
@@ -176,21 +179,36 @@ function AppContent() {
     !location.startsWith("/sign-up") &&
     !isTripWorkspace;
 
+  if (previewLocked) return <div className="flex min-h-screen items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>;
+
+  const readOnlyPage = (
+    <main className="mx-auto max-w-xl px-6 py-20">
+      <h1 className="font-serif text-3xl">Read-only production preview</h1>
+      <p className="mt-4 text-muted-foreground">Changes are disabled while viewing live production data in development.</p>
+      <Link href="/dashboard" className="mt-6 inline-block underline underline-offset-4">View field notes</Link>
+    </main>
+  );
+
   return (
     <>
       {showHeader && <GlobalHeader />}
+      {readOnlyPreview && location !== "/" && !location.startsWith("/sign-") && (
+        <div className="border-b border-border bg-muted px-5 py-2 text-center text-xs text-foreground">
+          Live production data · Read-only preview
+        </div>
+      )}
       <Switch>
         <Route path="/" component={RootRoute} />
         <Route path="/dashboard">{() => <RequireAuth component={Dashboard} />}</Route>
         <Route path="/field-notes/:id">{() => <RequireAuth component={FieldNoteDetail} />}</Route>
-        <Route path="/admin">{() => <RequireAuth component={Admin} />}</Route>
-        <Route path="/admin/:id">{() => <RequireAuth component={Admin} />}</Route>
-        <Route path="/field-notes/:id/edit">{() => <RequireAuth component={Admin} />}</Route>
+        <Route path="/admin">{() => readOnlyPreview ? readOnlyPage : <RequireAuth component={Admin} />}</Route>
+        <Route path="/admin/:id">{() => readOnlyPreview ? readOnlyPage : <RequireAuth component={Admin} />}</Route>
+        <Route path="/field-notes/:id/edit">{() => readOnlyPreview ? readOnlyPage : <RequireAuth component={Admin} />}</Route>
         <Route path="/trailcam-studio">{() => <RequireAuth component={TrailcamStudio} />}</Route>
         <Route path="/inbox">{() => <RequireAuth component={InboxPage} />}</Route>
         <Route path="/expeditions">{() => <RequireAuth component={Expeditions} />}</Route>
-        <Route path="/expeditions/new">{() => <RequireAuth component={ExpeditionAdmin} />}</Route>
-        <Route path="/expeditions/:id/edit">{() => <RequireAuth component={ExpeditionAdmin} />}</Route>
+        <Route path="/expeditions/new">{() => readOnlyPreview ? readOnlyPage : <RequireAuth component={ExpeditionAdmin} />}</Route>
+        <Route path="/expeditions/:id/edit">{() => readOnlyPreview ? readOnlyPage : <RequireAuth component={ExpeditionAdmin} />}</Route>
         {/* Public routes — no auth required */}
         <Route path="/trips/:slug" component={PublicExpeditionPage} />
         <Route path="/notes/:slug" component={PublicFieldNotePage} />

@@ -10,6 +10,7 @@ import {
   getClerkProxyHost,
 } from "./middlewares/clerkProxyMiddleware";
 import { pool } from "./db";
+import { registerDesignPreview } from "./designPreview";
 
 const app = express();
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
@@ -180,6 +181,7 @@ async function runStartupMigrations() {
       ),
     })),
   );
+  registerDesignPreview(app);
 
   app.use((req, res, next) => {
     const start = Date.now();

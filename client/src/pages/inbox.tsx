@@ -4,6 +4,7 @@ import { useLocation, useSearch } from "wouter";
 import { ApiError, apiRequest } from "@/lib/queryClient";
 import { trackEvent } from "@/lib/analytics";
 import { useToast } from "@/hooks/use-toast";
+import { useDesignPreview } from "@/hooks/use-design-preview";
 import {
   Dialog,
   DialogContent,
@@ -404,6 +405,7 @@ export default function InboxPage() {
   const [promoteTitle, setPromoteTitle] = useState("");
   const [promoteDescription, setPromoteDescription] = useState("");
   const [promoteTripTypes, setPromoteTripTypes] = useState<string[]>(["hiking"]);
+  const { data: readOnlyPreview } = useDesignPreview();
 
   // Handle Strava OAuth redirect result (runs once per query-param change, never during render)
   useEffect(() => {
@@ -423,6 +425,7 @@ export default function InboxPage() {
 
   const { data: tokenData, isLoading: tokenLoading } = useQuery<{ token: string }>({
     queryKey: ["/api/inbox/token"],
+    enabled: !readOnlyPreview,
   });
 
   const { data: items = [], isLoading: itemsLoading } = useQuery<GpxInboxItem[]>({
@@ -550,10 +553,15 @@ export default function InboxPage() {
         </div>
 
         {/* Strava */}
-        <StravaPanel onImported={handleStravaImported} onAssociate={(hint) => setAssociateTarget(hint)} />
+        {!readOnlyPreview && <StravaPanel onImported={handleStravaImported} onAssociate={(hint) => setAssociateTarget(hint)} />}
+        {readOnlyPreview && (
+          <p className="mb-8 text-sm text-muted-foreground">
+            Production inbox items are visible here. Webhook credentials and live Strava actions are not available in read-only preview.
+          </p>
+        )}
 
         {/* Webhook URL */}
-        <section className="mb-12">
+        {!readOnlyPreview && <section className="mb-12">
           <div className="meta-mono text-muted-foreground mb-3 flex items-center gap-2">
             <Globe className="h-3 w-3" />
             Your webhook URL
@@ -636,7 +644,7 @@ export default function InboxPage() {
               </div>
             </>
           ) : null}
-        </section>
+        </section>}
 
         {/* Items */}
         <section>
@@ -671,7 +679,7 @@ export default function InboxPage() {
                 No GPX files yet.
               </p>
               <p className="meta-mono text-muted-foreground mt-3">
-                Import from Strava above, or send one to your webhook URL
+                 {readOnlyPreview ? "No production inbox items to show" : "Import from Strava above, or send one to your webhook URL"}
               </p>
             </div>
           ) : filteredItems.length === 0 ? (
@@ -730,7 +738,7 @@ export default function InboxPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-4 shrink-0">
+                    {!readOnlyPreview && <div className="flex items-center gap-4 shrink-0">
                       {!isPromoted && (
                         <button
                           type="button"
@@ -750,7 +758,7 @@ export default function InboxPage() {
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
-                    </div>
+                    </div>}
                   </div>
                 );
               })}

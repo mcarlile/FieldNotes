@@ -12,6 +12,7 @@ import ElevationProfile from "@/components/elevation-profile";
 import { parseGpxData, parseGpxWithTimestamps } from "@shared/gpx-utils";
 
 import { useToast } from "@/hooks/use-toast";
+import { useDesignPreview } from "@/hooks/use-design-preview";
 import { useAuth } from "@clerk/react";
 import { apiRequest } from "@/lib/queryClient";
 import { queryClient } from "@/lib/queryClient";
@@ -26,6 +27,7 @@ export default function FieldNoteDetail() {
 
   const { toast } = useToast();
   const { isSignedIn } = useAuth();
+  const { data: readOnlyPreview } = useDesignPreview();
 
   const { data: fieldNoteData, isLoading: isLoadingFieldNote } = useQuery({
     queryKey: ["/api/field-notes", id],
@@ -243,7 +245,7 @@ export default function FieldNoteDetail() {
                 Open in Strava
               </a>
             )}
-            {isSignedIn && (
+            {isSignedIn && !readOnlyPreview && (
               <>
               <PublishButton
                 id={fieldNote.id}
