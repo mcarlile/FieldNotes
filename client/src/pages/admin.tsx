@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useParams, useLocation, Link } from "wouter";
-import { ArrowLeft, Loader2, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, FileUp, Loader2, Plus, Trash2 } from "lucide-react";
 import type { UploadResult } from "@uppy/core";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -489,18 +489,19 @@ export default function AdminPage() {
 
             <label
               htmlFor="gpx-file"
-              className="meta-mono inline-flex items-center px-3 py-1.5 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors cursor-pointer"
+              className="meta-mono inline-flex min-h-12 w-auto items-center justify-center gap-2 whitespace-nowrap rounded-full border border-border bg-transparent px-3 py-1.5 text-foreground transition-colors hover:bg-muted cursor-pointer focus-within:ring-2 focus-within:ring-ring"
             >
               {gpxFile ? "Replace .gpx" : "Choose .gpx file"}
+              <FileUp className="size-4 shrink-0" aria-hidden="true" />
+              <input
+                id="gpx-file"
+                type="file"
+                accept=".gpx,application/gpx+xml,text/xml"
+                onChange={handleGpxFileChange}
+                className="sr-only"
+                data-testid="input-gpx-file"
+              />
             </label>
-            <input
-              id="gpx-file"
-              type="file"
-              accept=".gpx,application/gpx+xml,text/xml"
-              onChange={handleGpxFileChange}
-              className="sr-only"
-              data-testid="input-gpx-file"
-            />
             {gpxFile && (
               <span className="meta-mono text-muted-foreground ml-3 break-all">{gpxFile.name}</span>
             )}
