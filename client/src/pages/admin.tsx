@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useParams, useLocation, Link } from "wouter";
-import { Loader2, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, Trash2 } from "lucide-react";
 import type { UploadResult } from "@uppy/core";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -329,9 +329,14 @@ export default function AdminPage() {
       <main className="px-5 sm:px-8 pt-6 pb-16 max-w-3xl mx-auto">
         {/* Page header */}
         <div className="mb-10">
-          <div className="meta-mono text-muted-foreground mb-3">
-            {isEditing ? "Edit · field note" : "New · field note"}
-          </div>
+          <Link
+            href="/dashboard"
+            aria-label="Back to field notes"
+            title="Back to field notes"
+            className="mb-3 inline-flex size-11 items-center justify-center rounded-full border border-border text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <ArrowLeft className="size-4" aria-hidden="true" />
+          </Link>
           <h1
             className="font-serif text-foreground"
             style={{ fontSize: "clamp(2rem, 4vw, 3rem)", lineHeight: 1.05, letterSpacing: "-0.015em" }}
