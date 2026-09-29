@@ -7,7 +7,7 @@ import {
   ProgressBar,
   InlineNotification
 } from "@carbon/react";
-import { Camera } from "@carbon/icons-react";
+import { ImageUp } from "lucide-react";
 import type { UploadResult } from "@uppy/core";
 import { type PhotoExifData } from "@/lib/exif-extractor";
 import { apiRequest } from "@/lib/queryClient";
@@ -246,7 +246,7 @@ export function AutoPhotoUploader({
         kind="tertiary"
         className={buttonClassName}
         onClick={() => setShowModal(true)}
-        renderIcon={Camera}
+        renderIcon={ImageUp}
       >
         {children}
       </CarbonButton>
