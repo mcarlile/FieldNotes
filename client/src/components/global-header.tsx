@@ -62,7 +62,7 @@ export default function GlobalHeader() {
                   location === "/dashboard" ? "text-foreground" : "text-muted-foreground"
                 }`}
               >
-                Dashboard
+                Field notes
               </Link>
               <Link
                 href="/admin"
@@ -70,7 +70,7 @@ export default function GlobalHeader() {
                   location === "/admin" ? "text-foreground" : "text-muted-foreground"
                 }`}
               >
-                Add Trip
+                Add field note
               </Link>
               <Link
                 href="/inbox"
@@ -144,10 +144,10 @@ export default function GlobalHeader() {
       {/* Mobile drawer */}
       {mobileOpen && (
         <div className="sm:hidden border-t border-border px-5 py-4 flex flex-col gap-3">
-          {navLink("/dashboard", "Dashboard")}
+          {navLink("/dashboard", "Field notes")}
           {navLink("/expeditions", "Expeditions")}
           {navLink("/inbox", "GPX Inbox")}
-          {navLink("/admin", "Add Trip")}
+          {navLink("/admin", "Add field note")}
 
           <div className="border-t border-border pt-3 flex flex-col gap-3">
             <button
