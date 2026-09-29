@@ -452,7 +452,7 @@ export default function AdminPage() {
           {/* Photos */}
           <div>
             <div className="mb-3 flex flex-col items-start gap-4">
-              <label className="meta-mono text-muted-foreground">
+              <label className="meta-mono text-foreground">
                 Photos {uploadedPhotos.length > 0 && `· ${uploadedPhotos.length}`}
               </label>
               {(!isEditing || (photosLoaded && hydratedPhotosFor.current === id)) && <AutoPhotoUploader
