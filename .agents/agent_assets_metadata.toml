@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "HNCtw3M1Nybt96FWcmrhJ"
+uri = "file://STRAVA_TEST_GUIDE.md"
+type = "text"
+title = "Strava Connection Test Guide"

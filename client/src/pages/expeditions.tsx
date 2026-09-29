@@ -1,12 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Plus, Globe, Lock } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
 import type { Expedition } from "@shared/schema";
 
 export default function Expeditions() {
   const { data: expeditions = [], isLoading } = useQuery<Expedition[]>({
     queryKey: ["/api/expeditions"],
-    queryFn: () => fetch("/api/expeditions").then(r => r.json()),
+    queryFn: async () => (await apiRequest("/api/expeditions", "GET")).json(),
   });
 
   return (

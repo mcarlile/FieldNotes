@@ -8,8 +8,6 @@ import { relations } from "drizzle-orm";
 export const stravaConnections = pgTable("strava_connections", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: text("user_id").notNull().unique(),
-  stravaClientId: text("strava_client_id"),
-  stravaClientSecret: text("strava_client_secret"),
   stravaAthleteId: integer("strava_athlete_id"),
   accessToken: text("access_token"),
   refreshToken: text("refresh_token"),
@@ -56,6 +54,7 @@ export type GpxInboxItem = typeof gpxInbox.$inferSelect;
 
 export const fieldNotes = pgTable("field_notes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: text("user_id"),
   title: text("title").notNull(),
   description: text("description").notNull(),
   tripType: text("trip_type").array().notNull(),
@@ -63,11 +62,15 @@ export const fieldNotes = pgTable("field_notes", {
   distance: real("distance"), // in kilometers
   elevationGain: real("elevation_gain"), // in meters
   gpxData: jsonb("gpx_data"), // stored GPX track data
+  stravaId: text("strava_id"), // Strava activity/route ID
+  stravaSource: text("strava_source"), // 'strava-activity' | 'strava-route'
   isPublished: boolean("is_published").notNull().default(false),
   publishedAt: timestamp("published_at"),
   slug: text("slug").unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  userIdIdx: index("field_notes_user_id_idx").on(table.userId),
+}));
 
 export const expeditions = pgTable("expeditions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

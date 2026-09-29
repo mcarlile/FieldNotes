@@ -396,14 +396,35 @@ export default function MapboxMap({
           width: 36px;
           height: 36px;
           padding: 0;
-          background: #fff url("${pm.thumbnailUrl}") center/cover no-repeat;
+          background: #e8e4de;
           border: 2px solid #fff;
           border-radius: 50%;
           box-shadow: 0 2px 6px rgba(0,0,0,0.35), 0 0 0 1px rgba(0,0,0,0.15);
           cursor: pointer;
           transition: transform 120ms ease;
           touch-action: manipulation;
+          overflow: hidden;
+          display: flex;
+          align-items: center;
+          justify-content: center;
         `;
+
+        const img = document.createElement('img');
+        // Ensure absolute URL — relative paths can misbehave in Mapbox marker DOM elements
+        img.src = pm.thumbnailUrl.startsWith('http') || pm.thumbnailUrl.startsWith('//')
+          ? pm.thumbnailUrl
+          : `${window.location.origin}${pm.thumbnailUrl.startsWith('/') ? '' : '/'}${pm.thumbnailUrl}`;
+        img.alt = '';
+        img.style.cssText = `
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+          border-radius: 50%;
+        `;
+        img.onerror = () => { img.style.display = 'none'; };
+        el.appendChild(img);
+
         el.addEventListener('mouseenter', () => { el.style.transform = 'scale(1.12)'; });
         el.addEventListener('mouseleave', () => { el.style.transform = 'scale(1)'; });
         el.addEventListener('click', (e) => {

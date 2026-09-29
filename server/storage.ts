@@ -11,9 +11,9 @@ export interface IStorage {
   }): Promise<FieldNote[]>;
   getFieldNoteById(id: string): Promise<FieldNote | undefined>;
   createFieldNote(fieldNote: InsertFieldNote): Promise<FieldNote>;
-  updateFieldNote(id: string, fieldNote: InsertFieldNote): Promise<FieldNote | undefined>;
+  updateFieldNote(id: string, fieldNote: Partial<InsertFieldNote>): Promise<FieldNote | undefined>;
   deleteFieldNote(id: string): Promise<boolean>;
-  
+
   // Photos
   getPhotosByFieldNoteId(fieldNoteId: string): Promise<Photo[]>;
   getPhotoById(id: string): Promise<Photo | undefined>;
@@ -21,7 +21,7 @@ export interface IStorage {
   updatePhoto(id: string, photo: Partial<InsertPhoto>): Promise<Photo | undefined>;
   deletePhoto(id: string): Promise<boolean>;
   updateFieldNotePhotos(fieldNoteId: string, photosData: any[]): Promise<Photo[]>;
-  
+
   // TrailCam Projects
   getTrailcamProjects(options?: {
     search?: string;
@@ -31,7 +31,7 @@ export interface IStorage {
   createTrailcamProject(project: InsertTrailcamProject): Promise<TrailcamProject>;
   updateTrailcamProject(id: string, project: Partial<InsertTrailcamProject>): Promise<TrailcamProject | undefined>;
   deleteTrailcamProject(id: string): Promise<boolean>;
-  
+
   // Video Clips
   getVideoClipsByProjectId(projectId: string): Promise<VideoClip[]>;
   getVideoClipById(id: string): Promise<VideoClip | undefined>;
@@ -56,7 +56,6 @@ export interface IStorage {
   getStravaConnection(userId: string): Promise<StravaConnection | undefined>;
   upsertStravaConnection(data: InsertStravaConnection): Promise<StravaConnection>;
   updateStravaTokens(userId: string, accessToken: string, refreshToken: string, expiresAt: number): Promise<void>;
-  updateStravaCredentials(userId: string, clientId: string, clientSecret: string): Promise<void>;
   deleteStravaConnection(userId: string): Promise<void>;
 
   // Mobile tokens
@@ -89,9 +88,9 @@ export class DatabaseStorage implements IStorage {
     sortOrder?: 'recent' | 'oldest' | 'name';
   } = {}): Promise<FieldNote[]> {
     let query = db.select().from(fieldNotes);
-    
+
     const conditions = [];
-    
+
     if (options.search) {
       const searchTerm = options.search.trim();
       if (searchTerm) {
@@ -104,15 +103,15 @@ export class DatabaseStorage implements IStorage {
         );
       }
     }
-    
+
     if (options.tripType) {
       conditions.push(sql`${fieldNotes.tripType} @> ARRAY[${options.tripType}]::text[]`);
     }
-    
+
     if (conditions.length > 0) {
       query = query.where(and(...conditions)) as typeof query;
     }
-    
+
     // Apply sorting
     switch (options.sortOrder) {
       case 'oldest':
@@ -126,7 +125,7 @@ export class DatabaseStorage implements IStorage {
         query = query.orderBy(desc(fieldNotes.date)) as typeof query;
         break;
     }
-    
+
     return await query;
   }
 
@@ -143,7 +142,7 @@ export class DatabaseStorage implements IStorage {
     return fieldNote;
   }
 
-  async updateFieldNote(id: string, updateFieldNote: InsertFieldNote): Promise<FieldNote | undefined> {
+  async updateFieldNote(id: string, updateFieldNote: Partial<InsertFieldNote>): Promise<FieldNote | undefined> {
     const [fieldNote] = await db
       .update(fieldNotes)
       .set(updateFieldNote)
@@ -155,7 +154,7 @@ export class DatabaseStorage implements IStorage {
   async deleteFieldNote(id: string): Promise<boolean> {
     // First delete all associated photos
     await db.delete(photos).where(eq(photos.fieldNoteId, id));
-    
+
     // Then delete the field note
     const result = await db.delete(fieldNotes).where(eq(fieldNotes.id, id));
     return result.rowCount !== null && result.rowCount > 0;
@@ -194,19 +193,19 @@ export class DatabaseStorage implements IStorage {
 
   async updateFieldNotePhotos(fieldNoteId: string, photosData: any[]): Promise<Photo[]> {
     console.log('Updating field note photos:', fieldNoteId, photosData);
-    
+
     // Get existing photos to compare
     const existingPhotos = await this.getPhotosByFieldNoteId(fieldNoteId);
     const existingPhotoIds = new Set(existingPhotos.map(p => p.id));
-    
+
     // Track which photos should remain (either existing ones with ID or new ones)
     const keepPhotoIds = new Set();
     const newPhotos: Photo[] = [];
-    
+
     // Process each photo from the form
     for (const photoData of photosData) {
       console.log('Processing photo:', photoData);
-      
+
       if (photoData.id && existingPhotoIds.has(photoData.id)) {
         // This is an existing photo to keep
         keepPhotoIds.add(photoData.id);
@@ -233,14 +232,14 @@ export class DatabaseStorage implements IStorage {
         newPhotos.push(newPhoto);
       }
     }
-    
+
     // Delete photos that are no longer in the list
     for (const existingPhoto of existingPhotos) {
       if (!keepPhotoIds.has(existingPhoto.id)) {
         await this.deletePhoto(existingPhoto.id);
       }
     }
-    
+
     // Return all current photos for this field note
     return await this.getPhotosByFieldNoteId(fieldNoteId);
   }
@@ -251,9 +250,9 @@ export class DatabaseStorage implements IStorage {
     sortOrder?: 'recent' | 'oldest' | 'name';
   } = {}): Promise<TrailcamProject[]> {
     let query = db.select().from(trailcamProjects);
-    
+
     const conditions = [];
-    
+
     if (options.search) {
       const searchTerm = options.search.trim();
       if (searchTerm) {
@@ -265,11 +264,11 @@ export class DatabaseStorage implements IStorage {
         );
       }
     }
-    
+
     if (conditions.length > 0) {
       query = query.where(and(...conditions)) as typeof query;
     }
-    
+
     // Apply sorting
     switch (options.sortOrder) {
       case 'oldest':
@@ -283,7 +282,7 @@ export class DatabaseStorage implements IStorage {
         query = query.orderBy(desc(trailcamProjects.createdAt)) as typeof query;
         break;
     }
-    
+
     return await query;
   }
 
@@ -312,7 +311,7 @@ export class DatabaseStorage implements IStorage {
   async deleteTrailcamProject(id: string): Promise<boolean> {
     // First delete all associated video clips
     await db.delete(videoClips).where(eq(videoClips.projectId, id));
-    
+
     // Then delete the project
     const result = await db.delete(trailcamProjects).where(eq(trailcamProjects.id, id));
     return result.rowCount !== null && result.rowCount > 0;
@@ -439,8 +438,6 @@ export class DatabaseStorage implements IStorage {
       .onConflictDoUpdate({
         target: stravaConnections.userId,
         set: {
-          stravaClientId: data.stravaClientId,
-          stravaClientSecret: data.stravaClientSecret,
           stravaAthleteId: data.stravaAthleteId,
           accessToken: data.accessToken,
           refreshToken: data.refreshToken,
@@ -457,15 +454,6 @@ export class DatabaseStorage implements IStorage {
     await db.update(stravaConnections)
       .set({ accessToken, refreshToken, expiresAt, updatedAt: new Date() })
       .where(eq(stravaConnections.userId, userId));
-  }
-
-  async updateStravaCredentials(userId: string, stravaClientId: string, stravaClientSecret: string): Promise<void> {
-    await db.insert(stravaConnections)
-      .values({ userId, stravaClientId, stravaClientSecret })
-      .onConflictDoUpdate({
-        target: stravaConnections.userId,
-        set: { stravaClientId, stravaClientSecret, updatedAt: new Date() },
-      });
   }
 
   async deleteStravaConnection(userId: string): Promise<void> {
@@ -603,10 +591,10 @@ export class DatabaseStorage implements IStorage {
 
 // Temporary in-memory storage with sample data for demonstration
 export class MemStorage implements IStorage {
-  async updateFieldNote(id: string, updateFieldNote: InsertFieldNote): Promise<FieldNote | undefined> {
+  async updateFieldNote(id: string, updateFieldNote: Partial<InsertFieldNote>): Promise<FieldNote | undefined> {
     const index = this.fieldNotesData.findIndex(note => note.id === id);
     if (index === -1) return undefined;
-    
+
     this.fieldNotesData[index] = { ...this.fieldNotesData[index], ...updateFieldNote };
     return this.fieldNotesData[index];
   }
@@ -614,7 +602,7 @@ export class MemStorage implements IStorage {
   async deleteFieldNote(id: string): Promise<boolean> {
     const index = this.fieldNotesData.findIndex(note => note.id === id);
     if (index === -1) return false;
-    
+
     // Delete associated photos
     this.photosData = this.photosData.filter(photo => photo.fieldNoteId !== id);
     // Delete field note
@@ -625,13 +613,14 @@ export class MemStorage implements IStorage {
   async updatePhoto(id: string, updatePhoto: Partial<InsertPhoto>): Promise<Photo | undefined> {
     const index = this.photosData.findIndex(photo => photo.id === id);
     if (index === -1) return undefined;
-    
+
     this.photosData[index] = { ...this.photosData[index], ...updatePhoto };
     return this.photosData[index];
   }
   private fieldNotesData: FieldNote[] = [
     {
       id: "1",
+      userId: null,
       title: "Mount Whitney Summit Trail",
       description: "A challenging 22-mile round trip hike to the highest peak in the contiguous United States. The trail offers stunning alpine scenery, crystal-clear mountain lakes, and breathtaking views from the summit at 14,505 feet.",
       tripType: ["Hiking"],
@@ -647,10 +636,16 @@ export class MemStorage implements IStorage {
           [-118.288, 36.582]
         ]
       },
+      stravaId: null,
+      stravaSource: null,
+      isPublished: false,
+      publishedAt: null,
+      slug: null,
       createdAt: new Date("2024-07-16T10:00:00Z")
     },
     {
       id: "2",
+      userId: null,
       title: "Yosemite Valley Loop",
       description: "A scenic bike ride through the iconic Yosemite Valley, passing by El Capitan, Bridalveil Fall, and Half Dome. Perfect for families and offering incredible photographic opportunities.",
       tripType: ["Cycling"],
@@ -665,6 +660,11 @@ export class MemStorage implements IStorage {
           [-119.648, 37.751]
         ]
       },
+      stravaId: null,
+      stravaSource: null,
+      isPublished: false,
+      publishedAt: null,
+      slug: null,
       createdAt: new Date("2024-06-21T09:15:00Z")
     }
   ];
@@ -739,7 +739,7 @@ export class MemStorage implements IStorage {
     if (options.search) {
       const searchLower = options.search.toLowerCase().trim();
       if (searchLower) {
-        filtered = filtered.filter(note => 
+        filtered = filtered.filter(note =>
           note.title.toLowerCase().includes(searchLower) ||
           note.description.toLowerCase().includes(searchLower) ||
           note.tripType.some(t => t.toLowerCase().includes(searchLower))
@@ -776,9 +776,12 @@ export class MemStorage implements IStorage {
     const fieldNote: FieldNote = {
       id: Math.random().toString(36).substr(2, 9),
       ...insertFieldNote,
+      userId: insertFieldNote.userId ?? null,
       distance: insertFieldNote.distance ?? null,
       elevationGain: insertFieldNote.elevationGain ?? null,
       gpxData: insertFieldNote.gpxData ?? null,
+      stravaId: insertFieldNote.stravaId ?? null,
+      stravaSource: insertFieldNote.stravaSource ?? null,
       isPublished: false,
       publishedAt: null,
       slug: null,
@@ -846,7 +849,7 @@ export class MemStorage implements IStorage {
     if (options.search) {
       const searchLower = options.search.toLowerCase().trim();
       if (searchLower) {
-        filtered = filtered.filter(project => 
+        filtered = filtered.filter(project =>
           project.title.toLowerCase().includes(searchLower) ||
           (project.description && project.description.toLowerCase().includes(searchLower))
         );
@@ -891,7 +894,7 @@ export class MemStorage implements IStorage {
   async updateTrailcamProject(id: string, updateProject: Partial<InsertTrailcamProject>): Promise<TrailcamProject | undefined> {
     const index = this.trailcamProjectsData.findIndex(project => project.id === id);
     if (index === -1) return undefined;
-    
+
     this.trailcamProjectsData[index] = { ...this.trailcamProjectsData[index], ...updateProject };
     return this.trailcamProjectsData[index];
   }
@@ -899,7 +902,7 @@ export class MemStorage implements IStorage {
   async deleteTrailcamProject(id: string): Promise<boolean> {
     const index = this.trailcamProjectsData.findIndex(project => project.id === id);
     if (index === -1) return false;
-    
+
     // Delete associated video clips
     this.videoClipsData = this.videoClipsData.filter(clip => clip.projectId !== id);
     // Delete project
@@ -922,6 +925,15 @@ export class MemStorage implements IStorage {
     const clip: VideoClip = {
       id: Math.random().toString(36).substr(2, 9),
       ...insertClip,
+      transcodedUrl: insertClip.transcodedUrl ?? null,
+      thumbnailUrl: insertClip.thumbnailUrl ?? null,
+      processingStatus: insertClip.processingStatus ?? "pending",
+      processingError: insertClip.processingError ?? null,
+      startLatitude: insertClip.startLatitude ?? null,
+      startLongitude: insertClip.startLongitude ?? null,
+      endLatitude: insertClip.endLatitude ?? null,
+      endLongitude: insertClip.endLongitude ?? null,
+      color: insertClip.color ?? null,
       fileSize: insertClip.fileSize ?? null,
       videoFormat: insertClip.videoFormat ?? null,
       createdAt: new Date()
@@ -933,7 +945,7 @@ export class MemStorage implements IStorage {
   async updateVideoClip(id: string, updateClip: Partial<InsertVideoClip>): Promise<VideoClip | undefined> {
     const index = this.videoClipsData.findIndex(clip => clip.id === id);
     if (index === -1) return undefined;
-    
+
     this.videoClipsData[index] = { ...this.videoClipsData[index], ...updateClip };
     return this.videoClipsData[index];
   }
@@ -964,7 +976,6 @@ export class MemStorage implements IStorage {
   async getStravaConnection(_userId: string): Promise<StravaConnection | undefined> { return undefined; }
   async upsertStravaConnection(_data: InsertStravaConnection): Promise<StravaConnection> { throw new Error("Not implemented"); }
   async updateStravaTokens(_userId: string, _accessToken: string, _refreshToken: string, _expiresAt: number): Promise<void> {}
-  async updateStravaCredentials(_userId: string, _clientId: string, _clientSecret: string): Promise<void> {}
   async deleteStravaConnection(_userId: string): Promise<void> {}
 
   // Mobile tokens (stubs)

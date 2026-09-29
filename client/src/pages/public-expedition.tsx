@@ -5,6 +5,7 @@ import { Mountain, Ruler, Calendar, ChevronDown, ChevronUp } from "lucide-react"
 import MapboxMap from "@/components/mapbox-map";
 import PhotoLightbox from "@/components/photo-lightbox";
 import { parseGpxData } from "@shared/gpx-utils";
+import { apiRequest } from "@/lib/queryClient";
 import type { FieldNote, Photo, Expedition } from "@shared/schema";
 
 interface PublicFieldNote extends FieldNote {
@@ -72,11 +73,16 @@ function DayCard({ note, index, onPhotoClick }: {
           {gpxCoords && gpxCoords.length > 0 && (
             <div className="h-48 rounded-lg overflow-hidden">
               <MapboxMap
-                coordinates={gpxCoords}
+                gpxData={{ coordinates: gpxCoords }}
                 photoMarkers={note.photos
-                  .filter(p => p.latitude && p.longitude)
-                  .map(p => ({ id: p.id, latitude: p.latitude!, longitude: p.longitude! }))}
-                height="100%"
+                  .filter(p => p.latitude != null && p.longitude != null)
+                  .map(p => ({
+                    id: p.id,
+                    latitude: p.latitude!,
+                    longitude: p.longitude!,
+                    thumbnailUrl: p.url,
+                  }))}
+                className="h-full"
               />
             </div>
           )}
@@ -115,8 +121,7 @@ export default function PublicExpeditionPage() {
 
   const { data: expedition, isLoading, error } = useQuery<PublicExpedition>({
     queryKey: ["/api/public/expeditions", slug],
-    queryFn: () => fetch(`/api/public/expeditions/${slug}`).then(async r => {
-      if (!r.ok) throw new Error("Not found");
+    queryFn: () => apiRequest(`/api/public/expeditions/${slug}`, "GET").then(async r => {
       return r.json();
     }),
     enabled: !!slug,
@@ -220,7 +225,7 @@ export default function PublicExpeditionPage() {
         {/* Combined map */}
         {allCoords.length > 0 && (
           <div className="h-72 sm:h-96 rounded-xl overflow-hidden border border-stone-200">
-            <MapboxMap coordinates={allCoords} height="100%" />
+            <MapboxMap gpxData={{ coordinates: allCoords }} className="h-full" />
           </div>
         )}
 

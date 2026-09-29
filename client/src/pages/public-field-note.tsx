@@ -6,6 +6,7 @@ import MapboxMap from "@/components/mapbox-map";
 import PhotoLightbox from "@/components/photo-lightbox";
 import ElevationProfile from "@/components/elevation-profile";
 import { parseGpxData } from "@shared/gpx-utils";
+import { apiRequest } from "@/lib/queryClient";
 import type { FieldNote, Photo } from "@shared/schema";
 
 interface PublicFieldNote extends FieldNote {
@@ -28,8 +29,7 @@ export default function PublicFieldNotePage() {
 
   const { data: note, isLoading, error } = useQuery<PublicFieldNote>({
     queryKey: ["/api/public/field-notes", slug],
-    queryFn: () => fetch(`/api/public/field-notes/${slug}`).then(async r => {
-      if (!r.ok) throw new Error("Not found");
+    queryFn: () => apiRequest(`/api/public/field-notes/${slug}`, "GET").then(async r => {
       return r.json();
     }),
     enabled: !!slug,
@@ -48,8 +48,13 @@ export default function PublicFieldNotePage() {
 
   const photoMarkers = useMemo(() =>
     (note?.photos ?? [])
-      .filter(p => p.latitude && p.longitude)
-      .map(p => ({ id: p.id, latitude: p.latitude!, longitude: p.longitude! })),
+      .filter(p => p.latitude != null && p.longitude != null)
+      .map(p => ({
+        id: p.id,
+        latitude: p.latitude!,
+        longitude: p.longitude!,
+        thumbnailUrl: p.url,
+      })),
     [note?.photos]
   );
 
@@ -119,9 +124,9 @@ export default function PublicFieldNotePage() {
         {parsedGpx?.coordinates?.length > 0 && (
           <div className="h-72 rounded-xl overflow-hidden border border-stone-200">
             <MapboxMap
-              coordinates={parsedGpx.coordinates}
+              gpxData={{ coordinates: parsedGpx.coordinates }}
               photoMarkers={photoMarkers}
-              height="100%"
+              className="h-full"
             />
           </div>
         )}

@@ -33,8 +33,7 @@ export default function FieldNoteDetail() {
   const { data: fieldNote, isLoading: isLoadingFieldNote } = useQuery<FieldNote>({
     queryKey: ["/api/field-notes", id],
     queryFn: async () => {
-      const response = await fetch(`/api/field-notes/${id}`);
-      if (!response.ok) throw new Error("Failed to fetch field note");
+      const response = await apiRequest(`/api/field-notes/${id}`, "GET");
       return response.json();
     },
     enabled: !!id,
@@ -43,8 +42,7 @@ export default function FieldNoteDetail() {
   const { data: photos = [], isLoading: isLoadingPhotos } = useQuery<Photo[]>({
     queryKey: ["/api/field-notes", id, "photos"],
     queryFn: async () => {
-      const response = await fetch(`/api/field-notes/${id}/photos`);
-      if (!response.ok) throw new Error("Failed to fetch photos");
+      const response = await apiRequest(`/api/field-notes/${id}/photos`, "GET");
       return response.json();
     },
     enabled: !!id,

@@ -16,6 +16,7 @@ import { Upload, Video } from "@carbon/icons-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { apiRequest } from "@/lib/queryClient";
 
 interface VideoUploadState {
   file: File;
@@ -106,16 +107,7 @@ export function VideoClipUploader({
 
   const uploadVideoFile = async (videoFile: File): Promise<string> => {
     // Get upload URL from server
-    const uploadResponse = await fetch('/api/objects/upload', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-    
-    if (!uploadResponse.ok) {
-      throw new Error('Failed to get upload URL');
-    }
+    const uploadResponse = await apiRequest("/api/objects/upload", "POST");
     
     const { uploadURL } = await uploadResponse.json();
     

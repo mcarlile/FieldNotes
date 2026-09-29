@@ -1,11 +1,20 @@
 import express, { type Request, Response, NextFunction } from "express";
+import cors from "cors";
+import { clerkMiddleware } from "@clerk/express";
+import { publishableKeyFromHost } from "@clerk/shared/keys";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
+import {
+  CLERK_PROXY_PATH,
+  clerkProxyMiddleware,
+  getClerkProxyHost,
+} from "./middlewares/clerkProxyMiddleware";
 import { pool } from "./db";
 
 const app = express();
+app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 // Increase body size limit to handle large GPX files (50MB limit)
+app.use(cors({ credentials: true, origin: true }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -64,13 +73,16 @@ async function runStartupMigrations() {
       ALTER TABLE gpx_inbox ADD COLUMN IF NOT EXISTS source text;
       ALTER TABLE gpx_inbox ADD COLUMN IF NOT EXISTS strava_id text;
     `);
+    // Add Strava tracking columns to field_notes if missing
+    await client.query(`
+      ALTER TABLE field_notes ADD COLUMN IF NOT EXISTS strava_id text;
+      ALTER TABLE field_notes ADD COLUMN IF NOT EXISTS strava_source text;
+    `);
     // Strava OAuth connections table
     await client.query(`
       CREATE TABLE IF NOT EXISTS strava_connections (
         id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id text NOT NULL UNIQUE,
-        strava_client_id text,
-        strava_client_secret text,
         strava_athlete_id integer,
         access_token text,
         refresh_token text,
@@ -80,13 +92,13 @@ async function runStartupMigrations() {
         updated_at timestamp DEFAULT now() NOT NULL
       );
     `);
-    // Add new columns if missing (idempotent)
+    // Drop legacy per-user app credential columns (now using a single shared Strava app)
     await client.query(`
       ALTER TABLE strava_connections
-        ADD COLUMN IF NOT EXISTS strava_client_id text,
-        ADD COLUMN IF NOT EXISTS strava_client_secret text;
+        DROP COLUMN IF EXISTS strava_client_id,
+        DROP COLUMN IF EXISTS strava_client_secret;
     `);
-    // Make previously-required columns nullable so users can store credentials before connecting
+    // Make previously-required columns nullable so a row can exist before the OAuth handshake completes
     await client.query(`
       ALTER TABLE strava_connections
         ALTER COLUMN strava_athlete_id DROP NOT NULL,
@@ -118,9 +130,11 @@ async function runStartupMigrations() {
     // Publishing fields on field_notes
     await client.query(`
       ALTER TABLE field_notes
+        ADD COLUMN IF NOT EXISTS user_id text,
         ADD COLUMN IF NOT EXISTS is_published boolean NOT NULL DEFAULT false,
         ADD COLUMN IF NOT EXISTS published_at timestamp,
         ADD COLUMN IF NOT EXISTS slug text;
+      CREATE INDEX IF NOT EXISTS field_notes_user_id_idx ON field_notes (user_id);
       CREATE UNIQUE INDEX IF NOT EXISTS field_notes_slug_idx ON field_notes (slug)
         WHERE slug IS NOT NULL;
     `);
@@ -158,8 +172,14 @@ async function runStartupMigrations() {
 
 (async () => {
   await runStartupMigrations();
-  await setupAuth(app);
-  registerAuthRoutes(app);
+  app.use(
+    clerkMiddleware((req) => ({
+      publishableKey: publishableKeyFromHost(
+        getClerkProxyHost(req) ?? "",
+        process.env.CLERK_PUBLISHABLE_KEY,
+      ),
+    })),
+  );
 
   app.use((req, res, next) => {
     const start = Date.now();

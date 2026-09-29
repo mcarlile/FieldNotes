@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { trackEvent } from "@/lib/analytics";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Plus, X, GripVertical } from "lucide-react";
@@ -25,13 +26,13 @@ export default function ExpeditionAdmin() {
 
   const { data: existing } = useQuery<ExpeditionWithFieldNotes>({
     queryKey: ["/api/expeditions", id],
-    queryFn: () => fetch(`/api/expeditions/${id}`).then(r => r.json()),
+    queryFn: async () => (await apiRequest(`/api/expeditions/${id}`, "GET")).json(),
     enabled: isEditing,
   });
 
   const { data: allNotes = [] } = useQuery<FieldNote[]>({
     queryKey: ["/api/field-notes"],
-    queryFn: () => fetch("/api/field-notes").then(r => r.json()),
+    queryFn: async () => (await apiRequest("/api/field-notes", "GET")).json(),
   });
 
   useEffect(() => {
@@ -52,6 +53,7 @@ export default function ExpeditionAdmin() {
         ? apiRequest(`/api/expeditions/${id}`, "PUT", data)
         : apiRequest("/api/expeditions", "POST", data),
     onSuccess: (res: any) => {
+      trackEvent("expedition_saved", { mode: isEditing ? "edit" : "create" });
       qc.invalidateQueries({ queryKey: ["/api/expeditions"] });
       toast({ title: isEditing ? "Saved" : "Expedition created", variant: "success" });
       if (!isEditing) setLocation(`/expeditions/${res.id}/edit`);
@@ -62,6 +64,7 @@ export default function ExpeditionAdmin() {
   const deleteMutation = useMutation({
     mutationFn: () => apiRequest(`/api/expeditions/${id}`, "DELETE"),
     onSuccess: () => {
+      trackEvent("expedition_deleted");
       qc.invalidateQueries({ queryKey: ["/api/expeditions"] });
       setLocation("/expeditions");
     },

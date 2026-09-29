@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Modal } from "@carbon/react";
 import { ChevronLeft, ChevronRight, Close } from "@carbon/icons-react";
 import type { Photo } from "@shared/schema";
+import { apiRequest } from "@/lib/queryClient";
 
 interface PhotoLightboxProps {
   photoId: string;
@@ -21,8 +22,7 @@ export default function PhotoLightbox({ photoId, photos, onClose, onPhotoChange 
   const { data: photo, isLoading } = useQuery<Photo>({
     queryKey: ["/api/photos", photoId],
     queryFn: async () => {
-      const response = await fetch(`/api/photos/${photoId}`);
-      if (!response.ok) throw new Error("Failed to fetch photo");
+      const response = await apiRequest(`/api/photos/${photoId}`, "GET");
       return response.json();
     },
   });

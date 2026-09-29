@@ -29,18 +29,12 @@ Preferred communication style: Simple, everyday language.
 - ✓ New IStorage methods: `getWebhookTokenByUserId`, `getWebhookTokenByToken`, `upsertWebhookToken`, `getInboxItems`, `getInboxItemById`, `createInboxItem`, `updateInboxItemStatus`, `deleteInboxItem`
 - ✓ Example curl: `curl -X POST "https://yourapp.replit.app/api/webhook/gpx/TOKEN" -F "file=@track.gpx"`
 
-**March 25, 2026 - Replit Auth (OIDC) Integration:**
-- ✓ Replaced custom username/password auth with Replit Auth (OpenID Connect)
-- ✓ Supports Google, Apple, email, and other Replit-connected providers
-- ✓ Auth module at `server/replit_integrations/auth/` (replitAuth.ts, storage.ts, routes.ts)
-- ✓ `users` table migrated to Replit Auth schema (id, email, firstName, lastName, profileImageUrl, updatedAt)
-- ✓ `sessions` table created for server-side session storage via connect-pg-simple
-- ✓ Auth routes: `GET /api/login` (OIDC redirect), `GET /api/callback`, `GET /api/logout`, `GET /api/auth/user`
-- ✓ All write API routes protected with `isAuthenticated` middleware from Replit Auth
-- ✓ `useAuth` hook in `client/src/hooks/use-auth.ts` for React components
-- ✓ `GlobalHeader` shows user avatar/name with sign-in/sign-out, mobile-responsive
-- ✓ Protected routes redirect to `/api/login` (Replit OIDC) when unauthenticated
-- ✓ `shared/models/auth.ts` exports sessions + users tables; re-exported from `shared/schema.ts`
+**August 26, 2026 - Clerk Authentication Migration:**
+- ✓ Replit-managed Clerk handles browser authentication through the application's Clerk proxy.
+- ✓ Existing application users are bridged with the preserved `sessionClaims.userId` migration claim.
+- ✓ Protected API routes use Clerk middleware and resolve `req.dbUser` for user-scoped storage operations.
+- ✓ The React app uses Clerk's in-app `/sign-in` and `/sign-up` routes, with cookie-authenticated API calls.
+- ✓ The `users` and legacy `sessions` tables remain in the schema for database compatibility.
 
 **December 14, 2025 - Photo Upload Robustness Enhancement:**
 - ✓ Added server-side upload verification before creating database records

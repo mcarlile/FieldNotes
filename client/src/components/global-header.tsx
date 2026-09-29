@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { useAuth } from "@/hooks/use-auth";
+import { useClerk, useUser } from "@clerk/react";
 import { useTheme } from "@/contexts/theme-context";
 import {
   DropdownMenu,
@@ -12,14 +12,15 @@ import {
 import { Menu, X, Sun, Moon, LogIn, LogOut, User, Inbox } from "lucide-react";
 
 export default function GlobalHeader() {
-  const { user, logout, isLoggingOut } = useAuth();
+  const { user } = useUser();
+  const { signOut } = useClerk();
   const { theme, toggleTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [location] = useLocation();
 
   const displayName = user?.firstName
     ? `${user.firstName}${user.lastName ? " " + user.lastName : ""}`
-    : user?.email ?? "Account";
+    : user?.primaryEmailAddress?.emailAddress ?? "Account";
 
 
 
@@ -103,8 +104,8 @@ export default function GlobalHeader() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
-                  {user.profileImageUrl ? (
-                    <img src={user.profileImageUrl} alt="" className="h-5 w-5 rounded-full object-cover" />
+                  {user.imageUrl ? (
+                    <img src={user.imageUrl} alt="" className="h-5 w-5 rounded-full object-cover" />
                   ) : (
                     <User className="h-3.5 w-3.5" />
                   )}
@@ -117,8 +118,7 @@ export default function GlobalHeader() {
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  onClick={() => logout()}
-                  disabled={isLoggingOut}
+                  onClick={() => signOut({ redirectUrl: "/" })}
                   className="gap-2 text-destructive focus:text-destructive"
                 >
                   <LogOut className="h-4 w-4" />
@@ -128,7 +128,7 @@ export default function GlobalHeader() {
             </DropdownMenu>
           ) : (
             <a
-              href="/api/login?redirectTo=%2Fdashboard"
+              href="/sign-in"
               className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
             >
               <LogIn className="h-3.5 w-3.5" />
@@ -170,16 +170,15 @@ export default function GlobalHeader() {
             {user ? (
               <>
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  {user.profileImageUrl ? (
-                    <img src={user.profileImageUrl} alt="" className="h-5 w-5 rounded-full object-cover" />
+                  {user.imageUrl ? (
+                    <img src={user.imageUrl} alt="" className="h-5 w-5 rounded-full object-cover" />
                   ) : (
                     <User className="h-3.5 w-3.5" />
                   )}
                   <span>Signed in as <span className="text-foreground">{displayName}</span></span>
                 </div>
                 <button
-                  onClick={() => { logout(); setMobileOpen(false); }}
-                  disabled={isLoggingOut}
+                  onClick={() => { signOut({ redirectUrl: "/" }); setMobileOpen(false); }}
                   className="flex items-center gap-2 text-sm text-destructive hover:opacity-80 transition-opacity text-left"
                 >
                   <LogOut className="h-3.5 w-3.5" />
@@ -188,7 +187,7 @@ export default function GlobalHeader() {
               </>
             ) : (
               <a
-                href="/api/login?redirectTo=%2Fdashboard"
+                href="/sign-in"
                 onClick={() => setMobileOpen(false)}
                 className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
               >

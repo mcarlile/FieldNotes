@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { trackEvent } from "@/lib/analytics";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Globe, Lock, Copy, Check, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -24,16 +25,23 @@ export default function PublishButton({
   const [copied, setCopied] = useState(false);
   const { toast } = useToast();
   const qc = useQueryClient();
+  const contentType = apiPath === "/api/expeditions" ? "expedition" : "field_note";
 
   const publishMutation = useMutation({
     mutationFn: () => apiRequest(`${apiPath}/${id}/publish`, "POST"),
-    onSuccess: () => qc.invalidateQueries({ queryKey }),
+    onSuccess: () => {
+      trackEvent("content_published", { content_type: contentType });
+      return qc.invalidateQueries({ queryKey });
+    },
     onError: () => toast({ title: "Publish failed", variant: "destructive" }),
   });
 
   const unpublishMutation = useMutation({
     mutationFn: () => apiRequest(`${apiPath}/${id}/unpublish`, "POST"),
-    onSuccess: () => qc.invalidateQueries({ queryKey }),
+    onSuccess: () => {
+      trackEvent("content_unpublished", { content_type: contentType });
+      return qc.invalidateQueries({ queryKey });
+    },
     onError: () => toast({ title: "Unpublish failed", variant: "destructive" }),
   });
 
@@ -43,6 +51,7 @@ export default function PublishButton({
   function copyLink() {
     if (!publicUrl) return;
     navigator.clipboard.writeText(publicUrl).then(() => {
+      trackEvent("public_link_copied", { content_type: contentType });
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });

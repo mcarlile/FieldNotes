@@ -1,9 +1,10 @@
 import { useState, useMemo, useCallback } from "react";
+import { trackEvent } from "@/lib/analytics";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Modal } from "@carbon/react";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Trash2, ExternalLink } from "lucide-react";
 import PublishButton from "@/components/publish-button";
 import PhotoLightbox from "@/components/photo-lightbox";
 import MapboxMap from "@/components/mapbox-map";
@@ -11,7 +12,7 @@ import ElevationProfile from "@/components/elevation-profile";
 import { parseGpxData, parseGpxWithTimestamps } from "@shared/gpx-utils";
 
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth } from "@clerk/react";
 import { apiRequest } from "@/lib/queryClient";
 import { queryClient } from "@/lib/queryClient";
 import type { FieldNote, Photo } from "@shared/schema";
@@ -24,13 +25,12 @@ export default function FieldNoteDetail() {
   const [hoveredElevationPoint, setHoveredElevationPoint] = useState<any>(null);
 
   const { toast } = useToast();
-  const { isAuthenticated } = useAuth();
+  const { isSignedIn } = useAuth();
 
   const { data: fieldNoteData, isLoading: isLoadingFieldNote } = useQuery({
     queryKey: ["/api/field-notes", id],
     queryFn: async () => {
-      const response = await fetch(`/api/field-notes/${id}`);
-      if (!response.ok) throw new Error("Failed to fetch field note");
+      const response = await apiRequest(`/api/field-notes/${id}`, "GET");
       return response.json();
     },
     enabled: !!id,
@@ -84,7 +84,9 @@ export default function FieldNoteDetail() {
     const profile = parsedGpxData?.elevationProfile;
     if (!profile || profile.length === 0) return null;
 
-    const elevations = profile.map((p) => p.elevation).filter((e) => Number.isFinite(e));
+    const elevations = profile
+      .map((p: { elevation: number }) => p.elevation)
+      .filter((e: number) => Number.isFinite(e));
     if (elevations.length === 0) return null;
 
     const maxEle = Math.round(Math.max(...elevations));
@@ -122,6 +124,7 @@ export default function FieldNoteDetail() {
   const deleteFieldNoteMutation = useMutation({
     mutationFn: async () => apiRequest(`/api/field-notes/${id}`, "DELETE"),
     onSuccess: () => {
+      trackEvent("field_note_deleted");
       toast({ title: "Success", description: "Field note deleted successfully!" });
       queryClient.invalidateQueries({ queryKey: ["/api/field-notes"] });
       setLocation("/dashboard");
@@ -228,8 +231,20 @@ export default function FieldNoteDetail() {
             {fieldNote.title}
           </h1>
 
-          {isAuthenticated && (
-            <div className="flex items-center gap-4 flex-shrink-0">
+          <div className="flex items-center gap-4 flex-shrink-0">
+            {fieldNote.stravaId && (
+              <a
+                href={`https://www.strava.com/${fieldNote.stravaSource === "strava-route" ? "routes" : "activities"}/${fieldNote.stravaId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="meta-mono text-orange-500 hover:text-orange-600 transition-colors flex items-center gap-1.5"
+              >
+                <ExternalLink className="h-3 w-3" />
+                Open in Strava
+              </a>
+            )}
+            {isSignedIn && (
+              <>
               <PublishButton
                 id={fieldNote.id}
                 isPublished={fieldNote.isPublished ?? false}
@@ -238,23 +253,24 @@ export default function FieldNoteDetail() {
                 apiPath="/api/field-notes"
                 queryKey={["/api/field-notes", id]}
               />
-              <Link
-                href={`/field-notes/${fieldNote.id}/edit`}
-                className="meta-mono text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
-              >
-                <Pencil className="h-3 w-3" />
-                Edit
-              </Link>
-              <button
-                onClick={() => setShowDeleteModal(true)}
-                className="meta-mono text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1.5"
-                data-testid="button-delete"
-              >
-                <Trash2 className="h-3 w-3" />
-                Delete
-              </button>
-            </div>
-          )}
+                <Link
+                  href={`/field-notes/${fieldNote.id}/edit`}
+                  className="meta-mono text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
+                >
+                  <Pencil className="h-3 w-3" />
+                  Edit
+                </Link>
+                <button
+                  onClick={() => setShowDeleteModal(true)}
+                  className="meta-mono text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1.5"
+                  data-testid="button-delete"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  Delete
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {fieldNote.description && (

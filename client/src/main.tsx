@@ -2,16 +2,25 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
 
-// Register service worker for PWA functionality
+// This app no longer uses a service worker. Earlier versions registered one
+// that cached the app shell and served stale content, forcing users into
+// incognito to see updates. We now actively unregister any existing worker and
+// clear its caches so every visitor gets fresh content straight from the server.
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
-      .then((registration) => {
-        console.log('SW registered: ', registration);
-      })
-      .catch((registrationError) => {
-        console.log('SW registration failed: ', registrationError);
+    navigator.serviceWorker.getRegistrations().then((registrations) => {
+      for (const registration of registrations) {
+        registration.unregister();
+      }
+    });
+
+    if (typeof caches !== 'undefined' && caches.keys) {
+      caches.keys().then((cacheNames) => {
+        for (const cacheName of cacheNames) {
+          caches.delete(cacheName);
+        }
       });
+    }
   });
 }
 

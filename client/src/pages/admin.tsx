@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
+import { trackEvent } from "@/lib/analytics";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -30,6 +31,7 @@ const tripTypeOptions = [
   { id: "motorcycle", text: "Motorcycle" },
   { id: "climbing", text: "Climbing" },
   { id: "skiing", text: "Skiing" },
+  { id: "openwater", text: "Open Water Swimming" },
   { id: "other", text: "Other" },
 ];
 
@@ -66,8 +68,7 @@ export default function AdminPage() {
   const { data: existingFieldNote, isLoading: isLoadingFieldNote } = useQuery<FieldNote>({
     queryKey: ["/api/field-notes", id],
     queryFn: async () => {
-      const response = await fetch(`/api/field-notes/${id}`);
-      if (!response.ok) throw new Error("Failed to fetch field note");
+      const response = await apiRequest(`/api/field-notes/${id}`, "GET");
       return response.json();
     },
     enabled: isEditing,
@@ -76,8 +77,7 @@ export default function AdminPage() {
   const { data: existingPhotos = [] } = useQuery({
     queryKey: ["/api/field-notes", id, "photos"],
     queryFn: async () => {
-      const response = await fetch(`/api/field-notes/${id}/photos`);
-      if (!response.ok) throw new Error("Failed to fetch photos");
+      const response = await apiRequest(`/api/field-notes/${id}/photos`, "GET");
       return response.json();
     },
     enabled: isEditing,
@@ -126,14 +126,7 @@ export default function AdminPage() {
   };
 
   const handlePhotoUpload = async () => {
-    const response = await fetch("/api/photos/upload", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-    });
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to get upload URL: ${response.status} - ${errorText}`);
-    }
+    const response = await apiRequest("/api/photos/upload", "POST");
     const data = await response.json();
     return { method: "PUT" as const, url: data.uploadURL };
   };
@@ -159,7 +152,7 @@ export default function AdminPage() {
         url: normalize((upload as { uploadURL: string }).uploadURL),
         filename: upload.name ?? "photo",
         caption: "",
-        exifData: exifDataArray?.[index],
+        exifData: exifDataArray?.[index] ?? undefined,
       }));
       setUploadedPhotos((prev) => [...prev, ...newPhotos]);
 
@@ -209,6 +202,7 @@ export default function AdminPage() {
         photos: buildPhotoPayload(),
       }),
     onSuccess: () => {
+      trackEvent("field_note_created", { source: "editor" });
       toast({ title: "Field note created", variant: "success" });
       queryClient.invalidateQueries({ queryKey: ["/api/field-notes"] });
       setLocation("/dashboard");
@@ -229,6 +223,7 @@ export default function AdminPage() {
         photos: buildPhotoPayload(),
       }),
     onSuccess: () => {
+      trackEvent("field_note_updated");
       toast({ title: "Field note updated", variant: "success" });
       queryClient.invalidateQueries({ queryKey: ["/api/field-notes"] });
       queryClient.invalidateQueries({ queryKey: ["/api/field-notes", id] });

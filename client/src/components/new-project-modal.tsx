@@ -67,18 +67,7 @@ export function NewProjectModal({
         endTime: undefined, // Will be set when project timeline is finalized
       };
 
-      const response = await fetch("/api/trailcam-projects", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(projectData),
-      });
-      
-      if (!response.ok) {
-        throw new Error("Failed to create project");
-      }
-      
+      const response = await apiRequest("/api/trailcam-projects", "POST", projectData);
       return response.json();
     },
     onSuccess: (project: TrailcamProject) => {
