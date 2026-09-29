@@ -331,11 +331,10 @@ export default function AdminPage() {
         <div className="mb-10">
           <Link
             href="/dashboard"
-            aria-label="Back to field notes"
-            title="Back to field notes"
-            className="mb-3 inline-flex size-11 items-center justify-center rounded-full border border-border text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="meta-mono mb-3 inline-flex min-h-11 items-center gap-2 text-foreground transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             <ArrowLeft className="size-4" aria-hidden="true" />
+            Back
           </Link>
           <h1
             className="font-serif text-foreground"
