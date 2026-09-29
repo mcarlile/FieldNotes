@@ -243,6 +243,7 @@ export function AutoPhotoUploader({
   return (
     <>
       <CarbonButton
+        kind="tertiary"
         className={buttonClassName}
         onClick={() => setShowModal(true)}
         renderIcon={Upload}
