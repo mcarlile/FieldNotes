@@ -166,11 +166,19 @@ function ClerkQueryClientCacheInvalidator() {
 
 function AppContent() {
   const [location] = useLocation();
-  const showHeader = !location.startsWith("/sign-in") && !location.startsWith("/sign-up");
+  const isTripWorkspace =
+    location === "/admin" ||
+    /^\/admin\/[^/]+\/?$/.test(location) ||
+    /^\/field-notes\/[^/]+\/edit\/?$/.test(location);
+  const showHeader =
+    location !== "/" &&
+    !location.startsWith("/sign-in") &&
+    !location.startsWith("/sign-up") &&
+    !isTripWorkspace;
 
   return (
     <>
-      {showHeader && location !== "/" && <GlobalHeader />}
+      {showHeader && <GlobalHeader />}
       <Switch>
         <Route path="/" component={RootRoute} />
         <Route path="/dashboard">{() => <RequireAuth component={Dashboard} />}</Route>
