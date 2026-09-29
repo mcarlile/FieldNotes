@@ -88,6 +88,13 @@ export default function Dashboard() {
       return response.json();
     },
   });
+  const tripTypeOptions = [
+    ...availableTripTypes,
+    ...Array.from(new Map(allFieldNotes.flatMap((note) => note.tripType)
+      .filter((type) => !availableTripTypes.some((option) => option.id === type.toLowerCase()))
+      .map((type) => [type.toLowerCase(), type] as const)).entries())
+      .map(([id, label]) => ({ id, label })),
+  ];
 
   const fieldNotes = allFieldNotes.filter((note) => {
     if (tripTypes.length > 0 && !tripTypes.some((t) => note.tripType.map((x) => x.toLowerCase()).includes(t))) return false;
@@ -131,7 +138,7 @@ export default function Dashboard() {
     tripTypes.length === 0
       ? "Trip type"
       : tripTypes.length === 1
-      ? availableTripTypes.find((t) => t.id === tripTypes[0])?.label ?? tripTypes[0]
+      ? tripTypeOptions.find((t) => t.id === tripTypes[0])?.label ?? tripTypes[0]
       : `${tripTypes.length} types`;
 
   const distancePillLabel =
@@ -249,7 +256,7 @@ export default function Dashboard() {
             <PopoverContent align="start" className="w-56 p-3 bg-popover border border-border">
               <div className="meta-mono text-muted-foreground mb-2">Trip type</div>
               <div className="space-y-2 max-h-64 overflow-y-auto">
-                {availableTripTypes.map((type) => (
+                {tripTypeOptions.map((type) => (
                   <label key={type.id} className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
                     <Checkbox
                       checked={tripTypes.includes(type.id)}

@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useParams, useLocation, Link } from "wouter";
-import { ArrowLeft, Loader2, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, Trash2 } from "lucide-react";
 import type { UploadResult } from "@uppy/core";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -61,6 +61,9 @@ export default function AdminPage() {
   const [photosUploading, setPhotosUploading] = useState(false);
   const hydratedPhotosFor = useRef<string | null>(null);
   const [selectedTripTypes, setSelectedTripTypes] = useState<string[]>(["hiking"]);
+  const [customTripTypes, setCustomTripTypes] = useState<string[]>([]);
+  const [addingTripType, setAddingTripType] = useState(false);
+  const [newTripType, setNewTripType] = useState("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -77,6 +80,13 @@ export default function AdminPage() {
       return response.json();
     },
     enabled: isEditing,
+  });
+  const { data: fieldNotes = [] } = useQuery<FieldNote[]>({
+    queryKey: ["/api/field-notes", { tripTypeOptions: true }],
+    queryFn: async () => {
+      const response = await apiRequest("/api/field-notes", "GET");
+      return response.json();
+    },
   });
 
   const { data: existingPhotos = [], isSuccess: photosLoaded, isError: photosLoadFailed, refetch: retryPhotos } = useQuery({
@@ -280,6 +290,8 @@ export default function AdminPage() {
         description: existingFieldNote.description,
       });
       setSelectedTripTypes(Array.isArray(existingFieldNote.tripType) ? existingFieldNote.tripType : [existingFieldNote.tripType]);
+      setCustomTripTypes((Array.isArray(existingFieldNote.tripType) ? existingFieldNote.tripType : [existingFieldNote.tripType])
+        .filter((type) => !tripTypeOptions.some((option) => option.id.toLowerCase() === type.toLowerCase())));
       setGpxContent(existingFieldNote.gpxData as string);
     }
   }, [existingFieldNote, form]);
@@ -307,6 +319,25 @@ export default function AdminPage() {
   }, [existingPhotos, isEditing, id, photosLoaded]);
 
   const isPending = createMutation.isPending || updateMutation.isPending;
+  const availableCustomTripTypes = Array.from(new Map(
+    [...fieldNotes.flatMap((note) => note.tripType), ...customTripTypes]
+      .filter((type) => !tripTypeOptions.some((option) => option.id.toLowerCase() === type.toLowerCase()))
+      .map((type) => [type.toLowerCase(), type] as const),
+  ).values());
+  const addTripType = () => {
+    const name = newTripType.trim().replace(/\s+/g, " ");
+    if (!name) return;
+    const existing = [...tripTypeOptions.map((option) => option.id), ...availableCustomTripTypes]
+      .find((type) => type.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      setSelectedTripTypes((prev) => prev.includes(existing) ? prev : [...prev, existing]);
+    } else {
+      setCustomTripTypes((prev) => [...prev, name]);
+      setSelectedTripTypes((prev) => [...prev, name]);
+    }
+    setNewTripType("");
+    setAddingTripType(false);
+  };
 
   if (isLoadingFieldNote || (isEditing && !photosLoaded && !photosLoadFailed)) {
     return (
@@ -388,7 +419,7 @@ export default function AdminPage() {
           <div>
             <label className="meta-mono text-muted-foreground block mb-3">Trip type</label>
             <div className="flex flex-wrap gap-2">
-              {tripTypeOptions.map((opt) => {
+              {[...tripTypeOptions, ...availableCustomTripTypes.map((type) => ({ id: type, text: type }))].map((opt) => {
                 const active = selectedTripTypes.includes(opt.id);
                 return (
                   <button
@@ -410,7 +441,44 @@ export default function AdminPage() {
                   </button>
                 );
               })}
+              <button
+                type="button"
+                onClick={() => setAddingTripType(true)}
+                className="meta-mono inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-foreground/50 px-3 text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Plus className="size-3.5" aria-hidden="true" />
+                Add a new trip type
+              </button>
             </div>
+            {addingTripType && (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <input
+                  autoFocus
+                  type="text"
+                  aria-label="New trip type"
+                  value={newTripType}
+                  maxLength={60}
+                  onChange={(event) => setNewTripType(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      addTripType();
+                    } else if (event.key === "Escape") {
+                      setAddingTripType(false);
+                      setNewTripType("");
+                    }
+                  }}
+                  placeholder="Name your trip type"
+                  className="min-h-10 rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+                <button type="button" onClick={addTripType} disabled={!newTripType.trim()} className="meta-mono min-h-10 rounded-full bg-primary px-4 text-primary-foreground disabled:opacity-50">
+                  Add
+                </button>
+                <button type="button" onClick={() => { setAddingTripType(false); setNewTripType(""); }} className="meta-mono min-h-10 px-2 text-foreground hover:underline">
+                  Cancel
+                </button>
+              </div>
+            )}
           </div>
 
           {/* GPX upload */}
