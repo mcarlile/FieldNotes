@@ -466,7 +466,7 @@ export default function AdminPage() {
                 onComplete={handlePhotoUploadComplete}
                 buttonClassName="meta-mono !inline-flex !w-auto !max-w-none !flex-nowrap !items-center !justify-center !gap-2 whitespace-nowrap !px-3 !py-1.5 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors [&>svg]:!static [&>svg]:!m-0 [&>svg]:shrink-0"
               >
-                <span>+ Upload</span>
+                <span>Upload</span>
               </AutoPhotoUploader>}
             </div>
 
