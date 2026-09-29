@@ -20,7 +20,7 @@ const fieldNoteFormSchema = z.object({
   description: z.string().min(1, "Description is required"),
 });
 
-const uploadButtonClassName = "meta-mono !inline-flex !w-auto !max-w-none !flex-nowrap !items-center !justify-center !gap-2 whitespace-nowrap !px-3 !py-1.5 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors [&>svg]:!static [&>svg]:!m-0 [&>svg]:shrink-0 [&>svg]:[stroke-width:1.5]";
+const uploadButtonClassName = "meta-mono !inline-flex !w-auto !max-w-none !flex-nowrap !items-center !justify-center !gap-2 whitespace-nowrap !px-3 !py-1.5 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors [&>svg]:!static [&>svg]:!m-0 [&>svg]:!fill-none [&>svg_*]:!fill-none [&>svg]:shrink-0 [&>svg]:[stroke-width:1.5]";
 
 type FieldNoteFormData = z.infer<typeof fieldNoteFormSchema>;
 
