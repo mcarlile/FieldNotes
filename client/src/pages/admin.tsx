@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useParams, useLocation, Link } from "wouter";
 import { ArrowLeft, FileUp, Loader2, Plus, Trash2 } from "lucide-react";
+import { Button as CarbonButton } from "@carbon/react";
 import type { UploadResult } from "@uppy/core";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -18,6 +19,8 @@ const fieldNoteFormSchema = z.object({
   title: z.string().min(1, "Title is required"),
   description: z.string().min(1, "Description is required"),
 });
+
+const uploadButtonClassName = "meta-mono !inline-flex !w-auto !max-w-none !flex-nowrap !items-center !justify-center !gap-2 whitespace-nowrap !px-3 !py-1.5 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors [&>svg]:!static [&>svg]:!m-0 [&>svg]:shrink-0 [&>svg]:[stroke-width:1.5]";
 
 type FieldNoteFormData = z.infer<typeof fieldNoteFormSchema>;
 
@@ -42,6 +45,7 @@ export default function AdminPage() {
   const isEditing = !!id;
 
   const [gpxFile, setGpxFile] = useState<File | null>(null);
+  const gpxInputRef = useRef<HTMLInputElement>(null);
   const [gpxContent, setGpxContent] = useState<string>("");
   const [gpxStats, setGpxStats] = useState<{
     distance: number;
@@ -487,21 +491,24 @@ export default function AdminPage() {
               GPX track {!isEditing && <span className="text-destructive">*</span>}
             </label>
 
-            <label
-              htmlFor="gpx-file"
-              className="meta-mono inline-flex min-h-12 w-auto items-center justify-center gap-2 whitespace-nowrap rounded-full border border-border bg-transparent px-3 py-1.5 text-foreground transition-colors hover:bg-muted cursor-pointer focus-within:ring-2 focus-within:ring-ring"
+            <CarbonButton
+              type="button"
+              kind="tertiary"
+              className={uploadButtonClassName}
+              renderIcon={FileUp}
+              onClick={() => gpxInputRef.current?.click()}
             >
               {gpxFile ? "Replace .gpx" : "Choose .gpx file"}
-              <FileUp className="size-4 shrink-0" aria-hidden="true" />
-              <input
-                id="gpx-file"
-                type="file"
-                accept=".gpx,application/gpx+xml,text/xml"
-                onChange={handleGpxFileChange}
-                className="sr-only"
-                data-testid="input-gpx-file"
-              />
-            </label>
+            </CarbonButton>
+            <input
+              ref={gpxInputRef}
+              id="gpx-file"
+              type="file"
+              accept=".gpx,application/gpx+xml,text/xml"
+              onChange={handleGpxFileChange}
+              className="hidden"
+              data-testid="input-gpx-file"
+            />
             {gpxFile && (
               <span className="meta-mono text-muted-foreground ml-3 break-all">{gpxFile.name}</span>
             )}
@@ -538,7 +545,7 @@ export default function AdminPage() {
                 maxFileSize={52428800}
                 onGetUploadParameters={handlePhotoUpload}
                 onComplete={handlePhotoUploadComplete}
-                buttonClassName="meta-mono !inline-flex !w-auto !max-w-none !flex-nowrap !items-center !justify-center !gap-2 whitespace-nowrap !px-3 !py-1.5 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors [&>svg]:!static [&>svg]:!m-0 [&>svg]:shrink-0"
+                buttonClassName={uploadButtonClassName}
               >
                 <span>Upload</span>
               </AutoPhotoUploader>}
