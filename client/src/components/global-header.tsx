@@ -79,7 +79,7 @@ export default function GlobalHeader() {
                 }`}
               >
                 <Inbox className="h-3.5 w-3.5" />
-                Inbox
+                Import field note
               </Link>
             </>
           )}
@@ -146,7 +146,7 @@ export default function GlobalHeader() {
         <div className="sm:hidden border-t border-border px-5 py-4 flex flex-col gap-3">
           {navLink("/dashboard", "Field notes")}
           {navLink("/expeditions", "Expeditions")}
-          {navLink("/inbox", "GPX Inbox")}
+          {navLink("/inbox", "Import field note")}
           {navLink("/admin", "Add field note")}
 
           <div className="border-t border-border pt-3 flex flex-col gap-3">
