@@ -445,14 +445,15 @@ export default function AdminPage() {
                   </button>
                 );
               })}
-              <button
+              <CarbonButton
                 type="button"
+                kind="tertiary"
                 onClick={() => setAddingTripType(true)}
-                className="font-sans text-sm inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-foreground/50 px-3 text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className={uploadButtonClassName}
+                renderIcon={Plus}
               >
-                <Plus className="size-3.5" aria-hidden="true" />
                 Add a new trip type
-              </button>
+              </CarbonButton>
             </div>
             {addingTripType && (
               <div className="mt-3 flex flex-wrap items-center gap-2">
