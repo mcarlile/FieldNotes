@@ -2,3 +2,4 @@
 - [Legacy ownership after auth migration](legacy-ownership.md) — never guess an owner for records created before ownership tracking; keep them quarantined until explicitly assigned.
 - [Clerk mobile compatibility](clerk-mobile-compatibility.md) — native apps use a Clerk-authenticated handoff to expiring, revocable mobile tokens while browser APIs remain cookie-only.
 - [Safe Drizzle post-merge pushes](safe-drizzle-post-merge.md) — raw Drizzle menus can ignore piped stdin; preserve rows and reject unknown destructive changes.
+- [Strava preview safety](strava-preview-safety.md) — unavailable feeds are preferable to refreshing live credentials or substituting development data.

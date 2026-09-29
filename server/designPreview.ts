@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { db } from "./db";
 import { storage } from "./storage";
 import { users } from "@shared/schema";
+import { isStravaPreviewPath, readStravaPreview, StravaPreviewError } from "./stravaPreview";
 
 const missing = { message: "Production record not found" };
 
@@ -19,6 +20,9 @@ function validSecret(value: unknown): boolean {
 // These are data reads only. Never route an arbitrary path or method to the
 // production app, and never include webhook tokens or Strava credentials.
 async function readProduction(path: string, query: Record<string, string>, userId: string) {
+  if (isStravaPreviewPath(path)) {
+    return readStravaPreview(path, userId, id => storage.getStravaConnection(id));
+  }
   if (path === "/api/field-notes") {
     const notes = (await storage.getFieldNotes({
       search: query.search,
@@ -107,6 +111,10 @@ export function registerDesignPreview(app: Express) {
         if (result === null) return res.status(404).json(missing);
         res.set("Cache-Control", "private, no-store").json(result);
       } catch (error) {
+        if (error instanceof StravaPreviewError) {
+          return res.status(error.status).set("Cache-Control", "private, no-store")
+            .json({ code: "STRAVA_PREVIEW_UNAVAILABLE", message: error.message });
+        }
         console.error("Production preview read failed:", error);
         res.status(500).json({ message: "Production preview read failed" });
       }
@@ -158,6 +166,10 @@ export function registerDesignPreview(app: Express) {
       });
       if (!result.ok) {
         const detail = await result.json().catch(() => null);
+        if (isStravaPreviewPath(path) && detail?.code === "STRAVA_PREVIEW_UNAVAILABLE") {
+          return res.status(result.status).set("Cache-Control", "private, no-store")
+            .json({ message: detail.message });
+        }
         if (result.status === 404 && detail?.message === missing.message) {
           return res.status(404).json(missing);
         }

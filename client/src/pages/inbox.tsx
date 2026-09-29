@@ -127,33 +127,38 @@ interface AssociateHint {
   name: string;
 }
 
-function StravaPanel({ onImported, onAssociate }: { onImported: (hint: ImportedHint) => void; onAssociate: (hint: AssociateHint) => void }) {
+function StravaPanel({ onImported, onAssociate, readOnly = false }: { onImported: (hint: ImportedHint) => void; onAssociate: (hint: AssociateHint) => void; readOnly?: boolean }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: status, isLoading: statusLoading } = useQuery<{
+  const { data: status, isLoading: statusLoading, error: statusError } = useQuery<{
     state: "not_configured" | "disconnected" | "connected";
     connected: boolean;
     stravaAthleteId?: number;
+    previewAvailable?: boolean;
+    previewMessage?: string;
   }>({
     queryKey: ["/api/strava/status"],
     retry: false,
   });
 
-  const { data: activities, isLoading: activitiesLoading } = useQuery<StravaActivity[]>({
+  const { data: activities, isLoading: activitiesLoading, error: activitiesError } = useQuery<StravaActivity[]>({
     queryKey: ["/api/strava/activities"],
-    enabled: status?.connected === true,
+    enabled: status?.connected === true && (!readOnly || status.previewAvailable === true),
     retry: false,
   });
 
-  const { data: routes, isLoading: routesLoading } = useQuery<StravaRoute[]>({
+  const { data: routes, isLoading: routesLoading, error: routesError } = useQuery<StravaRoute[]>({
     queryKey: ["/api/strava/routes"],
-    enabled: status?.connected === true,
+    enabled: status?.connected === true && (!readOnly || status.previewAvailable === true),
     retry: false,
   });
 
   const disconnectMutation = useMutation({
-    mutationFn: () => apiRequest("/api/strava/disconnect", "DELETE"),
+    mutationFn: () => {
+      if (readOnly) throw new Error("Production preview is read-only");
+      return apiRequest("/api/strava/disconnect", "DELETE");
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/strava/status"] });
       queryClient.invalidateQueries({ queryKey: ["/api/strava/activities"] });
@@ -170,6 +175,7 @@ function StravaPanel({ onImported, onAssociate }: { onImported: (hint: ImportedH
     id: number,
     meta: { name: string; sportType?: string; routeType?: number },
   ) {
+    if (readOnly) return;
     const key = `${type}-${id}`;
     setImportingId(key);
     try {
@@ -223,6 +229,22 @@ function StravaPanel({ onImported, onAssociate }: { onImported: (hint: ImportedH
     return <div className="h-12 bg-muted animate-pulse rounded mb-12" />;
   }
 
+  function feedError(error: unknown) {
+    const data = error instanceof ApiError ? error.data as { message?: string } : undefined;
+    return data?.message ?? "Strava is unavailable. Please try again later.";
+  }
+
+  if (statusError || (readOnly && (!status?.connected || status.previewAvailable !== true))) {
+    return (
+      <section className="mb-12 pb-12 border-b border-border">
+        <div className="meta-mono text-muted-foreground mb-1">Strava{readOnly ? " · Read-only preview" : ""}</div>
+        <p role="status" className="text-sm text-muted-foreground">
+          {statusError ? feedError(statusError) : status?.previewMessage ?? "No Strava connection for this production account."}
+        </p>
+      </section>
+    );
+  }
+
   // App not configured (STRAVA_CLIENT_ID/SECRET not set in env)
   if (status?.state === "not_configured") {
     return (
@@ -266,7 +288,7 @@ function StravaPanel({ onImported, onAssociate }: { onImported: (hint: ImportedH
           <CheckCircle className="h-3 w-3 text-orange-500" />
           Strava connected · #{status.stravaAthleteId}
         </div>
-        <button
+        {!readOnly && <button
           type="button"
           onClick={() => disconnectMutation.mutate()}
           disabled={disconnectMutation.isPending}
@@ -274,8 +296,9 @@ function StravaPanel({ onImported, onAssociate }: { onImported: (hint: ImportedH
         >
           <Unlink className="h-3 w-3" />
           Disconnect
-        </button>
+        </button>}
       </div>
+      {readOnly && <p className="text-sm text-muted-foreground mb-4">Production Strava preview · read-only. Importing, associating, and connection changes are disabled.</p>}
 
       <Tabs defaultValue="activities">
         <TabsList className="mb-4">
@@ -284,7 +307,7 @@ function StravaPanel({ onImported, onAssociate }: { onImported: (hint: ImportedH
         </TabsList>
 
         <TabsContent value="activities" className="mt-0">
-          {activitiesLoading ? (
+          {activitiesError ? <p role="alert" className="text-sm text-muted-foreground py-4">{feedError(activitiesError)}</p> : activitiesLoading ? (
             <div className="space-y-3">
               {[1, 2, 3].map(i => <div key={i} className="h-10 bg-muted animate-pulse rounded" />)}
             </div>
@@ -307,7 +330,7 @@ function StravaPanel({ onImported, onAssociate }: { onImported: (hint: ImportedH
                         <span>·</span><span>{formatDate(act.start_date)}</span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3 shrink-0">
+                    {!readOnly && <div className="flex items-center gap-3 shrink-0">
                       <button
                         type="button"
                         disabled={isImported || isLoading}
@@ -329,7 +352,7 @@ function StravaPanel({ onImported, onAssociate }: { onImported: (hint: ImportedH
                       >
                         Associate
                       </button>
-                    </div>
+                    </div>}
                   </div>
                 );
               })}
@@ -338,7 +361,7 @@ function StravaPanel({ onImported, onAssociate }: { onImported: (hint: ImportedH
         </TabsContent>
 
         <TabsContent value="routes" className="mt-0">
-          {routesLoading ? (
+          {routesError ? <p role="alert" className="text-sm text-muted-foreground py-4">{feedError(routesError)}</p> : routesLoading ? (
             <div className="space-y-3">
               {[1, 2, 3].map(i => <div key={i} className="h-10 bg-muted animate-pulse rounded" />)}
             </div>
@@ -360,7 +383,7 @@ function StravaPanel({ onImported, onAssociate }: { onImported: (hint: ImportedH
                         {formatStravaElevation(route.elevation_gain) && <><span>·</span><span>{formatStravaElevation(route.elevation_gain)} gain</span></>}
                       </div>
                     </div>
-                    <div className="flex items-center gap-3 shrink-0">
+                    {!readOnly && <div className="flex items-center gap-3 shrink-0">
                       <button
                         type="button"
                         disabled={isImported || isLoading}
@@ -382,7 +405,7 @@ function StravaPanel({ onImported, onAssociate }: { onImported: (hint: ImportedH
                       >
                         Associate
                       </button>
-                    </div>
+                    </div>}
                   </div>
                 );
               })}
@@ -405,7 +428,7 @@ export default function InboxPage() {
   const [promoteTitle, setPromoteTitle] = useState("");
   const [promoteDescription, setPromoteDescription] = useState("");
   const [promoteTripTypes, setPromoteTripTypes] = useState<string[]>(["hiking"]);
-  const { data: readOnlyPreview } = useDesignPreview();
+  const { data: readOnlyPreview, isLoading: previewStatusLoading } = useDesignPreview();
 
   // Handle Strava OAuth redirect result (runs once per query-param change, never during render)
   useEffect(() => {
@@ -553,10 +576,10 @@ export default function InboxPage() {
         </div>
 
         {/* Strava */}
-        {!readOnlyPreview && <StravaPanel onImported={handleStravaImported} onAssociate={(hint) => setAssociateTarget(hint)} />}
+        {!previewStatusLoading && <StravaPanel readOnly={readOnlyPreview} onImported={handleStravaImported} onAssociate={(hint) => setAssociateTarget(hint)} />}
         {readOnlyPreview && (
           <p className="mb-8 text-sm text-muted-foreground">
-            Production inbox items are visible here. Webhook credentials and live Strava actions are not available in read-only preview.
+            Production inbox items and available Strava feeds are visible here. Webhook credentials and live Strava actions are not available in read-only preview.
           </p>
         )}
 
