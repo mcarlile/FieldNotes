@@ -451,7 +451,7 @@ export default function AdminPage() {
 
           {/* Photos */}
           <div>
-            <div className="flex items-center justify-between mb-3">
+            <div className="mb-3 flex flex-col items-start gap-4">
               <label className="meta-mono text-muted-foreground">
                 Photos {uploadedPhotos.length > 0 && `· ${uploadedPhotos.length}`}
               </label>
@@ -464,7 +464,7 @@ export default function AdminPage() {
                 maxFileSize={52428800}
                 onGetUploadParameters={handlePhotoUpload}
                 onComplete={handlePhotoUploadComplete}
-                buttonClassName="meta-mono px-3 py-1.5 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors"
+                buttonClassName="meta-mono !inline-flex !w-auto !max-w-none !flex-nowrap !items-center !justify-center !gap-2 whitespace-nowrap !px-3 !py-1.5 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors [&>svg]:!static [&>svg]:!m-0 [&>svg]:shrink-0"
               >
                 <span>+ Upload</span>
               </AutoPhotoUploader>}
