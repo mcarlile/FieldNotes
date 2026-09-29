@@ -511,11 +511,11 @@ export default function AdminPage() {
           </div>
 
           {/* Actions */}
-          <div className="pt-4 border-t border-border flex items-center gap-6">
+          <div className="pt-4 border-t border-border flex flex-wrap items-center gap-6">
             <button
               type="submit"
               disabled={isPending || photosUploading || (isEditing && (!photosLoaded || hydratedPhotosFor.current !== id))}
-              className="meta-mono text-foreground underline underline-offset-4 hover:opacity-70 transition-opacity disabled:opacity-50 flex items-center gap-2"
+              className="meta-mono inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-primary px-7 py-3.5 font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
               data-testid="button-submit"
             >
               {isPending && <Loader2 className="h-3 w-3 animate-spin" />}
