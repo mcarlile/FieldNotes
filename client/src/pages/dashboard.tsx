@@ -425,12 +425,13 @@ export default function Dashboard() {
             </table>
           </div>
         ) : (
-          <div className="columns-1 sm:columns-2 lg:columns-3 gap-3 sm:gap-4">
+          <div className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 2xl:columns-5 gap-3 sm:gap-4">
             {fieldNotes.map((note) => (
               <FieldNoteCard
                 key={note.id}
                 fieldNote={note}
                 searchTerm={search}
+                compact
               />
             ))}
           </div>

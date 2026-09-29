@@ -10,6 +10,7 @@ interface FieldNoteCardProps {
   fieldNote: FieldNoteWithPhotoCount;
   searchTerm?: string;
   alwaysShowCaption?: boolean;
+  compact?: boolean;
 }
 
 const highlightText = (text: string, searchTerm?: string): React.ReactNode => {
@@ -39,7 +40,7 @@ const aspectFor = (id: string) => {
   return variants[hash % variants.length];
 };
 
-export default function FieldNoteCard({ fieldNote, searchTerm, alwaysShowCaption }: FieldNoteCardProps) {
+export default function FieldNoteCard({ fieldNote, searchTerm, alwaysShowCaption, compact = false }: FieldNoteCardProps) {
   const formatDate = (date: string) =>
     new Date(date).toLocaleDateString("en-US", {
       month: "short",
@@ -52,19 +53,19 @@ export default function FieldNoteCard({ fieldNote, searchTerm, alwaysShowCaption
   return (
     <Link
       href={`/field-notes/${fieldNote.id}`}
-      className="group block break-inside-avoid mb-4 cursor-pointer"
+      className={`group block break-inside-avoid cursor-pointer ${compact ? "mb-3" : "mb-4"}`}
     >
       {/* Map fills the tile, no chrome */}
       <div
         className="w-full overflow-hidden bg-muted"
-        style={{ aspectRatio: aspect }}
+        style={{ aspectRatio: compact ? "1 / 1" : aspect }}
       >
         <MapboxRoutePreview fieldNote={fieldNote} className="w-full h-full" />
       </div>
 
       {/* Caption: always visible on mobile; on desktop, hidden until hover unless alwaysShowCaption */}
       <div
-        className={`pt-2 pb-1 transition-opacity duration-200 ${
+        className={`${compact ? "pt-1.5" : "pt-2"} pb-1 transition-opacity duration-200 ${
           alwaysShowCaption
             ? "opacity-100"
             : "[@media(hover:hover)]:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
