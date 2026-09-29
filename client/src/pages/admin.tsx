@@ -430,21 +430,21 @@ export default function AdminPage() {
                         prev.includes(opt.id) ? prev.filter((t) => t !== opt.id) : [...prev, opt.id]
                       );
                     }}
-                    className={`meta-mono px-3 py-1.5 rounded-full border transition-colors ${
+                    className={`font-sans text-sm px-3 py-1.5 rounded-full border transition-colors ${
                       active
                         ? "border-foreground text-foreground bg-muted"
                         : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/40"
                     }`}
                     data-testid={`pill-trip-type-${opt.id}`}
                   >
-                    {opt.text}
+                    {opt.text.charAt(0).toLocaleUpperCase() + opt.text.slice(1).toLocaleLowerCase()}
                   </button>
                 );
               })}
               <button
                 type="button"
                 onClick={() => setAddingTripType(true)}
-                className="meta-mono inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-foreground/50 px-3 text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="font-sans text-sm inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-foreground/50 px-3 text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <Plus className="size-3.5" aria-hidden="true" />
                 Add a new trip type
