@@ -5,11 +5,21 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useParams, useLocation, Link } from "wouter";
-import { Loader2, Trash2 } from "lucide-react";
+import { Loader2, Trash2, X } from "lucide-react";
 import type { UploadResult } from "@uppy/core";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { AutoPhotoUploader } from "@/components/auto-photo-uploader";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import type { FieldNote } from "@shared/schema";
 import { parseGpxData } from "@shared/gpx-utils";
 import { type PhotoExifData } from "@/lib/exif-extractor";
@@ -49,6 +59,8 @@ export default function AdminPage() {
     date: Date | null;
     coordinates: [number, number][];
   } | null>(null);
+  const [gpxRemoved, setGpxRemoved] = useState(false);
+  const [confirmGpxRemoveOpen, setConfirmGpxRemoveOpen] = useState(false);
   const [uploadedPhotos, setUploadedPhotos] = useState<Array<{
     url: string;
     filename: string;
@@ -85,6 +97,8 @@ export default function AdminPage() {
 
   const handleGpxFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
+    // Reset so picking the same file again after removing it still fires onChange
+    event.target.value = "";
     if (!file) return;
 
     if (!file.name.toLowerCase().endsWith(".gpx")) {
@@ -93,6 +107,7 @@ export default function AdminPage() {
     }
 
     setGpxFile(file);
+    setGpxRemoved(false);
     const reader = new FileReader();
     reader.onerror = () => toast({ title: "File read error", description: "Unable to read the GPX file.", variant: "destructive" });
     reader.onload = (e) => {
@@ -123,6 +138,16 @@ export default function AdminPage() {
       }
     };
     reader.readAsText(file, "UTF-8");
+  };
+
+  const hasGpx = !!gpxFile || !!gpxContent;
+
+  const handleRemoveGpx = () => {
+    setGpxFile(null);
+    setGpxContent("");
+    setGpxStats(null);
+    setGpxRemoved(true);
+    setConfirmGpxRemoveOpen(false);
   };
 
   const handlePhotoUpload = async () => {
@@ -216,9 +241,13 @@ export default function AdminPage() {
       apiRequest(`/api/field-notes/${id}`, "PUT", {
         ...data,
         tripType: selectedTripTypes,
-        gpxData: gpxContent || existingFieldNote?.gpxData,
-        distance: gpxStats?.distance || existingFieldNote?.distance,
-        elevationGain: gpxStats?.elevationGain || existingFieldNote?.elevationGain,
+        ...(gpxRemoved && !gpxContent
+          ? { gpxData: null, distance: null, elevationGain: null }
+          : {
+              gpxData: gpxContent || existingFieldNote?.gpxData,
+              distance: gpxStats?.distance || existingFieldNote?.distance,
+              elevationGain: gpxStats?.elevationGain || existingFieldNote?.elevationGain,
+            }),
         date: gpxStats?.date || existingFieldNote?.date,
         photos: buildPhotoPayload(),
       }),
@@ -385,7 +414,7 @@ export default function AdminPage() {
               htmlFor="gpx-file"
               className="meta-mono inline-flex items-center px-3 py-1.5 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors cursor-pointer"
             >
-              {gpxFile ? "Replace .gpx" : "Choose .gpx file"}
+              {hasGpx ? "Replace .gpx" : "Choose .gpx file"}
             </label>
             <input
               id="gpx-file"
@@ -395,9 +424,42 @@ export default function AdminPage() {
               className="sr-only"
               data-testid="input-gpx-file"
             />
-            {gpxFile && (
-              <span className="meta-mono text-muted-foreground ml-3 break-all">{gpxFile.name}</span>
+            {hasGpx && (
+              <span
+                className="meta-mono inline-flex items-center gap-1.5 ml-3 pl-3 pr-1.5 py-1.5 rounded-full border border-border text-foreground max-w-full"
+                data-testid="chip-gpx-file"
+              >
+                <span className="break-all">{gpxFile ? gpxFile.name : "GPX track uploaded"}</span>
+                <button
+                  type="button"
+                  onClick={() => setConfirmGpxRemoveOpen(true)}
+                  className="rounded-full p-0.5 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                  aria-label="Remove GPX file"
+                  data-testid="button-remove-gpx"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </span>
             )}
+
+            <AlertDialog open={confirmGpxRemoveOpen} onOpenChange={setConfirmGpxRemoveOpen}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Remove GPX file?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    {isEditing
+                      ? "The route, distance and elevation will be removed from this field note when you save."
+                      : "You'll need to choose another .gpx file before creating this field note."}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleRemoveGpx} data-testid="button-confirm-remove-gpx">
+                    Remove
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
 
             {gpxStats && (
               <div className="mt-4 pt-4 border-t border-border meta-mono text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
