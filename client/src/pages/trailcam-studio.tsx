@@ -1,4 +1,4 @@
-import { useRef, useState, Suspense } from "react";
+import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -13,11 +13,21 @@ import {
   AlertTriangle,
   CheckCircle2,
   Loader2,
+  Minus,
+  Plus,
 } from "lucide-react";
 import { NewProjectModal } from "@/components/new-project-modal";
 import { ChunkedVideoUploader } from "@/components/chunked-video-uploader";
 import MapboxMap, { ClipMarker } from "@/components/mapbox-map";
+import { Slider } from "@/components/ui/slider";
 import type { TrailcamProject, VideoClip, InsertVideoClip } from "@shared/schema";
+import {
+  MAX_CLIP_TIME_OFFSET_SECS,
+  getTimedTrack,
+  interpolateCoordinatesAtOffset,
+  resolveClipCoordinates,
+} from "@shared/gpx-utils";
+import type { ElevationPoint } from "@shared/gpx-utils";
 import { apiRequest } from "@/lib/queryClient";
 
 function pillButtonClass(active = false) {
@@ -34,9 +44,17 @@ export default function TrailcamStudio() {
   const [selectedProject, setSelectedProject] = useState<TrailcamProject | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [selectedClip, setSelectedClip] = useState<VideoClip | null>(null);
+  const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
+  // Unsaved offset while the user is adjusting it; null means "use the saved value"
+  const [offsetDraft, setOffsetDraft] = useState<number | null>(null);
+  const offsetSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingOffset = useRef<{ clipId: string; timeOffsetSecs: number } | null>(null);
+  const selectedClipIdRef = useRef<string | null>(null);
+  selectedClipIdRef.current = selectedClipId;
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  const track = useMemo(() => getTimedTrack(selectedProject?.gpxData), [selectedProject]);
 
   const { data: projects = [], isLoading: projectsLoading } = useQuery<TrailcamProject[]>({
     queryKey: ["/api/trailcam-projects"],
@@ -75,6 +93,67 @@ export default function TrailcamStudio() {
       toast({ title: "Error", description: error.message || "Failed to add video clip", variant: "destructive" }),
   });
 
+  const selectedClip = clips.find((c) => c.id === selectedClipId) ?? null;
+  const timelineDuration = selectedProject?.duration ?? track?.durationSeconds ?? null;
+  const clipOffset = (clip: VideoClip) =>
+    clip.id === selectedClipId && offsetDraft !== null ? offsetDraft : clip.timeOffsetSecs ?? 0;
+
+  const saveOffsetMutation = useMutation({
+    mutationFn: async ({ clipId, timeOffsetSecs }: { clipId: string; timeOffsetSecs: number }) => {
+      const response = await apiRequest(`/api/video-clips/${clipId}`, "PUT", { timeOffsetSecs });
+      return response.json() as Promise<VideoClip>;
+    },
+    onSuccess: (updated: VideoClip) => {
+      queryClient.setQueryData<VideoClip[]>(["/api/video-clips", updated.projectId], (old) =>
+        old?.map((c) => (c.id === updated.id ? updated : c)),
+      );
+      if (updated.id === selectedClipIdRef.current && !pendingOffset.current) {
+        setOffsetDraft((draft) => (draft === updated.timeOffsetSecs ? null : draft));
+      }
+    },
+    onError: (error: Error, { clipId }) => {
+      if (clipId === selectedClipIdRef.current) setOffsetDraft(null);
+      toast({ title: "Error", description: error.message || "Failed to save sync offset", variant: "destructive" });
+    },
+  });
+
+  const flushOffset = () => {
+    if (offsetSaveTimer.current) clearTimeout(offsetSaveTimer.current);
+    offsetSaveTimer.current = null;
+    const pending = pendingOffset.current;
+    pendingOffset.current = null;
+    if (pending) saveOffsetMutation.mutate(pending);
+  };
+  const flushOffsetRef = useRef(flushOffset);
+  flushOffsetRef.current = flushOffset;
+  useEffect(() => () => flushOffsetRef.current(), []);
+
+  const changeOffset = (value: number) => {
+    if (!selectedClip) return;
+    const clamped = Math.max(-MAX_CLIP_TIME_OFFSET_SECS, Math.min(MAX_CLIP_TIME_OFFSET_SECS, Math.round(value)));
+    setOffsetDraft(clamped);
+    // Debounce so dragging or repeated nudges save once
+    pendingOffset.current = { clipId: selectedClip.id, timeOffsetSecs: clamped };
+    if (offsetSaveTimer.current) clearTimeout(offsetSaveTimer.current);
+    offsetSaveTimer.current = setTimeout(flushOffset, 400);
+  };
+
+  const selectClip = (clip: VideoClip) => {
+    flushOffset();
+    setOffsetDraft(null);
+    setCurrentTime(0);
+    setSelectedClipId(clip.id);
+  };
+
+  // Seconds into the GPX track that the current video frame corresponds to
+  const trackTimeAtFrame = selectedClip ? selectedClip.startTime + clipOffset(selectedClip) + currentTime : null;
+
+  const playbackCursor: ElevationPoint | null = useMemo(() => {
+    if (!track || trackTimeAtFrame === null || selectedClip?.processingStatus !== "ready") return null;
+    const coords = interpolateCoordinatesAtOffset(track, trackTimeAtFrame);
+    return coords ? { distance: 0, elevation: 0, coordinates: [coords.longitude, coords.latitude] } : null;
+  }, [track, trackTimeAtFrame, selectedClip?.processingStatus]);
+
   const handleClipUpload = (clipData: {
     title: string;
     filename: string;
@@ -111,26 +190,42 @@ export default function TrailcamStudio() {
         const markers: ClipMarker[] = [];
         const clipIndex = clips.findIndex((c) => c.id === selectedClip.id);
         const color = clipIndex >= 0 ? clipColors[clipIndex % clipColors.length] : clipColors[0];
-        if (selectedClip.startLatitude != null && selectedClip.startLongitude != null) {
-          markers.push({
-            id: selectedClip.id, type: "start",
-            latitude: selectedClip.startLatitude, longitude: selectedClip.startLongitude, color,
-          });
+        // Recompute locally so the markers follow the offset while it is being adjusted
+        const offset = clipOffset(selectedClip);
+        const live = selectedProject
+          ? resolveClipCoordinates(
+              selectedProject.gpxData,
+              selectedClip.startTime + offset,
+              selectedClip.endTime + offset,
+              timelineDuration ?? undefined,
+            )
+          : null;
+        const startLatitude = live?.startLatitude ?? selectedClip.startLatitude;
+        const startLongitude = live?.startLongitude ?? selectedClip.startLongitude;
+        const endLatitude = live?.endLatitude ?? selectedClip.endLatitude;
+        const endLongitude = live?.endLongitude ?? selectedClip.endLongitude;
+        if (startLatitude != null && startLongitude != null) {
+          markers.push({ id: selectedClip.id, type: "start", latitude: startLatitude, longitude: startLongitude, color });
         }
-        if (selectedClip.endLatitude != null && selectedClip.endLongitude != null) {
-          markers.push({
-            id: selectedClip.id, type: "end",
-            latitude: selectedClip.endLatitude, longitude: selectedClip.endLongitude, color,
-          });
+        if (endLatitude != null && endLongitude != null) {
+          markers.push({ id: selectedClip.id, type: "end", latitude: endLatitude, longitude: endLongitude, color });
         }
         return markers;
       })()
     : [];
 
   const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
     const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
+    const mmss = `${mins.toString().padStart(hours ? 2 : 1, "0")}:${secs.toString().padStart(2, "0")}`;
+    return hours ? `${hours}:${mmss}` : mmss;
+  };
+
+  const formatOffset = (seconds: number) => {
+    const sign = seconds > 0 ? "+" : seconds < 0 ? "−" : "±";
+    const abs = Math.abs(seconds);
+    return abs >= 60 ? `${sign}${Math.floor(abs / 60)}m ${abs % 60}s` : `${sign}${abs}s`;
   };
 
   if (!selectedProject) {
@@ -277,6 +372,7 @@ export default function TrailcamStudio() {
               <MapboxMap
                 gpxData={selectedProject.gpxData}
                 clipMarkers={clipMarkers}
+                hoveredElevationPoint={playbackCursor}
                 className="w-full h-full"
               />
             </Suspense>
@@ -403,11 +499,85 @@ export default function TrailcamStudio() {
             </div>
           </div>
 
+          {/* Sync offset */}
+          {selectedClip && (
+            <div className="px-5 py-3 border-b border-border flex-shrink-0" data-testid="sync-offset-control">
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <span
+                  className="meta-mono text-muted-foreground"
+                  title="Slide until the map dot matches what you see in the video. Positive shifts the clip later along the route."
+                >
+                  Sync offset
+                </span>
+                <div className="flex items-center gap-3">
+                  {track?.startTime && trackTimeAtFrame !== null && (
+                    <span className="meta-mono text-muted-foreground" data-testid="text-gps-time-at-frame">
+                      GPS{" "}
+                      {new Date(track.startTime.getTime() + trackTimeAtFrame * 1000).toLocaleTimeString([], {
+                        hour: "numeric",
+                        minute: "2-digit",
+                        second: "2-digit",
+                      })}
+                    </span>
+                  )}
+                  <span className="meta-mono text-foreground tabular-nums" data-testid="text-sync-offset">
+                    {formatOffset(clipOffset(selectedClip))}
+                  </span>
+                  {saveOffsetMutation.isPending && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                  {clipOffset(selectedClip) !== 0 && (
+                    <button
+                      type="button"
+                      onClick={() => changeOffset(0)}
+                      className="meta-mono text-muted-foreground underline underline-offset-4 hover:text-foreground"
+                      data-testid="button-reset-offset"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => changeOffset(clipOffset(selectedClip) - 1)}
+                  className="text-muted-foreground hover:text-foreground"
+                  aria-label="Shift clip 1 second earlier"
+                  data-testid="button-offset-minus"
+                >
+                  <Minus className="h-4 w-4" />
+                </button>
+                <Slider
+                  min={-MAX_CLIP_TIME_OFFSET_SECS}
+                  max={MAX_CLIP_TIME_OFFSET_SECS}
+                  step={1}
+                  value={[clipOffset(selectedClip)]}
+                  onValueChange={([value]) => changeOffset(value)}
+                  aria-label="Sync offset in seconds"
+                  data-testid="slider-sync-offset"
+                />
+                <button
+                  type="button"
+                  onClick={() => changeOffset(clipOffset(selectedClip) + 1)}
+                  className="text-muted-foreground hover:text-foreground"
+                  aria-label="Shift clip 1 second later"
+                  data-testid="button-offset-plus"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              </div>
+              {!track && (
+                <p className="meta-mono text-muted-foreground mt-2">
+                  This project's GPX has no saved timestamps, so the map can't follow playback. Recreate the project to enable it.
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Timeline */}
           <div className="h-64 flex flex-col">
             <div className="px-5 py-2.5 border-b border-border flex items-center justify-between gap-3">
               <span className="meta-mono text-muted-foreground">Timeline · elevation</span>
-              <span className="meta-mono text-muted-foreground">{formatTime(currentTime)}</span>
+              <span className="meta-mono text-muted-foreground">{formatTime(trackTimeAtFrame ?? 0)}</span>
             </div>
 
             <div className="h-16 px-5 py-2 border-b border-border">
@@ -419,19 +589,19 @@ export default function TrailcamStudio() {
               <div className="relative h-full">
                 <div className="h-5 border-b border-border relative mb-2 meta-mono text-muted-foreground">
                   <span className="absolute left-0 bottom-1">0:00</span>
-                  {selectedProject.duration && (
-                    <span className="absolute right-0 bottom-1">{formatTime(selectedProject.duration)}</span>
+                  {timelineDuration && (
+                    <span className="absolute right-0 bottom-1">{formatTime(timelineDuration)}</span>
                   )}
                 </div>
 
                 <div className="relative h-12 bg-muted/30 rounded">
                   {clips.map((clip, index) => {
                     const color = clipColors[index % clipColors.length];
-                    const leftPercent = selectedProject.duration
-                      ? (clip.startTime / selectedProject.duration) * 100
+                    const leftPercent = timelineDuration
+                      ? ((clip.startTime + clipOffset(clip)) / timelineDuration) * 100
                       : 0;
-                    const widthPercent = selectedProject.duration
-                      ? ((clip.endTime - clip.startTime) / selectedProject.duration) * 100
+                    const widthPercent = timelineDuration
+                      ? ((clip.endTime - clip.startTime) / timelineDuration) * 100
                       : 20;
 
                     return (
@@ -440,7 +610,7 @@ export default function TrailcamStudio() {
                         type="button"
                         className="absolute top-1 h-10 rounded cursor-pointer hover:opacity-80 transition-opacity overflow-hidden"
                         style={{ left: `${leftPercent}%`, width: `${widthPercent}%`, backgroundColor: color }}
-                        onClick={() => setSelectedClip(clip)}
+                        onClick={() => selectClip(clip)}
                         data-testid={`clip-segment-${clip.id}`}
                       >
                         <div className="meta-mono text-white p-1 truncate text-left">
@@ -453,8 +623,8 @@ export default function TrailcamStudio() {
                   <div
                     className="absolute top-0 w-px h-full bg-foreground z-10 pointer-events-none"
                     style={{
-                      left: selectedProject.duration
-                        ? `${(currentTime / selectedProject.duration) * 100}%`
+                      left: timelineDuration && trackTimeAtFrame !== null
+                        ? `${Math.min(100, Math.max(0, (trackTimeAtFrame / timelineDuration) * 100))}%`
                         : "0%",
                     }}
                   >
@@ -540,7 +710,7 @@ export default function TrailcamStudio() {
                       )}
                       <button
                         type="button"
-                        onClick={() => setSelectedClip(clip)}
+                        onClick={() => selectClip(clip)}
                         disabled={!ready && !errored}
                         className="meta-mono text-foreground underline underline-offset-4 hover:opacity-70 transition-opacity disabled:opacity-40 disabled:no-underline mt-auto pt-2 text-left"
                         data-testid={`button-preview-${clip.id}`}

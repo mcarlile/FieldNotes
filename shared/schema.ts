@@ -3,6 +3,7 @@ import { pgTable, text, varchar, timestamp, real, jsonb, integer, index, boolean
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
+import { MAX_CLIP_TIME_OFFSET_SECS } from "./gpx-utils";
 
 // Strava OAuth connections — one per user
 export const stravaConnections = pgTable("strava_connections", {
@@ -172,6 +173,7 @@ export const videoClips = pgTable("video_clips", {
   startTime: real("start_time").notNull(), // offset from project start in seconds
   endTime: real("end_time").notNull(), // offset from project start in seconds
   duration: real("duration").notNull(), // clip duration in seconds
+  timeOffsetSecs: real("time_offset_secs").default(0).notNull(), // manual sync correction, shifts the clip along the GPX track
   startLatitude: real("start_latitude"), // GPS latitude at clip start
   startLongitude: real("start_longitude"), // GPS longitude at clip start
   endLatitude: real("end_latitude"), // GPS latitude at clip end
@@ -222,6 +224,8 @@ export const insertTrailcamProjectSchema = createInsertSchema(trailcamProjects).
 export const insertVideoClipSchema = createInsertSchema(videoClips).omit({
   id: true,
   createdAt: true,
+}).extend({
+  timeOffsetSecs: z.number().min(-MAX_CLIP_TIME_OFFSET_SECS).max(MAX_CLIP_TIME_OFFSET_SECS).optional(),
 });
 
 export const insertExpeditionSchema = createInsertSchema(expeditions).omit({
