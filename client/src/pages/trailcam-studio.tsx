@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { NewProjectModal } from "@/components/new-project-modal";
 import { ChunkedVideoUploader } from "@/components/chunked-video-uploader";
+import { ClipEditPopover } from "@/components/clip-edit-popover";
 import MapboxMap, { ClipMarker } from "@/components/mapbox-map";
 import type { TrailcamProject, VideoClip, InsertVideoClip } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
@@ -75,6 +76,19 @@ export default function TrailcamStudio() {
       toast({ title: "Error", description: error.message || "Failed to add video clip", variant: "destructive" }),
   });
 
+  const updateClipMutation = useMutation({
+    mutationFn: async ({ id, updates }: { id: string; updates: Partial<InsertVideoClip> }) => {
+      const response = await apiRequest(`/api/video-clips/${id}`, "PUT", updates);
+      return response.json();
+    },
+    onSuccess: (clip: VideoClip) => {
+      setSelectedClip((current) => (current?.id === clip.id ? clip : current));
+      queryClient.invalidateQueries({ queryKey: ["/api/video-clips", selectedProject?.id] });
+    },
+    onError: (error: Error) =>
+      toast({ title: "Error", description: error.message || "Failed to update clip", variant: "destructive" }),
+  });
+
   const handleClipUpload = (clipData: {
     title: string;
     filename: string;
@@ -105,12 +119,14 @@ export default function TrailcamStudio() {
     "#3b82f6", "#8b5cf6", "#f59e0b", "#10b981",
     "#ef4444", "#f97316", "#6366f1", "#84cc16",
   ];
+  const clipColor = (clip: VideoClip, index: number) =>
+    clip.color || clipColors[index % clipColors.length];
 
   const clipMarkers: ClipMarker[] = selectedClip
     ? (() => {
         const markers: ClipMarker[] = [];
         const clipIndex = clips.findIndex((c) => c.id === selectedClip.id);
-        const color = clipIndex >= 0 ? clipColors[clipIndex % clipColors.length] : clipColors[0];
+        const color = clipColor(selectedClip, Math.max(clipIndex, 0));
         if (selectedClip.startLatitude != null && selectedClip.startLongitude != null) {
           markers.push({
             id: selectedClip.id, type: "start",
@@ -426,7 +442,7 @@ export default function TrailcamStudio() {
 
                 <div className="relative h-12 bg-muted/30 rounded">
                   {clips.map((clip, index) => {
-                    const color = clipColors[index % clipColors.length];
+                    const color = clipColor(clip, index);
                     const leftPercent = selectedProject.duration
                       ? (clip.startTime / selectedProject.duration) * 100
                       : 0;
@@ -522,10 +538,19 @@ export default function TrailcamStudio() {
                     <div className="p-2.5 flex-1 flex flex-col">
                       <div className="flex items-center justify-between gap-2 mb-1.5">
                         <h4 className="text-sm text-foreground truncate">{clip.title}</h4>
-                        <span
-                          className="w-2 h-2 rounded-full flex-shrink-0"
-                          style={{ backgroundColor: clipColors[index % clipColors.length] }}
-                        />
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span
+                            className="w-2 h-2 rounded-full"
+                            style={{ backgroundColor: clipColor(clip, index) }}
+                          />
+                          <ClipEditPopover
+                            clip={clip}
+                            color={clipColor(clip, index)}
+                            palette={clipColors}
+                            saving={updateClipMutation.isPending && updateClipMutation.variables?.id === clip.id}
+                            onSave={(updates) => updateClipMutation.mutateAsync({ id: clip.id, updates })}
+                          />
+                        </div>
                       </div>
                       <div className="meta-mono text-muted-foreground flex gap-x-2">
                         <span>{formatTime(clip.startTime)}</span>
