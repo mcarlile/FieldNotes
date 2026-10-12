@@ -7,7 +7,7 @@ channel = "stable-24_05"
 packages = ["ffmpeg"]
 
 [deployment]
-deploymentTarget = "vm"
+deploymentTarget = "autoscale"
 build = ["npm", "run", "build"]
 run = ["npm", "run", "start"]
 
