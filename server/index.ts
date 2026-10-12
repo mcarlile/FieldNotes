@@ -11,6 +11,7 @@ import {
 } from "./middlewares/clerkProxyMiddleware";
 import { pool } from "./db";
 import { registerDesignPreview } from "./designPreview";
+import { recoverInterruptedVideoProcessing } from "./videoProcessor";
 
 const app = express();
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
@@ -173,6 +174,7 @@ async function runStartupMigrations() {
 
 (async () => {
   await runStartupMigrations();
+  await recoverInterruptedVideoProcessing();
   app.use(
     clerkMiddleware((req) => ({
       publishableKey: publishableKeyFromHost(

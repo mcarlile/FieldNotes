@@ -10,6 +10,10 @@ if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true });
 }
 
+// Clips being processed by this server process. A clip whose status is
+// 'processing' but isn't in this set was orphaned by a restart.
+const activeJobs = new Set<string>();
+
 interface ProcessingResult {
   thumbnailUrl: string;
   transcodedUrl: string;
@@ -40,6 +44,55 @@ function runFFmpeg(args: string[]): Promise<void> {
       reject(err);
     });
   });
+}
+
+function runFFprobe(args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const ffprobe = spawn('ffprobe', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    ffprobe.stdout.on('data', (data) => { stdout += data.toString(); });
+    ffprobe.stderr.on('data', (data) => { stderr += data.toString(); });
+    ffprobe.on('close', (code) => {
+      if (code === 0) {
+        resolve(stdout);
+      } else {
+        reject(new Error(`FFprobe exited with code ${code}: ${stderr.slice(-500)}`));
+      }
+    });
+    ffprobe.on('error', reject);
+  });
+}
+
+interface StreamInfo {
+  codec_type?: string;
+  codec_name?: string;
+  pix_fmt?: string;
+  height?: number;
+}
+
+// Browser-playable H.264 at 1080p or below only needs repackaging, which
+// takes seconds instead of a full re-encode.
+async function canRemux(inputPath: string): Promise<{ video: boolean; audio: boolean }> {
+  try {
+    const output = await runFFprobe([
+      '-v', 'error',
+      '-show_entries', 'stream=codec_type,codec_name,pix_fmt,height',
+      '-of', 'json',
+      inputPath
+    ]);
+    const streams: StreamInfo[] = JSON.parse(output).streams ?? [];
+    const video = streams.find(s => s.codec_type === 'video');
+    const audio = streams.find(s => s.codec_type === 'audio');
+    return {
+      video: !!video && video.codec_name === 'h264' && video.pix_fmt === 'yuv420p' &&
+        (video.height ?? Infinity) <= 1080,
+      audio: !audio || audio.codec_name === 'aac',
+    };
+  } catch (error) {
+    console.error('FFprobe failed, falling back to full transcode:', error);
+    return { video: false, audio: false };
+  }
 }
 
 async function downloadVideo(sourceUrl: string, destPath: string): Promise<void> {
@@ -82,6 +135,7 @@ async function uploadProcessedFile(filePath: string, prefix: string): Promise<st
 
 export async function processVideo(clipId: string): Promise<void> {
   const workDir = path.join(TEMP_DIR, clipId);
+  activeJobs.add(clipId);
   
   try {
     fs.mkdirSync(workDir, { recursive: true });
@@ -127,15 +181,16 @@ export async function processVideo(clipId: string): Promise<void> {
       ]);
     }
     
-    console.log('Transcoding to 1080p...');
+    const remux = await canRemux(inputPath);
+    const videoArgs = remux.video
+      ? ['-c:v', 'copy']
+      : ['-vf', 'scale=-2:1080', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23'];
+    const audioArgs = remux.audio ? ['-c:a', 'copy'] : ['-c:a', 'aac', '-b:a', '128k'];
+    console.log(remux.video ? 'Repackaging without re-encoding...' : 'Transcoding to 1080p...');
     await runFFmpeg([
       '-i', inputPath,
-      '-vf', 'scale=-2:1080',
-      '-c:v', 'libx264',
-      '-preset', 'fast',
-      '-crf', '23',
-      '-c:a', 'aac',
-      '-b:a', '128k',
+      ...videoArgs,
+      ...audioArgs,
       '-movflags', '+faststart',
       '-y',
       transcodedPath
@@ -162,6 +217,7 @@ export async function processVideo(clipId: string): Promise<void> {
     });
     
   } finally {
+    activeJobs.delete(clipId);
     if (fs.existsSync(workDir)) {
       fs.rmSync(workDir, { recursive: true, force: true });
     }
@@ -174,4 +230,23 @@ export function startVideoProcessing(clipId: string): void {
       console.error(`Background video processing error for ${clipId}:`, error);
     });
   });
+}
+
+export function isVideoProcessingActive(clipId: string): boolean {
+  return activeJobs.has(clipId);
+}
+
+// Jobs run inside the web server, so a restart kills them and leaves clips
+// stuck in 'pending' or 'processing'. Mark them failed so they can be retried.
+export async function recoverInterruptedVideoProcessing(): Promise<void> {
+  try {
+    const count = await storage.failInterruptedVideoClips(
+      'Processing was interrupted by a server restart. Retry to process again.'
+    );
+    if (count > 0) {
+      console.log(`Marked ${count} interrupted video clip(s) as failed`);
+    }
+  } catch (error) {
+    console.error('Failed to recover interrupted video processing:', error);
+  }
 }

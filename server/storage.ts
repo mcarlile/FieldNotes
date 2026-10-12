@@ -1,6 +1,6 @@
 import { fieldNotes, photos, trailcamProjects, videoClips, webhookTokens, gpxInbox, stravaConnections, expeditions, expeditionFieldNotes, type FieldNote, type Photo, type InsertFieldNote, type InsertPhoto, type TrailcamProject, type VideoClip, type InsertTrailcamProject, type InsertVideoClip, type WebhookToken, type GpxInboxItem, type StravaConnection, type InsertStravaConnection, type Expedition, type InsertExpedition, type ExpeditionFieldNote } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, asc, like, ilike, and, or, sql } from "drizzle-orm";
+import { eq, desc, asc, like, ilike, and, or, sql, inArray } from "drizzle-orm";
 import { MAX_TRIP_PHOTOS } from "@shared/photo-limit";
 import { existingPhotoCaptionPatch } from "./photo-caption";
 
@@ -41,6 +41,7 @@ export interface IStorage {
   createVideoClip(clip: InsertVideoClip): Promise<VideoClip>;
   updateVideoClip(id: string, clip: Partial<InsertVideoClip>): Promise<VideoClip | undefined>;
   deleteVideoClip(id: string): Promise<boolean>;
+  failInterruptedVideoClips(message: string): Promise<number>;
 
   // Webhook Tokens
   getWebhookTokenByUserId(userId: string): Promise<WebhookToken | undefined>;
@@ -359,6 +360,15 @@ export class DatabaseStorage implements IStorage {
   async deleteVideoClip(id: string): Promise<boolean> {
     const result = await db.delete(videoClips).where(eq(videoClips.id, id));
     return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  async failInterruptedVideoClips(message: string): Promise<number> {
+    const clips = await db
+      .update(videoClips)
+      .set({ processingStatus: 'error', processingError: message })
+      .where(inArray(videoClips.processingStatus, ['pending', 'processing']))
+      .returning({ id: videoClips.id });
+    return clips.length;
   }
 
   // Webhook Tokens
@@ -982,6 +992,18 @@ export class MemStorage implements IStorage {
       return true;
     }
     return false;
+  }
+
+  async failInterruptedVideoClips(message: string): Promise<number> {
+    let count = 0;
+    for (const clip of this.videoClipsData) {
+      if (clip.processingStatus === 'pending' || clip.processingStatus === 'processing') {
+        clip.processingStatus = 'error';
+        clip.processingError = message;
+        count++;
+      }
+    }
+    return count;
   }
 
   // Webhook Tokens (stubs — MemStorage not used in production)

@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { insertFieldNoteSchema, insertPhotoSchema, insertTrailcamProjectSchema, insertVideoClipSchema, insertExpeditionSchema } from "@shared/schema";
 import { ObjectStorageService, ObjectNotFoundError, objectStorageService } from "./objectStorage";
 import { extractExifData, extractExifFromBuffer } from "./exif-extractor";
-import { startVideoProcessing } from "./videoProcessor";
+import { startVideoProcessing, isVideoProcessingActive } from "./videoProcessor";
 import { resolveClipCoordinates } from "@shared/gpx-utils";
 import { validateTripPhotos, MAX_TRIP_PHOTOS } from "@shared/photo-limit";
 import { requireAuth } from "./middlewares/clerkAuth";
@@ -953,7 +953,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Video clip not found" });
       }
 
-      if (clip.processingStatus === 'processing') {
+      if (clip.processingStatus === 'processing' && isVideoProcessingActive(id)) {
         return res.status(400).json({ message: "Video is already being processed" });
       }
 
