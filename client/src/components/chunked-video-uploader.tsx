@@ -38,7 +38,6 @@ interface ChunkUploadState {
 const clipFormSchema = z.object({
   title: z.string().min(1, "Clip title is required"),
   startTime: z.number().min(0, "Start time must be 0 or greater"),
-  endTime: z.number().min(0, "End time must be 0 or greater"),
   color: z.string().default("#3b82f6"),
 });
 
@@ -82,13 +81,11 @@ export function ChunkedVideoUploader({
     resolver: zodResolver(clipFormSchema),
     defaultValues: {
       startTime: 0,
-      endTime: 0,
       color: "#3b82f6",
     },
   });
 
   const watchedStartTime = watch("startTime");
-  const watchedEndTime = watch("endTime");
 
   const getVideoMetadata = useCallback((videoFile: File): Promise<{
     duration: number;
@@ -285,7 +282,6 @@ export function ChunkedVideoUploader({
     try {
       const { duration } = await getVideoMetadata(videoFile);
       setVideoDuration(duration);
-      setValue('endTime', Math.round(duration));
       setValue('title', videoFile.name.replace(/\.[^/.]+$/, ""));
 
       await uploadFile(videoFile);
@@ -398,11 +394,13 @@ export function ChunkedVideoUploader({
       return;
     }
 
-    if (data.endTime <= data.startTime) {
+    if (!videoDuration) {
       return;
     }
 
-    const duration = data.endTime - data.startTime;
+    // The clip covers the whole video, so it ends one video-length after it starts on the ride.
+    const duration = videoDuration;
+    const endTime = data.startTime + duration;
     const fileSize = formatFileSize(uploadState.totalBytes);
     const videoFormat = uploadState.file.type.split('/')[1]?.toUpperCase() || 'MP4';
 
@@ -412,7 +410,7 @@ export function ChunkedVideoUploader({
         filename: uploadState.file.name,
         url: uploadState.url,
         startTime: data.startTime,
-        endTime: data.endTime,
+        endTime,
         duration,
         color: data.color,
         fileSize,
@@ -585,38 +583,23 @@ export function ChunkedVideoUploader({
                     {...register("title")}
                   />
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <NumberInput
-                      id="startTime"
-                      label="Start Time (seconds)"
-                      min={0}
-                      max={videoDuration || 0}
-                      step={1}
-                      value={watchedStartTime}
-                      onChange={(e) => setValue('startTime', Number((e.target as HTMLInputElement).value))}
-                      invalid={!!errors.startTime}
-                      invalidText={errors.startTime?.message}
-                      data-testid="input-start-time"
-                    />
-
-                    <NumberInput
-                      id="endTime"
-                      label="End Time (seconds)"
-                      min={0}
-                      max={videoDuration || 0}
-                      step={1}
-                      value={watchedEndTime}
-                      onChange={(e) => setValue('endTime', Number((e.target as HTMLInputElement).value))}
-                      invalid={!!errors.endTime || watchedEndTime <= watchedStartTime}
-                      invalidText={errors.endTime?.message || (watchedEndTime <= watchedStartTime ? "End time must be after start time" : "")}
-                      data-testid="input-end-time"
-                    />
-                  </div>
+                  <NumberInput
+                    id="startTime"
+                    label="Starts at (seconds into the ride)"
+                    helperText="Where this video begins on the GPX track. The end is calculated from the video's length."
+                    min={0}
+                    step={1}
+                    value={watchedStartTime}
+                    onChange={(e) => setValue('startTime', Number((e.target as HTMLInputElement).value))}
+                    invalid={!!errors.startTime}
+                    invalidText={errors.startTime?.message}
+                    data-testid="input-start-time"
+                  />
 
                   {videoDuration && (
                     <div className="text-sm text-muted-foreground">
-                      Video Duration: {formatTime(videoDuration)} | 
-                      Clip Duration: {formatTime(Math.max(0, watchedEndTime - watchedStartTime))}
+                      Video Duration: {formatTime(videoDuration)} |{" "}
+                      Ends at: {formatTime(watchedStartTime + videoDuration)} into the ride
                     </div>
                   )}
 

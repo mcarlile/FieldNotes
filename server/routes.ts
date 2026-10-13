@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertFieldNoteSchema, insertPhotoSchema, insertTrailcamProjectSchema, insertVideoClipSchema, insertExpeditionSchema } from "@shared/schema";
+import { insertFieldNoteSchema, insertPhotoSchema, insertTrailcamProjectSchema, insertVideoClipSchema, insertExpeditionSchema, type TrailcamProject } from "@shared/schema";
 import { ObjectStorageService, ObjectNotFoundError, objectStorageService } from "./objectStorage";
 import { extractExifData, extractExifFromBuffer } from "./exif-extractor";
 import { startVideoProcessing, isVideoProcessingActive } from "./videoProcessor";
@@ -659,6 +659,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // =============== TrailCam Studio API Routes ===============
 
+  // Clip times are seconds from the start of the GPX track; the manual offset shifts both ends
+  function resolveSyncedClipCoordinates(
+    project: TrailcamProject,
+    startTime: number,
+    endTime: number,
+    timeOffsetSecs: number
+  ) {
+    return resolveClipCoordinates(
+      project.gpxData,
+      startTime + timeOffsetSecs,
+      endTime + timeOffsetSecs,
+      project.duration || undefined
+    );
+  }
+
   // Get all TrailCam projects
   app.get("/api/trailcam-projects", async (req, res) => {
     try {
@@ -775,18 +790,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Fetch project to get GPX data for coordinate calculation
       const project = await storage.getTrailcamProjectById(validatedData.projectId);
       if (project?.gpxData) {
-        const coords = resolveClipCoordinates(
-          project.gpxData,
+        const coords = resolveSyncedClipCoordinates(
+          project,
           validatedData.startTime,
           validatedData.endTime,
-          project.duration || undefined
+          validatedData.timeOffsetSecs ?? 0
         );
         console.log(`Calculated clip coordinates: start(${coords.startLatitude}, ${coords.startLongitude}), end(${coords.endLatitude}, ${coords.endLongitude})`);
 
-        validatedData.startLatitude = coords.startLatitude;
-        validatedData.startLongitude = coords.startLongitude;
-        validatedData.endLatitude = coords.endLatitude;
-        validatedData.endLongitude = coords.endLongitude;
+        Object.assign(validatedData, coords);
       }
 
       const clip = await storage.createVideoClip(validatedData);
@@ -806,6 +818,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { id } = req.params;
       const validatedData = insertVideoClipSchema.partial().parse(req.body);
+
+      // Timing changes (including the manual sync offset) move the clip along the route
+      if (
+        validatedData.startTime !== undefined ||
+        validatedData.endTime !== undefined ||
+        validatedData.timeOffsetSecs !== undefined
+      ) {
+        const existing = await storage.getVideoClipById(id);
+        if (!existing) {
+          return res.status(404).json({ message: "Video clip not found" });
+        }
+        const project = await storage.getTrailcamProjectById(existing.projectId);
+        if (project?.gpxData) {
+          Object.assign(validatedData, resolveSyncedClipCoordinates(
+            project,
+            validatedData.startTime ?? existing.startTime,
+            validatedData.endTime ?? existing.endTime,
+            validatedData.timeOffsetSecs ?? existing.timeOffsetSecs
+          ));
+        }
+      }
+
       const clip = await storage.updateVideoClip(id, validatedData);
       if (!clip) {
         return res.status(404).json({ message: "Video clip not found" });
@@ -832,11 +866,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Project has no GPX data" });
       }
 
-      const coords = resolveClipCoordinates(
-        project.gpxData,
+      const coords = resolveSyncedClipCoordinates(
+        project,
         clip.startTime,
         clip.endTime,
-        project.duration || undefined
+        clip.timeOffsetSecs
       );
 
       console.log(`Recalculated clip ${id} coordinates: start(${coords.startLatitude}, ${coords.startLongitude}), end(${coords.endLatitude}, ${coords.endLongitude})`);

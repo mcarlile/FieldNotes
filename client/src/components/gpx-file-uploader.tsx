@@ -8,21 +8,30 @@ import {
   InlineNotification
 } from "@carbon/react";
 import { Upload } from "@carbon/icons-react";
-import { parseGpxData, type GpxStats } from "@shared/gpx-utils";
+import {
+  parseGpxData,
+  parseGpxWithTimestamps,
+  toCompactTimedTrack,
+  type CompactTimedTrack,
+  type GpxStats,
+} from "@shared/gpx-utils";
+
+export type UploadedGpx = GpxStats & {
+  filename: string;
+  timedTrack: CompactTimedTrack | null; // null when the GPX has no per-point timestamps
+};
 
 interface GPXUploadState {
   file: File;
   status: 'processing' | 'complete' | 'error';
   progress: number;
   errorMessage?: string;
-  gpxData?: GpxStats & {
-    filename: string;
-  };
+  gpxData?: UploadedGpx;
 }
 
 interface GPXFileUploaderProps {
   maxFileSize?: number;
-  onComplete?: (gpxData: GpxStats & { filename: string }) => void;
+  onComplete?: (gpxData: UploadedGpx) => void;
   buttonClassName?: string;
   children: React.ReactNode;
 }
@@ -36,7 +45,7 @@ export function GPXFileUploader({
   const [showModal, setShowModal] = useState(false);
   const [file, setFile] = useState<GPXUploadState | null>(null);
 
-  const processGPXFile = async (gpxFile: File): Promise<GpxStats> => {
+  const processGPXFile = async (gpxFile: File): Promise<Omit<UploadedGpx, 'filename'>> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -49,7 +58,8 @@ export function GPXFileUploader({
 
           // Parse GPX data using the existing utility
           const parsedData = parseGpxData(content);
-          resolve(parsedData);
+          const timedTrack = toCompactTimedTrack(parseGpxWithTimestamps(content));
+          resolve({ ...parsedData, timedTrack });
         } catch (error) {
           reject(error);
         }

@@ -14,11 +14,10 @@ import {
   FormGroup,
 } from "@carbon/react";
 import { Add, Upload } from "@carbon/icons-react";
-import { GPXFileUploader } from "@/components/gpx-file-uploader";
+import { GPXFileUploader, type UploadedGpx } from "@/components/gpx-file-uploader";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import type { TrailcamProject, InsertTrailcamProject } from "@shared/schema";
-import type { GpxStats } from "@shared/gpx-utils";
 
 const projectFormSchema = z.object({
   title: z.string().min(1, "Project title is required"),
@@ -38,7 +37,7 @@ export function NewProjectModal({
   onClose,
   onProjectCreated,
 }: NewProjectModalProps) {
-  const [gpxData, setGpxData] = useState<(GpxStats & { filename: string }) | null>(null);
+  const [gpxData, setGpxData] = useState<UploadedGpx | null>(null);
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -58,13 +57,20 @@ export function NewProjectModal({
         throw new Error("GPX file is required");
       }
 
+      // With per-point timestamps, the project timeline is the GPX track itself
+      const track = gpxData.timedTrack;
+      const trackDuration = track ? track.points[track.points.length - 1][0] : undefined;
+      const trackStart = track ? new Date(track.startTime) : undefined;
+
       const projectData: InsertTrailcamProject = {
         title: data.title,
         description: data.description || undefined,
         gpxData: gpxData,
-        duration: undefined, // Will be calculated later when video clips are added
-        startTime: gpxData.date || undefined,
-        endTime: undefined, // Will be set when project timeline is finalized
+        duration: trackDuration,
+        startTime: trackStart ?? gpxData.date ?? undefined,
+        endTime: trackStart && trackDuration !== undefined
+          ? new Date(trackStart.getTime() + trackDuration * 1000)
+          : undefined,
       };
 
       const response = await apiRequest("/api/trailcam-projects", "POST", projectData);
@@ -98,7 +104,7 @@ export function NewProjectModal({
     createProjectMutation.mutate(data);
   };
 
-  const handleGPXComplete = (uploadedGpxData: GpxStats & { filename: string }) => {
+  const handleGPXComplete = (uploadedGpxData: UploadedGpx) => {
     setGpxData(uploadedGpxData);
   };
 

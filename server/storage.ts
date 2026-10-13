@@ -964,6 +964,7 @@ export class MemStorage implements IStorage {
       thumbnailUrl: insertClip.thumbnailUrl ?? null,
       processingStatus: insertClip.processingStatus ?? "pending",
       processingError: insertClip.processingError ?? null,
+      timeOffsetSecs: insertClip.timeOffsetSecs ?? 0,
       startLatitude: insertClip.startLatitude ?? null,
       startLongitude: insertClip.startLongitude ?? null,
       endLatitude: insertClip.endLatitude ?? null,
