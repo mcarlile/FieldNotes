@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useClerk, useUser } from "@clerk/react";
 import { useTheme } from "@/contexts/theme-context";
+import BrandLogo from "@/components/brand-logo";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -44,12 +45,8 @@ export default function GlobalHeader() {
     <header className="bg-background sticky top-0 z-50 backdrop-blur-sm bg-opacity-90">
       <div className="px-5 sm:px-8 h-11 flex items-center justify-between">
         {/* Brand wordmark */}
-        <Link
-          href="/"
-          className="font-serif text-foreground hover:opacity-70 transition-opacity"
-          style={{ fontSize: "1.25rem", letterSpacing: "-0.01em" }}
-        >
-          Big Miles
+        <Link href="/" className="hover:opacity-80 transition-opacity">
+          <BrandLogo size="0.95rem" />
         </Link>
 
         {/* Desktop nav */}

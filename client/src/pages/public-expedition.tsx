@@ -7,6 +7,7 @@ import PhotoLightbox from "@/components/photo-lightbox";
 import { parseGpxData } from "@shared/gpx-utils";
 import { apiRequest } from "@/lib/queryClient";
 import type { FieldNote, Photo, Expedition } from "@shared/schema";
+import BrandLogo from "@/components/brand-logo";
 
 interface PublicFieldNote extends FieldNote {
   photos: Photo[];
@@ -183,7 +184,7 @@ export default function PublicExpeditionPage() {
     <div className="min-h-screen bg-[#F5F0E8]">
       {/* Header */}
       <div className="border-b border-stone-200 bg-[#F5F0E8]/90 backdrop-blur-sm sticky top-0 z-10 px-6 py-3">
-        <p className="text-xs font-mono text-stone-400 uppercase tracking-widest">Big Miles</p>
+        <BrandLogo size="0.8rem" textClassName="text-stone-900" />
       </div>
 
       <div className="max-w-3xl mx-auto px-6 py-10 space-y-10">
