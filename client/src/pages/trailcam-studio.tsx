@@ -119,8 +119,13 @@ export default function TrailcamStudio() {
     "#3b82f6", "#8b5cf6", "#f59e0b", "#10b981",
     "#ef4444", "#f97316", "#6366f1", "#84cc16",
   ];
+  // Clips created before recoloring existed were all saved with the uploader's
+  // default blue, so treat that value as "no color chosen" and keep the palette.
+  const LEGACY_DEFAULT_CLIP_COLOR = "#3b82f6";
   const clipColor = (clip: VideoClip, index: number) =>
-    clip.color || clipColors[index % clipColors.length];
+    clip.color && clip.color.toLowerCase() !== LEGACY_DEFAULT_CLIP_COLOR
+      ? clip.color
+      : clipColors[index % clipColors.length];
 
   const clipMarkers: ClipMarker[] = selectedClip
     ? (() => {
