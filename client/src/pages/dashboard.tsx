@@ -425,7 +425,7 @@ export default function Dashboard() {
             </table>
           </div>
         ) : (
-          <div className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 2xl:columns-5 gap-3 sm:gap-4">
+          <div className="grid grid-flow-row grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 items-start gap-3 sm:gap-4">
             {fieldNotes.map((note) => (
               <FieldNoteCard
                 key={note.id}
