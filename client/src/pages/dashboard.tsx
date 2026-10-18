@@ -337,9 +337,9 @@ export default function Dashboard() {
 
           <Link
             href="/admin"
-            className="meta-mono px-3 py-1.5 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors"
+            className="meta-mono inline-flex min-h-[44px] items-center justify-center rounded-full bg-primary px-6 py-3 text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
-            + Add
+            Create
           </Link>
 
           {activeFilterCount > 0 && (
