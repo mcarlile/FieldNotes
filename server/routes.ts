@@ -14,6 +14,7 @@ import * as path from 'path';
 
 import * as crypto from 'crypto';
 import { createClipWithCoordinates } from "./trailcam";
+import { generateApiToken } from "./apiTokens";
 import { registerMcpRoutes } from "./mcp";
 import { getValidStravaToken, stravaFetch, buildGpxFromActivity, importGpxToInbox } from "./strava";
 
@@ -161,6 +162,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Current user profile is resolved through the Clerk-authenticated local user.
   app.get("/api/me", requireAuth, async (req: any, res) => {
     res.json(req.dbUser);
+  });
+
+  // Personal API tokens for integrations such as Claude. Tokens can only be
+  // managed from a signed-in browser session, so a token can't mint others.
+  const requireSession = (req: any, res: any, next: any) =>
+    req.authMethod === "session" ? next() : res.status(403).json({ message: "Sign in on the web to manage tokens" });
+
+  app.get("/api/api-tokens", requireAuth, requireSession, async (req: any, res) => {
+    res.json(await storage.listApiTokens(req.dbUser.id));
+  });
+
+  app.post("/api/api-tokens", requireAuth, requireSession, async (req: any, res) => {
+    const name = typeof req.body?.name === "string" ? req.body.name.trim().slice(0, 80) : "";
+    if (!name) {
+      return res.status(400).json({ message: "Token name is required" });
+    }
+    const { token, tokenHash, tokenPrefix } = generateApiToken();
+    const summary = await storage.createApiToken(req.dbUser.id, name, tokenHash, tokenPrefix);
+    // The plaintext token is returned once and never stored.
+    res.status(201).json({ ...summary, token });
+  });
+
+  app.delete("/api/api-tokens/:id", requireAuth, requireSession, async (req: any, res) => {
+    const deleted = await storage.deleteApiToken(req.dbUser.id, req.params.id);
+    if (!deleted) {
+      return res.status(404).json({ message: "Token not found" });
+    }
+    res.status(204).send();
   });
 
   // Backwards-compatible native entry point. Authentication is performed by
