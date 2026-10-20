@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { pool } from "../db";
 import { users } from "@shared/schema";
+import { API_TOKEN_PREFIX, resolveApiToken } from "../apiTokens";
 
 /**
  * Require a valid Clerk session and resolve the matching application user.
@@ -17,17 +18,22 @@ export const requireAuth: RequestHandler = async (req: any, res, next) => {
   let userId =
     (auth.sessionClaims as { userId?: string } | undefined)?.userId ??
     auth.userId;
+  req.authMethod = typeof userId === "string" ? "session" : undefined;
 
   // Native clients exchange a Clerk-authenticated browser session for a
-  // revocable, short-lived mobile token. Web requests continue to use Clerk
-  // cookies exclusively.
+  // revocable, short-lived mobile token; integrations such as Claude use a
+  // personal API token (bm_…). Web requests continue to use Clerk cookies.
   if (typeof userId !== "string") {
     const authorization = req.get("authorization");
     const token = authorization?.startsWith("Bearer ")
       ? authorization.slice("Bearer ".length).trim()
       : undefined;
 
-    if (token) {
+    if (token?.startsWith(API_TOKEN_PREFIX)) {
+      userId = await resolveApiToken(token);
+      req.authMethod = "api_token";
+    } else if (token) {
+      req.authMethod = "mobile_token";
       const result = await pool.query<{ user_id: string }>(
         `SELECT user_id
          FROM mobile_tokens

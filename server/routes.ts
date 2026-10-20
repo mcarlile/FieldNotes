@@ -13,6 +13,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import * as crypto from 'crypto';
+import { createClipWithCoordinates } from "./trailcam";
+import { generateApiToken } from "./apiTokens";
+import { registerMcpRoutes } from "./mcp";
 import { getValidStravaToken, stravaFetch, buildGpxFromActivity, importGpxToInbox } from "./strava";
 
 const CHUNK_UPLOAD_DIR = '/tmp/video-chunks';
@@ -159,6 +162,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Current user profile is resolved through the Clerk-authenticated local user.
   app.get("/api/me", requireAuth, async (req: any, res) => {
     res.json(req.dbUser);
+  });
+
+  // Personal API tokens for integrations such as Claude. Tokens can only be
+  // managed from a signed-in browser session, so a token can't mint others.
+  const requireSession = (req: any, res: any, next: any) =>
+    req.authMethod === "session" ? next() : res.status(403).json({ message: "Sign in on the web to manage tokens" });
+
+  app.get("/api/api-tokens", requireAuth, requireSession, async (req: any, res) => {
+    res.json(await storage.listApiTokens(req.dbUser.id));
+  });
+
+  app.post("/api/api-tokens", requireAuth, requireSession, async (req: any, res) => {
+    const name = typeof req.body?.name === "string" ? req.body.name.trim().slice(0, 80) : "";
+    if (!name) {
+      return res.status(400).json({ message: "Token name is required" });
+    }
+    const { token, tokenHash, tokenPrefix } = generateApiToken();
+    const summary = await storage.createApiToken(req.dbUser.id, name, tokenHash, tokenPrefix);
+    // The plaintext token is returned once and never stored.
+    res.status(201).json({ ...summary, token });
+  });
+
+  app.delete("/api/api-tokens/:id", requireAuth, requireSession, async (req: any, res) => {
+    const deleted = await storage.deleteApiToken(req.dbUser.id, req.params.id);
+    if (!deleted) {
+      return res.status(404).json({ message: "Token not found" });
+    }
+    res.status(204).send();
   });
 
   // Backwards-compatible native entry point. Authentication is performed by
@@ -659,6 +690,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // =============== TrailCam Studio API Routes ===============
 
+  // MCP endpoint so Claude can create projects and add clips for the user
+  registerMcpRoutes(app);
+
   // Get all TrailCam projects
   app.get("/api/trailcam-projects", async (req, res) => {
     try {
@@ -766,35 +800,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/video-clips", requireAuth, async (req, res) => {
     try {
       const validatedData = insertVideoClipSchema.parse(req.body);
-
-      // Normalize the URL if it's a full storage URL
-      if (validatedData.url) {
-        validatedData.url = objectStorageService.normalizeObjectEntityPath(validatedData.url);
-      }
-
-      // Fetch project to get GPX data for coordinate calculation
-      const project = await storage.getTrailcamProjectById(validatedData.projectId);
-      if (project?.gpxData) {
-        const coords = resolveClipCoordinates(
-          project.gpxData,
-          validatedData.startTime,
-          validatedData.endTime,
-          project.duration || undefined
-        );
-        console.log(`Calculated clip coordinates: start(${coords.startLatitude}, ${coords.startLongitude}), end(${coords.endLatitude}, ${coords.endLongitude})`);
-
-        validatedData.startLatitude = coords.startLatitude;
-        validatedData.startLongitude = coords.startLongitude;
-        validatedData.endLatitude = coords.endLatitude;
-        validatedData.endLongitude = coords.endLongitude;
-      }
-
-      const clip = await storage.createVideoClip(validatedData);
+      const clip = await createClipWithCoordinates(validatedData);
       res.status(201).json(clip);
-
-      // Start async video processing (transcoding + thumbnail generation)
-      console.log(`Starting video processing for clip ${clip.id}`);
-      startVideoProcessing(clip.id);
     } catch (error) {
       console.error("Error creating video clip:", error);
       res.status(400).json({ message: "Failed to create video clip" });

@@ -115,6 +115,13 @@ export default function TrailcamStudio() {
     });
   };
 
+  // The first timed GPX point is the route's real start; older projects only
+  // have the project start time, which may be the GPX export time.
+  const routeStartTime =
+    (selectedProject?.gpxData as { timedTrack?: { startTime?: string } } | undefined)?.timedTrack?.startTime ??
+    selectedProject?.startTime ??
+    null;
+
   const clipColors = [
     "#3b82f6", "#8b5cf6", "#f59e0b", "#10b981",
     "#ef4444", "#f97316", "#6366f1", "#84cc16",
@@ -174,14 +181,19 @@ export default function TrailcamStudio() {
                 Sync video clips with GPS route data. Pick an existing project or start a new one.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setShowNewProjectModal(true)}
-              className={pillButtonClass()}
-              data-testid="button-new-project"
-            >
-              + New project
-            </button>
+            <div className="flex gap-2">
+              <a href="/connect-claude" className={pillButtonClass()} data-testid="link-connect-claude">
+                Connect Claude
+              </a>
+              <button
+                type="button"
+                onClick={() => setShowNewProjectModal(true)}
+                className={pillButtonClass()}
+                data-testid="button-new-project"
+              >
+                + New project
+              </button>
+            </div>
           </div>
 
           {/* Projects */}
@@ -274,7 +286,7 @@ export default function TrailcamStudio() {
             )}
           </div>
         </div>
-        <ChunkedVideoUploader onComplete={handleClipUpload} buttonClassName={pillButtonClass()}>
+        <ChunkedVideoUploader onComplete={handleClipUpload} routeStartTime={routeStartTime} buttonClassName={pillButtonClass()}>
           + Add clip
         </ChunkedVideoUploader>
       </div>
@@ -494,6 +506,7 @@ export default function TrailcamStudio() {
           <span className="meta-mono text-muted-foreground">Clips · {clips.length}</span>
           <ChunkedVideoUploader
             onComplete={handleClipUpload}
+            routeStartTime={routeStartTime}
             buttonClassName="meta-mono text-foreground underline underline-offset-4 hover:opacity-70 bg-transparent border-0 p-0 cursor-pointer"
           >
             + Add clip

@@ -129,6 +129,20 @@ async function runStartupMigrations() {
       );
       CREATE INDEX IF NOT EXISTS mobile_tokens_token_idx ON mobile_tokens (token);
     `);
+    // Personal API tokens (used by Claude and other integrations). Only the
+    // SHA-256 hash of each token is stored.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS api_tokens (
+        id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id text NOT NULL,
+        name text NOT NULL,
+        token_hash text NOT NULL UNIQUE,
+        token_prefix text NOT NULL,
+        created_at timestamp DEFAULT now() NOT NULL,
+        last_used_at timestamp
+      );
+      CREATE INDEX IF NOT EXISTS api_tokens_user_id_idx ON api_tokens (user_id);
+    `);
     // Publishing fields on field_notes
     await client.query(`
       ALTER TABLE field_notes
