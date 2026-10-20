@@ -9,7 +9,8 @@ type AnalyticsEvent =
   | "expedition_deleted"
   | "content_published"
   | "content_unpublished"
-  | "public_link_copied";
+  | "public_link_copied"
+  | "gpx_downloaded";
 
 declare global {
   interface Window {
