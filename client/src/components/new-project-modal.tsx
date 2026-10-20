@@ -18,7 +18,7 @@ import { GPXFileUploader } from "@/components/gpx-file-uploader";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import type { TrailcamProject, InsertTrailcamProject } from "@shared/schema";
-import type { GpxStats } from "@shared/gpx-utils";
+import type { ProjectGpxData } from "@shared/gpx-utils";
 
 const projectFormSchema = z.object({
   title: z.string().min(1, "Project title is required"),
@@ -38,7 +38,7 @@ export function NewProjectModal({
   onClose,
   onProjectCreated,
 }: NewProjectModalProps) {
-  const [gpxData, setGpxData] = useState<(GpxStats & { filename: string }) | null>(null);
+  const [gpxData, setGpxData] = useState<(ProjectGpxData & { filename: string }) | null>(null);
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -62,9 +62,11 @@ export function NewProjectModal({
         title: data.title,
         description: data.description || undefined,
         gpxData: gpxData,
-        duration: undefined, // Will be calculated later when video clips are added
-        startTime: gpxData.date || undefined,
-        endTime: undefined, // Will be set when project timeline is finalized
+        duration: gpxData.timedTrack?.durationSeconds,
+        startTime: gpxData.timedTrack ? new Date(gpxData.timedTrack.startTime) : gpxData.date ?? undefined,
+        endTime: gpxData.timedTrack
+          ? new Date(new Date(gpxData.timedTrack.startTime).getTime() + gpxData.timedTrack.durationSeconds * 1000)
+          : undefined,
       };
 
       const response = await apiRequest("/api/trailcam-projects", "POST", projectData);
@@ -98,7 +100,7 @@ export function NewProjectModal({
     createProjectMutation.mutate(data);
   };
 
-  const handleGPXComplete = (uploadedGpxData: GpxStats & { filename: string }) => {
+  const handleGPXComplete = (uploadedGpxData: ProjectGpxData & { filename: string }) => {
     setGpxData(uploadedGpxData);
   };
 

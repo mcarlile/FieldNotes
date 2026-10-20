@@ -73,34 +73,29 @@ export function parseGpxData(gpxContent: string): GpxStats {
     throw new Error("No track points found in GPX file");
   }
   
-  // Extract date from GPX metadata or first track point
+  // Extract the activity date. The first track point is when the activity
+  // actually started; <metadata><time> is often just when the file was
+  // exported (onX, Ride Atlas), so it is only a fallback.
   let extractedDate: Date | null = null;
-  
-  // Try to get date from GPX metadata first
-  const metadataElements = xmlDoc.getElementsByTagName("metadata");
-  if (metadataElements.length > 0) {
-    const timeElements = metadataElements[0].getElementsByTagName("time");
-    if (timeElements.length > 0 && timeElements[0].textContent) {
-      extractedDate = new Date(timeElements[0].textContent);
+
+  const firstPointTime = trackPoints[0].getElementsByTagName("time")[0]?.textContent;
+  if (firstPointTime) {
+    extractedDate = new Date(firstPointTime);
+  }
+
+  if (!extractedDate) {
+    const metadataElements = xmlDoc.getElementsByTagName("metadata");
+    const metadataTime = metadataElements[0]?.getElementsByTagName("time")[0]?.textContent;
+    if (metadataTime) {
+      extractedDate = new Date(metadataTime);
     }
   }
-  
-  // If no metadata time, try to get from first track point timestamp
-  if (!extractedDate && trackPoints.length > 0) {
-    const timeElements = trackPoints[0].getElementsByTagName("time");
-    if (timeElements.length > 0 && timeElements[0].textContent) {
-      extractedDate = new Date(timeElements[0].textContent);
-    }
-  }
-  
-  // If still no date, try track segment metadata
+
   if (!extractedDate) {
     const trkElements = xmlDoc.getElementsByTagName("trk");
-    if (trkElements.length > 0) {
-      const timeElements = trkElements[0].getElementsByTagName("time");
-      if (timeElements.length > 0 && timeElements[0].textContent) {
-        extractedDate = new Date(timeElements[0].textContent);
-      }
+    const trkTime = trkElements[0]?.getElementsByTagName("time")[0]?.textContent;
+    if (trkTime) {
+      extractedDate = new Date(trkTime);
     }
   }
   
@@ -239,6 +234,53 @@ export function parseGpxWithTimestamps(gpxContent: string): TrackWithTimestamps 
 }
 
 /**
+ * Compact, JSON-friendly form of a timed track: [offsetSeconds, lat, lon]
+ * per point. Stored on TrailCam projects so clip offsets can be placed on the
+ * map by time instead of by distance.
+ */
+export interface CompactTimedTrack {
+  startTime: string; // ISO time of the first timed track point
+  durationSeconds: number;
+  points: [number, number, number][];
+}
+
+// GPX data stored on a TrailCam project.
+export type ProjectGpxData = GpxStats & { timedTrack?: CompactTimedTrack | null };
+
+export function compactTimedTrack(gpxContent: string): CompactTimedTrack | null {
+  const track = parseGpxWithTimestamps(gpxContent);
+  if (!track.startTime || track.points.length === 0) {
+    return null;
+  }
+  const start = track.points[0].timestamp;
+  return {
+    startTime: track.startTime.toISOString(),
+    durationSeconds: track.durationSeconds,
+    points: track.points.map((p) => [
+      Math.round((p.timestamp - start) / 100) / 10,
+      Math.round(p.latitude * 1e6) / 1e6,
+      Math.round(p.longitude * 1e6) / 1e6,
+    ]),
+  };
+}
+
+export function expandTimedTrack(compact: CompactTimedTrack): TrackWithTimestamps {
+  const start = new Date(compact.startTime).getTime();
+  const points: TimedTrackPoint[] = compact.points.map(([offsetSeconds, latitude, longitude]) => ({
+    timestamp: start + offsetSeconds * 1000,
+    offsetSeconds,
+    latitude,
+    longitude,
+  }));
+  return {
+    startTime: new Date(start),
+    endTime: new Date(start + compact.durationSeconds * 1000),
+    durationSeconds: compact.durationSeconds,
+    points,
+  };
+}
+
+/**
  * Interpolates coordinates at a given offset (in seconds) from track start
  */
 export function interpolateCoordinatesAtOffset(
@@ -326,6 +368,19 @@ export function resolveClipCoordinates(
     };
   }
   
+  if (gpxData && gpxData.timedTrack && Array.isArray(gpxData.timedTrack.points)) {
+    const track = expandTimedTrack(gpxData.timedTrack);
+    const startCoords = interpolateCoordinatesAtOffset(track, clipStartTime);
+    const endCoords = interpolateCoordinatesAtOffset(track, clipEndTime);
+
+    return {
+      startLatitude: startCoords?.latitude ?? null,
+      startLongitude: startCoords?.longitude ?? null,
+      endLatitude: endCoords?.latitude ?? null,
+      endLongitude: endCoords?.longitude ?? null
+    };
+  }
+
   if (gpxData && typeof gpxData.rawGpx === 'string') {
     const track = parseGpxWithTimestamps(gpxData.rawGpx);
     const startCoords = interpolateCoordinatesAtOffset(track, clipStartTime);

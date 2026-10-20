@@ -13,6 +13,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import * as crypto from 'crypto';
+import { createClipWithCoordinates } from "./trailcam";
+import { registerMcpRoutes } from "./mcp";
 import { getValidStravaToken, stravaFetch, buildGpxFromActivity, importGpxToInbox } from "./strava";
 
 const CHUNK_UPLOAD_DIR = '/tmp/video-chunks';
@@ -659,6 +661,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // =============== TrailCam Studio API Routes ===============
 
+  // MCP endpoint so Claude can create projects and add clips for the user
+  registerMcpRoutes(app);
+
   // Get all TrailCam projects
   app.get("/api/trailcam-projects", async (req, res) => {
     try {
@@ -766,35 +771,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/video-clips", requireAuth, async (req, res) => {
     try {
       const validatedData = insertVideoClipSchema.parse(req.body);
-
-      // Normalize the URL if it's a full storage URL
-      if (validatedData.url) {
-        validatedData.url = objectStorageService.normalizeObjectEntityPath(validatedData.url);
-      }
-
-      // Fetch project to get GPX data for coordinate calculation
-      const project = await storage.getTrailcamProjectById(validatedData.projectId);
-      if (project?.gpxData) {
-        const coords = resolveClipCoordinates(
-          project.gpxData,
-          validatedData.startTime,
-          validatedData.endTime,
-          project.duration || undefined
-        );
-        console.log(`Calculated clip coordinates: start(${coords.startLatitude}, ${coords.startLongitude}), end(${coords.endLatitude}, ${coords.endLongitude})`);
-
-        validatedData.startLatitude = coords.startLatitude;
-        validatedData.startLongitude = coords.startLongitude;
-        validatedData.endLatitude = coords.endLatitude;
-        validatedData.endLongitude = coords.endLongitude;
-      }
-
-      const clip = await storage.createVideoClip(validatedData);
+      const clip = await createClipWithCoordinates(validatedData);
       res.status(201).json(clip);
-
-      // Start async video processing (transcoding + thumbnail generation)
-      console.log(`Starting video processing for clip ${clip.id}`);
-      startVideoProcessing(clip.id);
     } catch (error) {
       console.error("Error creating video clip:", error);
       res.status(400).json({ message: "Failed to create video clip" });

@@ -17,6 +17,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiRequest } from "@/lib/queryClient";
+import { clipOffsetSeconds, parseCameraFilenameTime, readMp4CreationTime } from "@shared/clip-timing";
 
 const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB chunks
 const MAX_FILE_SIZE = 1.5 * 1024 * 1024 * 1024; // 1.5GB
@@ -58,16 +59,21 @@ interface ChunkedVideoUploaderProps {
   }) => void;
   buttonClassName?: string;
   children: React.ReactNode;
+  // When the project's route started; used to place the clip on the timeline
+  // from the video's recording time.
+  routeStartTime?: Date | string | null;
 }
 
 export function ChunkedVideoUploader({
   onComplete,
   buttonClassName,
   children,
+  routeStartTime,
 }: ChunkedVideoUploaderProps) {
   const [showModal, setShowModal] = useState(false);
   const [uploadState, setUploadState] = useState<ChunkUploadState | null>(null);
   const [videoDuration, setVideoDuration] = useState<number | null>(null);
+  const [startTimeSource, setStartTimeSource] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const isPausedRef = useRef(false);
 
@@ -114,6 +120,32 @@ export function ChunkedVideoUploader({
       video.src = url;
     });
   }, []);
+
+  // Recording start from the camera filename, falling back to the MP4's own
+  // creation time. Filenames win because exporters such as Insta360 Studio
+  // stamp the MP4 with the export time instead of the recording time.
+  const detectStartOffset = async (videoFile: File): Promise<{ offset: number; source: string } | null> => {
+    const fromName = clipOffsetSeconds(parseCameraFilenameTime(videoFile.name), routeStartTime);
+    if (fromName !== null) return { offset: fromName, source: "the filename" };
+    try {
+      const recordedAt = await readMp4CreationTime(
+        async (start, end) => new Uint8Array(await videoFile.slice(start, end).arrayBuffer()),
+        videoFile.size,
+      );
+      const fromMetadata = clipOffsetSeconds(recordedAt, routeStartTime);
+      if (fromMetadata !== null) return { offset: fromMetadata, source: "the video's metadata" };
+    } catch {
+      // Unreadable metadata just means the start time is entered by hand.
+    }
+    return null;
+  };
+
+  const setStartTime = (start: number) => {
+    setValue('startTime', start);
+    if (videoDuration) {
+      setValue('endTime', start + Math.round(videoDuration));
+    }
+  };
 
   const initUpload = async (): Promise<{ uploadKey: string; token: string }> => {
     const response = await apiRequest("/api/video/init-upload", "POST");
@@ -285,7 +317,11 @@ export function ChunkedVideoUploader({
     try {
       const { duration } = await getVideoMetadata(videoFile);
       setVideoDuration(duration);
-      setValue('endTime', Math.round(duration));
+      const detected = await detectStartOffset(videoFile);
+      const start = detected?.offset ?? 0;
+      setStartTimeSource(detected?.source ?? null);
+      setValue('startTime', start);
+      setValue('endTime', start + Math.round(duration));
       setValue('title', videoFile.name.replace(/\.[^/.]+$/, ""));
 
       await uploadFile(videoFile);
@@ -390,6 +426,7 @@ export function ChunkedVideoUploader({
     abortControllerRef.current?.abort();
     setUploadState(null);
     setVideoDuration(null);
+    setStartTimeSource(null);
     reset();
   };
 
@@ -588,12 +625,11 @@ export function ChunkedVideoUploader({
                   <div className="grid grid-cols-2 gap-4">
                     <NumberInput
                       id="startTime"
-                      label="Start Time (seconds)"
+                      label="Start (seconds after route start)"
                       min={0}
-                      max={videoDuration || 0}
                       step={1}
                       value={watchedStartTime}
-                      onChange={(e) => setValue('startTime', Number((e.target as HTMLInputElement).value))}
+                      onChange={(e) => setStartTime(Number((e.target as HTMLInputElement).value))}
                       invalid={!!errors.startTime}
                       invalidText={errors.startTime?.message}
                       data-testid="input-start-time"
@@ -601,9 +637,8 @@ export function ChunkedVideoUploader({
 
                     <NumberInput
                       id="endTime"
-                      label="End Time (seconds)"
+                      label="End (seconds after route start)"
                       min={0}
-                      max={videoDuration || 0}
                       step={1}
                       value={watchedEndTime}
                       onChange={(e) => setValue('endTime', Number((e.target as HTMLInputElement).value))}
@@ -617,6 +652,7 @@ export function ChunkedVideoUploader({
                     <div className="text-sm text-muted-foreground">
                       Video Duration: {formatTime(videoDuration)} | 
                       Clip Duration: {formatTime(Math.max(0, watchedEndTime - watchedStartTime))}
+                      {startTimeSource && ` | Start detected from ${startTimeSource}`}
                     </div>
                   )}
 
