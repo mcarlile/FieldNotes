@@ -222,7 +222,22 @@ function AppContent() {
 }
 
 function ClerkProviderWithRoutes() {
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
+
+  useEffect(() => {
+    document.title = /^\/trailcam-studio(?:\/|$)/.test(location)
+      ? "Big Miles Studio"
+      : "Big Miles Map";
+    for (const name of ["application-name", "apple-mobile-web-app-title"]) {
+      let meta = document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`);
+      if (!meta) {
+        meta = document.createElement("meta");
+        meta.name = name;
+        document.head.appendChild(meta);
+      }
+      meta.content = "Big Miles Map";
+    }
+  }, [location]);
 
   return (
     <ClerkProvider

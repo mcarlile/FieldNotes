@@ -6,13 +6,13 @@ interface BrandLogoProps {
   textClassName?: string;
 }
 
-// "Big Miles" + yellow "Studio" block wordmark
+// Static wordmark, safe to wrap in a link on public pages.
 export default function BrandLogo({ className = "", size = "1rem", textClassName = "text-foreground" }: BrandLogoProps) {
   return (
     <span
       className={`inline-flex items-stretch leading-none whitespace-nowrap ${className}`}
       style={{ fontFamily: "'IBM Plex Mono', 'JetBrains Mono', Menlo, monospace", fontSize: size }}
-      aria-label="Big Miles Studio"
+      aria-label="Big Miles Map"
       role="img"
       data-testid="brand-logo"
     >
@@ -23,7 +23,7 @@ export default function BrandLogo({ className = "", size = "1rem", textClassName
         style={{ background: "#FAD82D", color: "#111111", fontWeight: 600, padding: "0.25em 0.55em" }}
         aria-hidden="true"
       >
-        Studio
+        Map
       </span>
     </span>
   );
