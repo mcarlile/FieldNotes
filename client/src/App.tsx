@@ -23,6 +23,7 @@ import Dashboard from "@/pages/dashboard";
 import FieldNoteDetail from "@/pages/field-note-detail";
 import Admin from "@/pages/admin";
 import TrailcamStudio from "@/pages/trailcam-studio";
+import ConnectClaude from "@/pages/connect-claude";
 import InboxPage from "@/pages/inbox";
 import Expeditions from "@/pages/expeditions";
 import ExpeditionAdmin from "@/pages/expedition-admin";
@@ -205,6 +206,7 @@ function AppContent() {
         <Route path="/admin/:id">{() => readOnlyPreview ? readOnlyPage : <RequireAuth component={Admin} />}</Route>
         <Route path="/field-notes/:id/edit">{() => readOnlyPreview ? readOnlyPage : <RequireAuth component={Admin} />}</Route>
         <Route path="/trailcam-studio">{() => <RequireAuth component={TrailcamStudio} />}</Route>
+        <Route path="/connect-claude">{() => readOnlyPreview ? readOnlyPage : <RequireAuth component={ConnectClaude} />}</Route>
         <Route path="/inbox">{() => <RequireAuth component={InboxPage} />}</Route>
         <Route path="/expeditions">{() => <RequireAuth component={Expeditions} />}</Route>
         <Route path="/expeditions/new">{() => readOnlyPreview ? readOnlyPage : <RequireAuth component={ExpeditionAdmin} />}</Route>

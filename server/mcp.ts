@@ -265,7 +265,7 @@ async function callTool(name: string, args: unknown): Promise<unknown> {
   }
 }
 
-async function handleRpc(message: JsonRpcRequest): Promise<object | null> {
+export async function handleRpc(message: JsonRpcRequest): Promise<object | null> {
   const respond = (result: unknown) => ({ jsonrpc: "2.0", id: message.id ?? null, result });
   const fail = (code: number, text: string) => ({ jsonrpc: "2.0", id: message.id ?? null, error: { code, message: text } });
 

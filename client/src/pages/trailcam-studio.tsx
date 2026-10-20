@@ -181,14 +181,19 @@ export default function TrailcamStudio() {
                 Sync video clips with GPS route data. Pick an existing project or start a new one.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setShowNewProjectModal(true)}
-              className={pillButtonClass()}
-              data-testid="button-new-project"
-            >
-              + New project
-            </button>
+            <div className="flex gap-2">
+              <a href="/connect-claude" className={pillButtonClass()} data-testid="link-connect-claude">
+                Connect Claude
+              </a>
+              <button
+                type="button"
+                onClick={() => setShowNewProjectModal(true)}
+                className={pillButtonClass()}
+                data-testid="button-new-project"
+              >
+                + New project
+              </button>
+            </div>
           </div>
 
           {/* Projects */}

@@ -4,6 +4,24 @@ import { eq, desc, asc, like, ilike, and, or, sql, inArray } from "drizzle-orm";
 import { MAX_TRIP_PHOTOS } from "@shared/photo-limit";
 import { existingPhotoCaptionPatch } from "./photo-caption";
 
+export interface ApiTokenSummary {
+  id: string;
+  name: string;
+  tokenPrefix: string;
+  createdAt: Date;
+  lastUsedAt: Date | null;
+}
+
+function toApiTokenSummary(row: any): ApiTokenSummary {
+  return {
+    id: row.id,
+    name: row.name,
+    tokenPrefix: row.token_prefix,
+    createdAt: new Date(row.created_at),
+    lastUsedAt: row.last_used_at ? new Date(row.last_used_at) : null,
+  };
+}
+
 export interface IStorage {
   // Field Notes
   getFieldNotes(options?: {
@@ -66,6 +84,11 @@ export interface IStorage {
   getMobileToken(token: string): Promise<{ userId: string; expiresAt: Date } | undefined>;
   createMobileToken(userId: string, token: string, expiresAt: Date): Promise<void>;
   deleteMobileTokensByUser(userId: string): Promise<void>;
+
+  // Personal API tokens
+  createApiToken(userId: string, name: string, tokenHash: string, tokenPrefix: string): Promise<ApiTokenSummary>;
+  listApiTokens(userId: string): Promise<ApiTokenSummary[]>;
+  deleteApiToken(userId: string, id: string): Promise<boolean>;
 
   // Publishing — field notes
   publishFieldNote(id: string, slug: string): Promise<FieldNote | undefined>;
@@ -504,6 +527,33 @@ export class DatabaseStorage implements IStorage {
   async deleteMobileTokensByUser(userId: string): Promise<void> {
     const { pool } = await import("./db");
     await pool.query("DELETE FROM mobile_tokens WHERE user_id = $1", [userId]);
+  }
+
+  // Personal API tokens — raw SQL like mobile tokens; only hashes are stored
+  async createApiToken(userId: string, name: string, tokenHash: string, tokenPrefix: string): Promise<ApiTokenSummary> {
+    const { pool } = await import("./db");
+    const result = await pool.query(
+      `INSERT INTO api_tokens (user_id, name, token_hash, token_prefix) VALUES ($1, $2, $3, $4)
+       RETURNING id, name, token_prefix, created_at, last_used_at`,
+      [userId, name, tokenHash, tokenPrefix]
+    );
+    return toApiTokenSummary(result.rows[0]);
+  }
+
+  async listApiTokens(userId: string): Promise<ApiTokenSummary[]> {
+    const { pool } = await import("./db");
+    const result = await pool.query(
+      `SELECT id, name, token_prefix, created_at, last_used_at FROM api_tokens
+       WHERE user_id = $1 ORDER BY created_at DESC`,
+      [userId]
+    );
+    return result.rows.map(toApiTokenSummary);
+  }
+
+  async deleteApiToken(userId: string, id: string): Promise<boolean> {
+    const { pool } = await import("./db");
+    const result = await pool.query("DELETE FROM api_tokens WHERE user_id = $1 AND id = $2", [userId, id]);
+    return (result.rowCount ?? 0) > 0;
   }
 
   // Publishing — field notes
@@ -1029,6 +1079,11 @@ export class MemStorage implements IStorage {
   async getMobileToken(_token: string): Promise<{ userId: string; expiresAt: Date } | undefined> { return undefined; }
   async createMobileToken(_userId: string, _token: string, _expiresAt: Date): Promise<void> {}
   async deleteMobileTokensByUser(_userId: string): Promise<void> {}
+
+  // Personal API tokens (stubs)
+  async createApiToken(_userId: string, _name: string, _tokenHash: string, _tokenPrefix: string): Promise<ApiTokenSummary> { throw new Error("Not implemented"); }
+  async listApiTokens(_userId: string): Promise<ApiTokenSummary[]> { return []; }
+  async deleteApiToken(_userId: string, _id: string): Promise<boolean> { return false; }
 
   // Publishing + expeditions (stubs)
   async publishFieldNote(_id: string, _slug: string): Promise<FieldNote | undefined> { return undefined; }
