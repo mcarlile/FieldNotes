@@ -4,12 +4,13 @@ import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Modal } from "@carbon/react";
-import { Pencil, Trash2, ExternalLink } from "lucide-react";
+import { Pencil, Trash2, ExternalLink, Download } from "lucide-react";
 import PublishButton from "@/components/publish-button";
 import PhotoLightbox from "@/components/photo-lightbox";
 import MapboxMap from "@/components/mapbox-map";
 import ElevationProfile from "@/components/elevation-profile";
 import { parseGpxData, parseGpxWithTimestamps } from "@shared/gpx-utils";
+import { buildGpxExport, downloadGpx, gpxFilename } from "@/lib/gpx-export";
 
 import { useToast } from "@/hooks/use-toast";
 import { useDesignPreview } from "@/hooks/use-design-preview";
@@ -58,6 +59,17 @@ export default function FieldNoteDetail() {
   const handlePhotoMarkerClick = useCallback((photoId: string) => {
     setSelectedPhotoId(photoId);
   }, []);
+
+  const handleDownloadGpx = () => {
+    if (!fieldNote) return;
+    const gpx = buildGpxExport(fieldNote.gpxData, fieldNote.title, fieldNote.date);
+    if (!gpx) {
+      toast({ title: "No GPX track", description: "This field note has no route data to export.", variant: "destructive" });
+      return;
+    }
+    downloadGpx(gpx, gpxFilename(fieldNote.title));
+    trackEvent("gpx_downloaded");
+  };
 
   const parsedGpxData = useMemo(() => {
     if (!fieldNote?.gpxData) return null;
@@ -244,6 +256,16 @@ export default function FieldNoteDetail() {
                 <ExternalLink className="h-3 w-3" />
                 Open in Strava
               </a>
+            )}
+            {fieldNote.gpxData && (
+              <button
+                onClick={handleDownloadGpx}
+                className="meta-mono text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
+                data-testid="button-download-gpx"
+              >
+                <Download className="h-3 w-3" />
+                Download GPX
+              </button>
             )}
             {isSignedIn && !readOnlyPreview && (
               <>
