@@ -1,0 +1,36 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { planRemux } from "./remuxPlan";
+
+const aac = { codec_type: "audio", codec_name: "aac" };
+
+test("1080p H.265 Main from Insta360 Studio is repackaged, tagged hvc1", () => {
+  const plan = planRemux([
+    { codec_type: "video", codec_name: "hevc", profile: "Main", pix_fmt: "yuvj420p", height: 1080 },
+    aac,
+  ]);
+  assert.deepEqual(plan, { video: true, audio: true, videoArgs: ["-tag:v", "hvc1"] });
+});
+
+test("1080p H.264 is repackaged as is, in either color range", () => {
+  for (const pix_fmt of ["yuv420p", "yuvj420p"]) {
+    const plan = planRemux([{ codec_type: "video", codec_name: "h264", pix_fmt, height: 1080 }, aac]);
+    assert.deepEqual(plan, { video: true, audio: true, videoArgs: [] });
+  }
+});
+
+test("4K, 10-bit and other codecs are re-encoded", () => {
+  const cases = [
+    { codec_type: "video", codec_name: "hevc", profile: "Main", pix_fmt: "yuv420p", height: 2160 },
+    { codec_type: "video", codec_name: "hevc", profile: "Main 10", pix_fmt: "yuv420p10le", height: 1080 },
+    { codec_type: "video", codec_name: "prores", pix_fmt: "yuv422p10le", height: 1080 },
+  ];
+  for (const video of cases) assert.equal(planRemux([video, aac]).video, false);
+  assert.equal(planRemux([]).video, false);
+});
+
+test("non-AAC audio is re-encoded and a silent clip needs no audio work", () => {
+  const video = { codec_type: "video", codec_name: "h264", pix_fmt: "yuv420p", height: 720 };
+  assert.equal(planRemux([video, { codec_type: "audio", codec_name: "opus" }]).audio, false);
+  assert.equal(planRemux([video]).audio, true);
+});

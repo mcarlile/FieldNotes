@@ -5,6 +5,7 @@ import { Readable } from 'stream';
 import { storage } from './storage';
 import { objectStorageService } from './objectStorage';
 import { createSerialQueue } from './serialQueue';
+import { planRemux, type RemuxPlan } from './remuxPlan';
 
 const TEMP_DIR = '/tmp/video-processing';
 
@@ -17,7 +18,11 @@ interface ProcessingResult {
   transcodedUrl: string;
 }
 
-function runFFmpeg(args: string[]): Promise<void> {
+// A stuck encode must not hold the one-at-a-time queue forever.
+const FFMPEG_TIMEOUT_MS = 45 * 60 * 1000;
+const DOWNLOAD_STALL_MS = 2 * 60 * 1000;
+
+function runFFmpeg(args: string[], timeoutMs = FFMPEG_TIMEOUT_MS): Promise<void> {
   return new Promise((resolve, reject) => {
     console.log(`Running FFmpeg with args:`, args.join(' '));
     const ffmpeg = spawn('ffmpeg', args, { 
@@ -25,13 +30,21 @@ function runFFmpeg(args: string[]): Promise<void> {
     });
     
     let stderr = '';
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      ffmpeg.kill('SIGKILL');
+    }, timeoutMs);
     
     ffmpeg.stderr.on('data', (data) => {
-      stderr += data.toString();
+      stderr = (stderr + data.toString()).slice(-2000);
     });
     
     ffmpeg.on('close', (code) => {
-      if (code === 0) {
+      clearTimeout(timer);
+      if (timedOut) {
+        reject(new Error(`FFmpeg timed out after ${Math.round(timeoutMs / 60000)} minutes`));
+      } else if (code === 0) {
         resolve();
       } else {
         reject(new Error(`FFmpeg exited with code ${code}: ${stderr.slice(-500)}`));
@@ -39,6 +52,7 @@ function runFFmpeg(args: string[]): Promise<void> {
     });
     
     ffmpeg.on('error', (err) => {
+      clearTimeout(timer);
       reject(err);
     });
   });
@@ -62,34 +76,18 @@ function runFFprobe(args: string[]): Promise<string> {
   });
 }
 
-interface StreamInfo {
-  codec_type?: string;
-  codec_name?: string;
-  pix_fmt?: string;
-  height?: number;
-}
-
-// Browser-playable H.264 at 1080p or below only needs repackaging, which
-// takes seconds instead of a full re-encode.
-async function canRemux(inputPath: string): Promise<{ video: boolean; audio: boolean }> {
+async function probeRemux(inputPath: string): Promise<RemuxPlan> {
   try {
     const output = await runFFprobe([
       '-v', 'error',
-      '-show_entries', 'stream=codec_type,codec_name,pix_fmt,height',
+      '-show_entries', 'stream=codec_type,codec_name,profile,pix_fmt,height',
       '-of', 'json',
       inputPath
     ]);
-    const streams: StreamInfo[] = JSON.parse(output).streams ?? [];
-    const video = streams.find(s => s.codec_type === 'video');
-    const audio = streams.find(s => s.codec_type === 'audio');
-    return {
-      video: !!video && video.codec_name === 'h264' && video.pix_fmt === 'yuv420p' &&
-        (video.height ?? Infinity) <= 1080,
-      audio: !audio || audio.codec_name === 'aac',
-    };
+    return planRemux(JSON.parse(output).streams ?? []);
   } catch (error) {
     console.error('FFprobe failed, falling back to full transcode:', error);
-    return { video: false, audio: false };
+    return { video: false, audio: false, videoArgs: [] };
   }
 }
 
@@ -98,15 +96,21 @@ async function downloadVideo(sourceUrl: string, destPath: string): Promise<void>
   
   const objectFile = await objectStorageService.getFileFromRawPath(sourceUrl);
   const writeStream = fs.createWriteStream(destPath);
-  
-  return new Promise((resolve, reject) => {
-    objectStorageService.downloadObjectToStream(objectFile, writeStream)
-      .then(() => {
-        writeStream.close();
-        resolve();
-      })
-      .catch(reject);
-  });
+
+  // Fail a download that stops making progress instead of waiting forever.
+  let lastBytes = -1;
+  const watchdog = setInterval(() => {
+    if (writeStream.bytesWritten === lastBytes) {
+      writeStream.destroy(new Error('Download from storage stalled'));
+    }
+    lastBytes = writeStream.bytesWritten;
+  }, DOWNLOAD_STALL_MS);
+
+  try {
+    await objectStorageService.downloadObjectToStream(objectFile, writeStream);
+  } finally {
+    clearInterval(watchdog);
+  }
 }
 
 async function uploadProcessedFile(filePath: string, prefix: string): Promise<string> {
@@ -180,9 +184,9 @@ export async function processVideo(clipId: string): Promise<void> {
       ]);
     }
     
-    const remux = await canRemux(inputPath);
+    const remux = await probeRemux(inputPath);
     const videoArgs = remux.video
-      ? ['-c:v', 'copy']
+      ? ['-c:v', 'copy', ...remux.videoArgs]
       : ['-vf', 'scale=-2:1080', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23'];
     const audioArgs = remux.audio ? ['-c:a', 'copy'] : ['-c:a', 'aac', '-b:a', '128k'];
     console.log(remux.video ? 'Repackaging without re-encoding...' : 'Transcoding to 1080p...');
