@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { insertFieldNoteSchema, insertPhotoSchema, insertTrailcamProjectSchema, insertVideoClipSchema, insertExpeditionSchema } from "@shared/schema";
 import { ObjectStorageService, ObjectNotFoundError, objectStorageService } from "./objectStorage";
 import { extractExifData, extractExifFromBuffer } from "./exif-extractor";
-import { startVideoProcessing, isVideoProcessingActive } from "./videoProcessor";
+import { isVideoProcessingActive, reprocessVideoClip } from "./videoProcessor";
 import { resolveClipCoordinates } from "@shared/gpx-utils";
 import { validateTripPhotos, MAX_TRIP_PHOTOS } from "@shared/photo-limit";
 import { requireAuth } from "./middlewares/clerkAuth";
@@ -774,7 +774,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "projectId is required" });
       }
       const clips = await storage.getVideoClipsByProjectId(projectId as string);
-      res.json(clips);
+      // processingActive lets the studio tell a clip waiting its turn from
+      // one whose job died, which it offers to retry.
+      res.json(clips.map((clip) => ({ ...clip, processingActive: isVideoProcessingActive(clip.id) })));
     } catch (error) {
       console.error("Error fetching video clips:", error);
       res.status(500).json({ message: "Failed to fetch video clips" });
@@ -953,23 +955,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Retry video processing (if it failed)
   app.post("/api/video-clips/:id/reprocess", async (req, res) => {
     try {
-      const { id } = req.params;
-      const clip = await storage.getVideoClipById(id);
-
-      if (!clip) {
+      const result = await reprocessVideoClip(req.params.id);
+      if (result === 'not_found') {
         return res.status(404).json({ message: "Video clip not found" });
       }
-
-      if (clip.processingStatus === 'processing' && isVideoProcessingActive(id)) {
+      if (result === 'already_active') {
         return res.status(400).json({ message: "Video is already being processed" });
       }
-
-      await storage.updateVideoClip(id, {
-        processingStatus: 'pending',
-        processingError: null
-      });
-
-      startVideoProcessing(id);
       res.json({ message: "Video processing started" });
     } catch (error) {
       console.error("Error reprocessing video:", error);

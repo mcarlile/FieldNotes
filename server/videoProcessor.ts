@@ -1,18 +1,16 @@
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { Readable } from 'stream';
 import { storage } from './storage';
 import { objectStorageService } from './objectStorage';
+import { createSerialQueue } from './serialQueue';
 
 const TEMP_DIR = '/tmp/video-processing';
 
 if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true });
 }
-
-// Clips being processed by this server process. A clip whose status is
-// 'processing' but isn't in this set was orphaned by a restart.
-const activeJobs = new Set<string>();
 
 interface ProcessingResult {
   thumbnailUrl: string;
@@ -113,17 +111,19 @@ async function downloadVideo(sourceUrl: string, destPath: string): Promise<void>
 
 async function uploadProcessedFile(filePath: string, prefix: string): Promise<string> {
   const filename = `${prefix}-${Date.now()}-${path.basename(filePath)}`;
-  const fileBuffer = fs.readFileSync(filePath);
-  
   const uploadUrl = await objectStorageService.generateUploadUrl(filename);
-  
+
+  // Stream from disk: a transcoded ride clip can be hundreds of MB, and
+  // reading it into memory alongside other work can get the server killed.
   const response = await fetch(uploadUrl, {
     method: 'PUT',
     headers: {
       'Content-Type': filePath.endsWith('.jpg') ? 'image/jpeg' : 'video/mp4',
+      'Content-Length': String(fs.statSync(filePath).size),
     },
-    body: fileBuffer,
-  });
+    body: Readable.toWeb(fs.createReadStream(filePath)) as ReadableStream,
+    duplex: 'half',
+  } as RequestInit);
   
   if (!response.ok) {
     throw new Error(`Failed to upload processed file: ${response.status}`);
@@ -135,8 +135,7 @@ async function uploadProcessedFile(filePath: string, prefix: string): Promise<st
 
 export async function processVideo(clipId: string): Promise<void> {
   const workDir = path.join(TEMP_DIR, clipId);
-  activeJobs.add(clipId);
-  
+
   try {
     fs.mkdirSync(workDir, { recursive: true });
     
@@ -217,23 +216,37 @@ export async function processVideo(clipId: string): Promise<void> {
     });
     
   } finally {
-    activeJobs.delete(clipId);
     if (fs.existsSync(workDir)) {
       fs.rmSync(workDir, { recursive: true, force: true });
     }
   }
 }
 
+// One clip at a time: each job downloads the original, runs ffmpeg and
+// uploads the result, and several at once exhaust a small server.
+const queue = createSerialQueue(processVideo);
+
 export function startVideoProcessing(clipId: string): void {
-  setImmediate(() => {
-    processVideo(clipId).catch((error) => {
-      console.error(`Background video processing error for ${clipId}:`, error);
-    });
-  });
+  queue.add(clipId);
 }
 
+/** True while this server process has the clip running or waiting its turn. */
 export function isVideoProcessingActive(clipId: string): boolean {
-  return activeJobs.has(clipId);
+  return queue.has(clipId);
+}
+
+/**
+ * Puts a clip back in the queue unless this process is already handling it.
+ * A clip left 'pending' or 'processing' with no job behind it is stuck, for
+ * example after its job was killed without the server restarting.
+ */
+export async function reprocessVideoClip(clipId: string): Promise<'queued' | 'already_active' | 'not_found'> {
+  const clip = await storage.getVideoClipById(clipId);
+  if (!clip) return 'not_found';
+  if (queue.has(clipId)) return 'already_active';
+  await storage.updateVideoClip(clipId, { processingStatus: 'pending', processingError: null });
+  queue.add(clipId);
+  return 'queued';
 }
 
 // Jobs run inside the web server, so a restart kills them and leaves clips

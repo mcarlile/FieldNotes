@@ -5,6 +5,7 @@ import { objectStorageService } from "./objectStorage";
 import { requireAuth } from "./middlewares/clerkAuth";
 import { createClipWithCoordinates, createProjectFromGpx } from "./trailcam";
 import { clipOffsetSeconds } from "@shared/clip-timing";
+import { isVideoProcessingActive, reprocessVideoClip } from "./videoProcessor";
 
 /**
  * A small Model Context Protocol server (Streamable HTTP, stateless, JSON
@@ -100,9 +101,21 @@ const tools = [
       required: ["project_id", "object_path", "filename", "duration_seconds"],
     },
   },
+  {
+    name: "reprocess_clip",
+    description:
+      "Retry processing (thumbnail and transcode) for a clip that failed or is stuck. A clip is stuck " +
+      "when get_project shows it pending or processing with processing_active false.",
+    inputSchema: {
+      type: "object",
+      properties: { clip_id: { type: "string" } },
+      required: ["clip_id"],
+    },
+  },
 ];
 
 const getProjectArgs = z.object({ project_id: z.string() });
+const reprocessClipArgs = z.object({ clip_id: z.string() });
 const listProjectsArgs = z.object({ search: z.string().optional() });
 const requestUploadArgs = z.object({ content_type: z.string().optional() });
 const createProjectArgs = z.object({
@@ -181,6 +194,7 @@ async function callTool(name: string, args: unknown): Promise<unknown> {
           end_seconds: clip.endTime,
           processing_status: clip.processingStatus,
           processing_error: clip.processingError,
+          processing_active: isVideoProcessingActive(clip.id),
         })),
       };
     }
@@ -215,6 +229,13 @@ async function callTool(name: string, args: unknown): Promise<unknown> {
         throw new ToolError(`Could not read the GPX: ${error instanceof Error ? error.message : String(error)}`);
       }
       return summarizeProject(project);
+    }
+    case "reprocess_clip": {
+      const { clip_id } = reprocessClipArgs.parse(args);
+      const result = await reprocessVideoClip(clip_id);
+      if (result === "not_found") throw new ToolError("Clip not found.");
+      if (result === "already_active") throw new ToolError("This clip is already processing or waiting its turn.");
+      return { clip_id, processing_status: "pending" };
     }
     case "add_clip": {
       const input = addClipArgs.parse(args);
@@ -281,7 +302,8 @@ export async function handleRpc(message: JsonRpcRequest): Promise<object | null>
         serverInfo: { name: "big-miles", version: "1.0.0" },
         instructions:
           "Big Miles TrailCam Studio. To build a project: create_project with the GPX, then for each " +
-          "video call request_upload, PUT the file to upload_url, and call add_clip with its object_path.",
+          "video call request_upload, PUT the file to upload_url, and call add_clip with its object_path. " +
+          "Clips process one at a time; if one fails or is stuck, call reprocess_clip.",
       });
     }
     case "ping":

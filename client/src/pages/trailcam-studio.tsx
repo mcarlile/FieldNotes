@@ -1,4 +1,4 @@
-import { useRef, useState, Suspense } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -21,6 +21,17 @@ import MapboxMap, { ClipMarker } from "@/components/mapbox-map";
 import type { TrailcamProject, VideoClip, InsertVideoClip } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 
+type StudioClip = VideoClip & { processingActive?: boolean };
+
+// A clip still marked pending or processing that the server isn't working on
+// lost its job (for example when the server was stopped mid-transcode).
+function isStuck(clip: StudioClip) {
+  return (
+    (clip.processingStatus === "pending" || clip.processingStatus === "processing") &&
+    clip.processingActive === false
+  );
+}
+
 function pillButtonClass(active = false) {
   return `meta-mono px-3 py-1.5 rounded-full border transition-colors ${
     active
@@ -35,7 +46,7 @@ export default function TrailcamStudio() {
   const [selectedProject, setSelectedProject] = useState<TrailcamProject | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [selectedClip, setSelectedClip] = useState<VideoClip | null>(null);
+  const [selectedClip, setSelectedClip] = useState<StudioClip | null>(null);
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -47,7 +58,7 @@ export default function TrailcamStudio() {
     },
   });
 
-  const { data: clips = [] } = useQuery<VideoClip[]>({
+  const { data: clips = [] } = useQuery<StudioClip[]>({
     queryKey: ["/api/video-clips", selectedProject?.id],
     queryFn: async () => {
       if (!selectedProject?.id) return [];
@@ -62,6 +73,23 @@ export default function TrailcamStudio() {
       return hasProcessing ? 3000 : false;
     },
   });
+
+  // Keep the player's clip in step with polling, so it switches from
+  // processing to playable (or stuck) without reselecting it.
+  useEffect(() => {
+    setSelectedClip((current) => (current ? clips.find((clip) => clip.id === current.id) ?? current : current));
+  }, [clips]);
+
+  const retryProcessing = (clipId: string) => {
+    apiRequest(`/api/video-clips/${clipId}/reprocess`, "POST")
+      .then(() => {
+        toast({ title: "Reprocessing started" });
+        queryClient.invalidateQueries({ queryKey: ["/api/video-clips", selectedProject?.id] });
+      })
+      .catch(() =>
+        toast({ title: "Error", description: "Failed to reprocess video", variant: "destructive" }),
+      );
+  };
 
   const createClipMutation = useMutation({
     mutationFn: async (clipData: InsertVideoClip) => {
@@ -353,16 +381,7 @@ export default function TrailcamStudio() {
                     </p>
                     <button
                       type="button"
-                      onClick={() => {
-                        apiRequest(`/api/video-clips/${selectedClip.id}/reprocess`, "POST")
-                          .then(() => {
-                            toast({ title: "Reprocessing started" });
-                            queryClient.invalidateQueries({ queryKey: ["/api/video-clips", selectedProject?.id] });
-                          })
-                          .catch(() =>
-                            toast({ title: "Error", description: "Failed to reprocess video", variant: "destructive" }),
-                          );
-                      }}
+                      onClick={() => retryProcessing(selectedClip.id)}
                       className="meta-mono text-white underline underline-offset-4 hover:opacity-70 mt-5 inline-flex items-center gap-1.5"
                       data-testid="button-reprocess"
                     >
@@ -374,7 +393,20 @@ export default function TrailcamStudio() {
                   <div className="text-center text-white">
                     <Loader2 className="h-6 w-6 animate-spin mx-auto mb-3 text-gray-400" />
                     <p className="font-serif text-lg text-gray-200">Processing…</p>
-                    <p className="meta-mono text-gray-500 mt-1">Transcoding to 1080p</p>
+                    <p className="meta-mono text-gray-500 mt-1">
+                      {isStuck(selectedClip) ? "Not running. It may have been interrupted." : "Transcoding to 1080p"}
+                    </p>
+                    {isStuck(selectedClip) && (
+                      <button
+                        type="button"
+                        onClick={() => retryProcessing(selectedClip.id)}
+                        className="meta-mono text-white underline underline-offset-4 hover:opacity-70 mt-5 inline-flex items-center gap-1.5"
+                        data-testid="button-reprocess-stuck"
+                      >
+                        <RefreshCw className="h-3 w-3" />
+                        Retry processing →
+                      </button>
+                    )}
                   </div>
                 )
               ) : (
@@ -523,6 +555,7 @@ export default function TrailcamStudio() {
               {clips.map((clip, index) => {
                 const ready = clip.processingStatus === "ready";
                 const errored = clip.processingStatus === "error";
+                const stuck = isStuck(clip);
                 return (
                   <div
                     key={clip.id}
@@ -576,10 +609,21 @@ export default function TrailcamStudio() {
                         <span>{formatTime(clip.endTime)}</span>
                       </div>
                       {!ready && !errored && (
-                        <div className="meta-mono text-muted-foreground mt-1">Processing…</div>
+                        <div className="meta-mono text-muted-foreground mt-1">{stuck ? "Stuck" : "Processing…"}</div>
                       )}
                       {errored && (
                         <div className="meta-mono text-destructive mt-1">Failed</div>
+                      )}
+                      {(errored || stuck) && (
+                        <button
+                          type="button"
+                          onClick={() => retryProcessing(clip.id)}
+                          className="meta-mono text-foreground underline underline-offset-4 hover:opacity-70 transition-opacity mt-1 text-left inline-flex items-center gap-1"
+                          data-testid={`button-retry-${clip.id}`}
+                        >
+                          <RefreshCw className="h-3 w-3" />
+                          Retry
+                        </button>
                       )}
                       <button
                         type="button"
