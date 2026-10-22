@@ -880,6 +880,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Stream video clip (serves the video for browser playback)
+  // Long enough to watch and seek a clip without the link expiring.
+  const VIDEO_URL_TTL_SECONDS = 6 * 60 * 60;
+
   app.get("/api/video-clips/:id/stream", async (req, res) => {
     try {
       const { id } = req.params;
@@ -891,6 +894,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Use transcoded version if available, otherwise fall back to original
       const videoUrl = clip.transcodedUrl || clip.url;
+
+      // Send the browser straight to storage. Piping ride clips (~25 Mbps)
+      // through this server can't keep up, so playback never starts.
+      try {
+        const signedUrl = await objectStorageService.getSignedReadUrl(videoUrl, VIDEO_URL_TTL_SECONDS);
+        res.setHeader('Cache-Control', 'private, no-store');
+        return res.redirect(302, signedUrl);
+      } catch (error) {
+        console.error("Could not sign video URL, streaming through the server:", error);
+      }
 
       const file = await objectStorageService.getFileFromRawPath(videoUrl);
       const [metadata] = await file.getMetadata();

@@ -291,6 +291,18 @@ export class ObjectStorageService {
     throw new ObjectNotFoundError();
   }
 
+  // Signed GET URL for a stored object, so a browser can stream it straight
+  // from storage (with range requests) instead of through this server.
+  async getSignedReadUrl(rawPath: string, ttlSec: number): Promise<string> {
+    const file = await this.getFileFromRawPath(rawPath);
+    return signObjectURL({
+      bucketName: file.bucket.name,
+      objectName: file.name,
+      method: 'GET',
+      ttlSec,
+    });
+  }
+
   // Generate upload URL for a specific filename (for processed videos)
   async generateUploadUrl(filename: string): Promise<string> {
     const privateObjectDir = this.getPrivateObjectDir();
