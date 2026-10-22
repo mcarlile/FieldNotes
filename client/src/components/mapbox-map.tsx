@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import { initMapbox } from "@/lib/mapbox";
+import { MapTerrainControls, TERRAIN_PITCH, applyTerrain } from "@/components/map-terrain-controls";
 import { parseGpxData } from "@shared/gpx-utils";
 import type { ElevationPoint } from "@shared/gpx-utils";
 
@@ -50,6 +51,8 @@ interface MapboxMapProps {
   onPlayheadDragStart?: () => void;
   onPlayheadDrag?: (position: [number, number]) => void;
   onPlayheadDragEnd?: (position: [number, number]) => void;
+  /** Shows the 3D / exaggerated terrain controls in the map's corner. */
+  showTerrainControls?: boolean;
   className?: string;
 }
 
@@ -73,6 +76,7 @@ export default function MapboxMap({
   onPlayheadDragStart,
   onPlayheadDrag,
   onPlayheadDragEnd,
+  showTerrainControls,
   className 
 }: MapboxMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -87,6 +91,11 @@ export default function MapboxMap({
   const [webglError, setWebglError] = useState(false);
   // Set once the style has loaded, so layers added after the track can rely on it.
   const [mapReady, setMapReady] = useState(false);
+  // The map instance whose style has finished loading. A new gpxData rebuilds
+  // the map, and effects running in that same commit must not touch the new,
+  // still-loading instance (mapbox throws "Style is not done loading").
+  const loadedMapRef = useRef<mapboxgl.Map | null>(null);
+  const loadedMap = () => (map.current && map.current === loadedMapRef.current ? map.current : null);
   const playheadMarker = useRef<mapboxgl.Marker | null>(null);
   const onClipSegmentClickRef = useRef(onClipSegmentClick);
   useEffect(() => { onClipSegmentClickRef.current = onClipSegmentClick; }, [onClipSegmentClick]);
@@ -101,6 +110,12 @@ export default function MapboxMap({
   followingRef.current = following;
   // While the zoom-in animation runs, the follow-cam leaves the camera alone.
   const focusAnimatingUntil = useRef(0);
+  const [is3D, setIs3D] = useState(false);
+  const [exaggerateTerrain, setExaggerateTerrain] = useState(true);
+  const is3DRef = useRef(false);
+  is3DRef.current = is3D;
+  // The follow-cam's view: zoomed in, and tilted when the map is in 3D.
+  const followCamera = () => (is3DRef.current ? { zoom: FOLLOW_ZOOM, pitch: TERRAIN_PITCH } : { zoom: FOLLOW_ZOOM, pitch: 0 });
   // True while a hovered clip is being previewed; the follow-cam stands aside.
   const previewingRef = useRef(false);
 
@@ -278,14 +293,18 @@ export default function MapboxMap({
           });
         }
       }
-      // Only a user's pan carries an originalEvent; ours (jumpTo/easeTo) don't.
-      map.current.on('dragstart', (e: any) => {
+      // Only the user's own pan, zoom or tilt carries an originalEvent; our
+      // jumpTo/easeTo calls don't. Any of them hands the camera to the user.
+      const userMoved = (e: any) => {
         if (e.originalEvent) setFollowing(false);
-      });
+      };
+      ['dragstart', 'zoomstart', 'rotatestart', 'pitchstart'].forEach((type) => map.current?.on(type as any, userMoved));
+      loadedMapRef.current = map.current;
       setMapReady(true);
     });
 
     return () => {
+      loadedMapRef.current = null;
       setMapReady(false);
       playheadMarker.current?.remove();
       playheadMarker.current = null;
@@ -351,8 +370,8 @@ export default function MapboxMap({
   // Clip segments: a thicker colored line per clip over the route. Hovering
   // shows which clip it is; clicking loads that clip.
   useEffect(() => {
-    const m = map.current;
-    if (!m || !mapReady) return;
+    const m = loadedMap();
+    if (!m) return;
 
     const data = {
       type: 'FeatureCollection' as const,
@@ -444,15 +463,15 @@ export default function MapboxMap({
   // Hovering a clip fits its whole stretch in view; letting go returns to the
   // full route, or to the pin if a clip is playing and being followed.
   useEffect(() => {
-    const m = map.current;
-    if (!m || !mapReady) return;
+    const m = loadedMap();
+    if (!m) return;
     if (previewSegmentId) {
       const segment = clipSegments?.find((s) => s.id === previewSegmentId);
       if (!segment || segment.coordinates.length === 0) return;
       previewingRef.current = true;
       const bounds = new mapboxgl.LngLatBounds();
       segment.coordinates.forEach((coord) => bounds.extend(coord));
-      m.fitBounds(bounds, { padding: 60, maxZoom: 17, duration: 600 });
+      m.fitBounds(bounds, { padding: 60, maxZoom: 17, duration: 600, pitch: is3DRef.current ? TERRAIN_PITCH : 0 });
       return;
     }
     if (!previewingRef.current) return;
@@ -460,44 +479,62 @@ export default function MapboxMap({
     const pin = getPlayheadPositionRef.current?.();
     if (isPlaying && followingRef.current && pin) {
       focusAnimatingUntil.current = performance.now() + FOCUS_DURATION_MS;
-      m.easeTo({ center: pin, zoom: FOLLOW_ZOOM, duration: FOCUS_DURATION_MS });
+      m.easeTo({ center: pin, ...followCamera(), duration: FOCUS_DURATION_MS });
       return;
     }
     const route = new mapboxgl.LngLatBounds();
     coordinatesRef.current.forEach((coord) => route.extend(coord));
-    if (!route.isEmpty()) m.fitBounds(route, { padding: 50, duration: 600 });
+    if (!route.isEmpty()) m.fitBounds(route, { padding: 50, duration: 600, pitch: is3DRef.current ? TERRAIN_PITCH : 0 });
     // Only a change of hovered clip should move the camera.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapReady, previewSegmentId]);
 
   // Zoom in on the pin and start following it when asked (when a clip starts playing).
   useEffect(() => {
-    const m = map.current;
-    if (!m || !mapReady || !focusSegment) return;
+    const m = loadedMap();
+    if (!m || !focusSegment) return;
     const segment = clipSegments?.find((s) => s.id === focusSegment.id);
     const center = getPlayheadPositionRef.current?.() ?? segment?.coordinates[0];
     if (!center) return;
     setFollowing(true);
     focusAnimatingUntil.current = performance.now() + FOCUS_DURATION_MS;
-    m.easeTo({ center, zoom: Math.max(m.getZoom(), FOLLOW_ZOOM), duration: FOCUS_DURATION_MS });
+    m.easeTo({ center, ...followCamera(), duration: FOCUS_DURATION_MS });
     // Only a new request should move the map, not every segment refresh.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapReady, focusSegment?.nonce]);
 
+  // Snap back to the follow-cam's zoomed-in view of the pin.
   const resumeFollowing = () => {
     const m = map.current;
     const center = getPlayheadPositionRef.current?.();
     setFollowing(true);
     if (!m || !center) return;
     focusAnimatingUntil.current = performance.now() + FOCUS_DURATION_MS;
-    m.easeTo({ center, zoom: Math.max(m.getZoom(), FOLLOW_ZOOM), duration: FOCUS_DURATION_MS });
+    m.easeTo({ center, ...followCamera(), duration: FOCUS_DURATION_MS });
+  };
+
+  // 3D terrain, for maps that show the terrain controls.
+  useEffect(() => {
+    const m = loadedMap();
+    if (!m || !showTerrainControls) return;
+    applyTerrain(m, { is3D, exaggerate: exaggerateTerrain });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapReady, showTerrainControls, is3D, exaggerateTerrain]);
+
+  const toggle3D = () => {
+    const next = !is3D;
+    setIs3D(next);
+    const m = loadedMap();
+    if (!m) return;
+    focusAnimatingUntil.current = performance.now() + FOCUS_DURATION_MS;
+    m.easeTo(next ? { pitch: TERRAIN_PITCH, duration: FOCUS_DURATION_MS } : { pitch: 0, bearing: 0, duration: FOCUS_DURATION_MS });
   };
 
   // Playhead pin: where the video is on the route. Updated every frame while
   // playing, with the map centered on it. Dragging the pin scrubs the video.
   useEffect(() => {
-    const m = map.current;
-    if (!m || !mapReady) return;
+    const m = loadedMap();
+    if (!m) return;
 
     const place = (follow: boolean) => {
       // The user's hand is on the pin; let it go where they put it.
@@ -744,15 +781,24 @@ export default function MapboxMap({
     <div className={`relative ${className}`}>
       {/* Inline position: mapbox's own .mapboxgl-map class sets position: relative. */}
       <div ref={mapContainer} className="bg-gray-100" style={{ position: 'absolute', inset: 0 }} data-testid="mapbox-map" />
-      {!following && isPlaying && (
+      {!following && getPlayheadPosition?.() && (
         <button
           type="button"
           onClick={resumeFollowing}
           className="absolute bottom-8 left-1/2 -translate-x-1/2 meta-mono bg-background/95 text-foreground border border-border rounded px-3 py-1.5 shadow hover:bg-background"
-          data-testid="button-follow-pin"
+          data-testid="button-recenter-pin"
         >
-          Follow pin
+          ⌖ Recenter on pin
         </button>
+      )}
+      {showTerrainControls && (
+        <MapTerrainControls
+          className="absolute top-3 left-3 z-10"
+          is3D={is3D}
+          exaggerate={exaggerateTerrain}
+          onToggle3D={toggle3D}
+          onToggleExaggerate={() => setExaggerateTerrain((on) => !on)}
+        />
       )}
     </div>
   );

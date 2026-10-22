@@ -130,8 +130,9 @@ export default function TrailcamStudio() {
           }
           return (await response.json()) as TrailcamProject;
         })
-        .then((project) => {
-          setSelectedProject((current) => (current?.id === project.id ? project : current));
+        .then(() => {
+          // The offset already lives in this page's state. Swapping in the
+          // returned project would hand the map a new gpxData and rebuild it.
           queryClient.invalidateQueries({ queryKey: ["/api/trailcam-projects"] });
         })
         .catch((error: unknown) => {
@@ -523,6 +524,7 @@ export default function TrailcamStudio() {
             >
               <MapboxMap
                 gpxData={selectedProject.gpxData}
+                showTerrainControls
                 clipMarkers={clipMarkers}
                 clipSegments={clipSegments}
                 selectedSegmentId={selectedClip?.id ?? null}
