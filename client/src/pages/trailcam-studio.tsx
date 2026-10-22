@@ -18,7 +18,7 @@ import { NewProjectModal } from "@/components/new-project-modal";
 import { ChunkedVideoUploader } from "@/components/chunked-video-uploader";
 import { ClipEditPopover } from "@/components/clip-edit-popover";
 import MapboxMap, { ClipMarker, ClipSegment } from "@/components/mapbox-map";
-import { nearestTrackOffset, trackPositionAt, trackSegmentBetween, type CompactTimedTrack } from "@shared/gpx-utils";
+import { nearestTrackOffset, trackBearingAt, trackPositionAt, trackSegmentBetween, type CompactTimedTrack } from "@shared/gpx-utils";
 import type { TrailcamProject, VideoClip, InsertVideoClip } from "@shared/schema";
 import { ApiError, apiRequest } from "@/lib/queryClient";
 
@@ -291,6 +291,12 @@ export default function TrailcamStudio() {
     return trackPositionAt(timedTrack, selectedClip.startTime + syncOffset + videoTime);
   };
 
+  const getPlayheadBearing = (): number | null => {
+    if (!selectedClip || selectedClip.processingStatus !== "ready") return null;
+    const videoTime = videoRef.current?.currentTime ?? currentTime;
+    return trackBearingAt(timedTrack, selectedClip.startTime + syncOffset + videoTime);
+  };
+
   // Dragging the pin. Normally it scrubs: the video jumps to the moment the
   // pin's spot on the route was ridden. In calibrate mode the video holds
   // still and the drag sets the sync offset instead.
@@ -535,6 +541,7 @@ export default function TrailcamStudio() {
                 }}
                 focusSegment={mapFocus}
                 getPlayheadPosition={getPlayheadPosition}
+                getPlayheadBearing={getPlayheadBearing}
                 isPlaying={isPlaying}
                 onPlayheadDragStart={handlePlayheadDragStart}
                 onPlayheadDrag={handlePlayheadDrag}
@@ -576,10 +583,8 @@ export default function TrailcamStudio() {
                     onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
                     onPlay={() => {
                       setIsPlaying(true);
-                      // Zoom once per clip, so resuming after a pause keeps the user's view.
-                      setMapFocus((prev) =>
-                        prev?.id === selectedClip.id ? prev : { id: selectedClip.id, nonce: Date.now() },
-                      );
+                      // Every play goes back to the chase view behind the pin.
+                      setMapFocus({ id: selectedClip.id, nonce: Date.now() });
                     }}
                     onPause={() => setIsPlaying(false)}
                     onEnded={() => setIsPlaying(false)}

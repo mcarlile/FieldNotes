@@ -45,6 +45,8 @@ interface MapboxMapProps {
   focusSegment?: { id: string; nonce: number } | null;
   /** Where the video is on the route right now, as [longitude, latitude]. */
   getPlayheadPosition?: () => [number, number] | null;
+  /** Direction of travel at the playhead, in degrees from north; the chase-cam faces it. */
+  getPlayheadBearing?: () => number | null;
   /** While true, the playhead pin is updated every frame and the map follows it. */
   isPlaying?: boolean;
   /** Dragging the playhead pin: called on grab, on every move, and on release. */
@@ -59,6 +61,10 @@ interface MapboxMapProps {
 // How close the follow-cam sits, and how long the zoom-in on play takes.
 const FOLLOW_ZOOM = 16;
 const FOCUS_DURATION_MS = 1000;
+// The 3D chase-cam when a clip plays: close in, tilted low behind the pin.
+const CHASE_ZOOM = 16.5;
+const CHASE_PITCH = 65;
+const CHASE_DURATION_MS = 1400;
 
 export default function MapboxMap({ 
   gpxData, 
@@ -72,6 +78,7 @@ export default function MapboxMap({
   onClipSegmentClick,
   focusSegment,
   getPlayheadPosition,
+  getPlayheadBearing,
   isPlaying,
   onPlayheadDragStart,
   onPlayheadDrag,
@@ -101,10 +108,14 @@ export default function MapboxMap({
   useEffect(() => { onClipSegmentClickRef.current = onClipSegmentClick; }, [onClipSegmentClick]);
   const getPlayheadPositionRef = useRef(getPlayheadPosition);
   getPlayheadPositionRef.current = getPlayheadPosition;
+  const getPlayheadBearingRef = useRef(getPlayheadBearing);
+  getPlayheadBearingRef.current = getPlayheadBearing;
   const playheadDragRef = useRef({ start: onPlayheadDragStart, move: onPlayheadDrag, end: onPlayheadDragEnd });
   playheadDragRef.current = { start: onPlayheadDragStart, move: onPlayheadDrag, end: onPlayheadDragEnd };
   const draggingPlayhead = useRef(false);
   // Follow-cam: keep the map centered on the pin until the user pans away.
+  // Zooming or tilting keeps it tracking; turning the map stops the camera
+  // from swinging to face the direction of travel until the next play.
   const [following, setFollowing] = useState(true);
   const followingRef = useRef(true);
   followingRef.current = following;
@@ -114,8 +125,16 @@ export default function MapboxMap({
   const [exaggerateTerrain, setExaggerateTerrain] = useState(true);
   const is3DRef = useRef(false);
   is3DRef.current = is3D;
-  // The follow-cam's view: zoomed in, and tilted when the map is in 3D.
-  const followCamera = () => (is3DRef.current ? { zoom: FOLLOW_ZOOM, pitch: TERRAIN_PITCH } : { zoom: FOLLOW_ZOOM, pitch: 0 });
+  const autoBearingRef = useRef(true);
+  // True while the user's hand is on the camera (zooming, tilting, turning).
+  const userGestureRef = useRef(false);
+  // The follow-cam's view: in 3D, close behind the pin facing the way the
+  // ride goes; in 2D, zoomed in and north-up.
+  const followCamera = () => {
+    if (!is3DRef.current) return { zoom: FOLLOW_ZOOM, pitch: 0, bearing: 0 };
+    const bearing = getPlayheadBearingRef.current?.();
+    return { zoom: CHASE_ZOOM, pitch: CHASE_PITCH, ...(bearing != null ? { bearing } : {}) };
+  };
   // True while a hovered clip is being previewed; the follow-cam stands aside.
   const previewingRef = useRef(false);
 
@@ -293,12 +312,25 @@ export default function MapboxMap({
           });
         }
       }
-      // Only the user's own pan, zoom or tilt carries an originalEvent; our
-      // jumpTo/easeTo calls don't. Any of them hands the camera to the user.
-      const userMoved = (e: any) => {
+      // Only the user's own gestures carry an originalEvent; our jumpTo and
+      // easeTo calls don't. Panning hands the camera to the user; zooming and
+      // tilting keep tracking the pin, and turning the map keeps their heading.
+      const m = map.current;
+      m.on('dragstart', (e: any) => {
         if (e.originalEvent) setFollowing(false);
-      };
-      ['dragstart', 'zoomstart', 'rotatestart', 'pitchstart'].forEach((type) => map.current?.on(type as any, userMoved));
+      });
+      m.on('rotatestart', (e: any) => {
+        if (e.originalEvent) autoBearingRef.current = false;
+      });
+      (['zoomstart', 'pitchstart', 'rotatestart'] as const).forEach((type) =>
+        m.on(type, (e: any) => {
+          if (e.originalEvent) userGestureRef.current = true;
+        }),
+      );
+      // The follow-cam waits for the gesture to finish, so it doesn't cut it off.
+      m.on('moveend', () => {
+        userGestureRef.current = false;
+      });
       loadedMapRef.current = map.current;
       setMapReady(true);
     });
@@ -497,8 +529,14 @@ export default function MapboxMap({
     const center = getPlayheadPositionRef.current?.() ?? segment?.coordinates[0];
     if (!center) return;
     setFollowing(true);
-    focusAnimatingUntil.current = performance.now() + FOCUS_DURATION_MS;
-    m.easeTo({ center, ...followCamera(), duration: FOCUS_DURATION_MS });
+    autoBearingRef.current = true;
+    // Playing always goes to the 3D chase view where the map offers 3D.
+    if (showTerrainControls) {
+      is3DRef.current = true;
+      setIs3D(true);
+    }
+    focusAnimatingUntil.current = performance.now() + CHASE_DURATION_MS;
+    m.easeTo({ center, ...followCamera(), duration: CHASE_DURATION_MS });
     // Only a new request should move the map, not every segment refresh.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapReady, focusSegment?.nonce]);
@@ -508,6 +546,7 @@ export default function MapboxMap({
     const m = map.current;
     const center = getPlayheadPositionRef.current?.();
     setFollowing(true);
+    autoBearingRef.current = true;
     if (!m || !center) return;
     focusAnimatingUntil.current = performance.now() + FOCUS_DURATION_MS;
     m.easeTo({ center, ...followCamera(), duration: FOCUS_DURATION_MS });
@@ -578,8 +617,23 @@ export default function MapboxMap({
       } else {
         playheadMarker.current.setLngLat(position);
       }
-      if (follow && followingRef.current && !previewingRef.current && performance.now() > focusAnimatingUntil.current) {
-        m.jumpTo({ center: position });
+      if (
+        follow &&
+        followingRef.current &&
+        !previewingRef.current &&
+        !userGestureRef.current &&
+        performance.now() > focusAnimatingUntil.current
+      ) {
+        const target = is3DRef.current && autoBearingRef.current ? getPlayheadBearingRef.current?.() : null;
+        if (target == null) {
+          m.jumpTo({ center: position });
+        } else {
+          // Ease the heading round a little each frame, the short way, so
+          // switchbacks turn the camera smoothly instead of snapping it.
+          const current = m.getBearing();
+          const diff = ((target - current + 540) % 360) - 180;
+          m.jumpTo({ center: position, bearing: current + diff * 0.06 });
+        }
       }
     };
 

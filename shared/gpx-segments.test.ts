@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { nearestTrackOffset, trackPositionAt, trackSegmentBetween, type CompactTimedTrack } from "./gpx-utils";
+import { nearestTrackOffset, trackBearingAt, trackPositionAt, trackSegmentBetween, type CompactTimedTrack } from "./gpx-utils";
 
 const track: CompactTimedTrack = {
   startTime: "2026-10-17T18:58:27.067Z",
@@ -38,4 +38,13 @@ test("nearestTrackOffset turns a nearby map position back into a route time", ()
   // The window clamps the answer.
   assert.equal(nearestTrackOffset(track, [-120.3, 39.3], 0, 18), 18);
   assert.equal(nearestTrackOffset(null, [-120, 39], 0, 30), null);
+});
+
+test("trackBearingAt gives the direction of travel", () => {
+  const north: CompactTimedTrack = { startTime: track.startTime, durationSeconds: 20, points: [[0, 39.0, -120.0], [20, 39.01, -120.0]] };
+  const east: CompactTimedTrack = { startTime: track.startTime, durationSeconds: 20, points: [[0, 39.0, -120.0], [20, 39.0, -119.99]] };
+  assert.ok(Math.abs(trackBearingAt(north, 10)!) < 0.5 || Math.abs(trackBearingAt(north, 10)! - 360) < 0.5);
+  assert.ok(Math.abs(trackBearingAt(east, 10)! - 90) < 0.5);
+  const stopped: CompactTimedTrack = { startTime: track.startTime, durationSeconds: 20, points: [[0, 39.0, -120.0], [20, 39.0, -120.0]] };
+  assert.equal(trackBearingAt(stopped, 10), null);
 });

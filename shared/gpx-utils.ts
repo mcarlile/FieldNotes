@@ -539,3 +539,26 @@ export function nearestTrackOffset(
   if (points.length === 1) consider(points[0], points[0]);
   return bestOffset === null ? null : Math.max(minSeconds, Math.min(maxSeconds, bestOffset));
 }
+
+/**
+ * Direction of travel (degrees clockwise from north) around `offsetSeconds`,
+ * measured across a few seconds so GPS jitter doesn't swing it about. Null
+ * when the rider is stopped or there's no timed track.
+ */
+export function trackBearingAt(
+  track: CompactTimedTrack | null | undefined,
+  offsetSeconds: number,
+  spanSeconds = 6,
+): number | null {
+  const from = trackPositionAt(track, offsetSeconds - spanSeconds / 3);
+  const to = trackPositionAt(track, offsetSeconds + (spanSeconds * 2) / 3);
+  if (!from || !to) return null;
+  const toRad = Math.PI / 180;
+  const [lng1, lat1] = [from[0] * toRad, from[1] * toRad];
+  const [lng2, lat2] = [to[0] * toRad, to[1] * toRad];
+  const y = Math.sin(lng2 - lng1) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(lng2 - lng1);
+  // Under about a metre of movement the direction is noise.
+  if (Math.abs(x) < 1.5e-7 && Math.abs(y) < 1.5e-7) return null;
+  return ((Math.atan2(y, x) / toRad) + 360) % 360;
+}
