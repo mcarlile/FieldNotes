@@ -37,6 +37,8 @@ interface MapboxMapProps {
   /** Route stretches covered by video clips, drawn over the track. */
   clipSegments?: ClipSegment[];
   selectedSegmentId?: string | null;
+  /** While set, the map fits this clip's segment and hides the others; when cleared it zooms back out. */
+  previewSegmentId?: string | null;
   onClipSegmentClick?: (clipId: string) => void;
   /** Zooms in on the playhead and starts following it whenever `nonce` changes. */
   focusSegment?: { id: string; nonce: number } | null;
@@ -63,6 +65,7 @@ export default function MapboxMap({
   onPhotoMarkerClick,
   clipSegments,
   selectedSegmentId,
+  previewSegmentId,
   onClipSegmentClick,
   focusSegment,
   getPlayheadPosition,
@@ -98,6 +101,8 @@ export default function MapboxMap({
   followingRef.current = following;
   // While the zoom-in animation runs, the follow-cam leaves the camera alone.
   const focusAnimatingUntil = useRef(0);
+  // True while a hovered clip is being previewed; the follow-cam stands aside.
+  const previewingRef = useRef(false);
 
   // Initialize map and add GPX track
   useEffect(() => {
@@ -360,15 +365,20 @@ export default function MapboxMap({
             title: segment.title,
             subtitle: segment.subtitle ?? '',
             color: segment.color,
-            selected: segment.id === selectedSegmentId,
+            selected: segment.id === selectedSegmentId || segment.id === previewSegmentId,
+            preview: segment.id === previewSegmentId,
           },
           geometry: { type: 'LineString' as const, coordinates: segment.coordinates },
         })),
     };
 
+    // A previewed clip is drawn alone.
+    const filter = previewSegmentId ? ['==', ['get', 'id'], previewSegmentId] : null;
     const source = m.getSource('clip-segments') as mapboxgl.GeoJSONSource | undefined;
     if (source) {
       source.setData(data);
+      m.setFilter('clip-segments-casing', filter as any);
+      m.setFilter('clip-segments-line', filter as any);
       return;
     }
 
@@ -380,7 +390,7 @@ export default function MapboxMap({
       layout: { 'line-join': 'round', 'line-cap': 'round' },
       paint: {
         'line-color': '#ffffff',
-        'line-width': ['case', ['get', 'selected'], 11, 8],
+        'line-width': ['case', ['get', 'preview'], 15, ['get', 'selected'], 11, 8],
         'line-opacity': 0.9,
       },
     });
@@ -391,7 +401,7 @@ export default function MapboxMap({
       layout: { 'line-join': 'round', 'line-cap': 'round' },
       paint: {
         'line-color': ['get', 'color'],
-        'line-width': ['case', ['get', 'selected'], 8, 5],
+        'line-width': ['case', ['get', 'preview'], 10, ['get', 'selected'], 8, 5],
       },
     });
 
@@ -421,11 +431,44 @@ export default function MapboxMap({
       const id = e.features?.[0]?.properties?.id;
       if (id) onClipSegmentClickRef.current?.(String(id));
     };
+    if (filter) {
+      m.setFilter('clip-segments-casing', filter as any);
+      m.setFilter('clip-segments-line', filter as any);
+    }
     m.on('mousemove', 'clip-segments-line', onMove);
     m.on('mouseleave', 'clip-segments-line', onLeave);
     m.on('click', 'clip-segments-line', onClick);
     // Listeners and layers go away with the map itself (see the init effect).
-  }, [mapReady, clipSegments, selectedSegmentId]);
+  }, [mapReady, clipSegments, selectedSegmentId, previewSegmentId]);
+
+  // Hovering a clip fits its whole stretch in view; letting go returns to the
+  // full route, or to the pin if a clip is playing and being followed.
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !mapReady) return;
+    if (previewSegmentId) {
+      const segment = clipSegments?.find((s) => s.id === previewSegmentId);
+      if (!segment || segment.coordinates.length === 0) return;
+      previewingRef.current = true;
+      const bounds = new mapboxgl.LngLatBounds();
+      segment.coordinates.forEach((coord) => bounds.extend(coord));
+      m.fitBounds(bounds, { padding: 60, maxZoom: 17, duration: 600 });
+      return;
+    }
+    if (!previewingRef.current) return;
+    previewingRef.current = false;
+    const pin = getPlayheadPositionRef.current?.();
+    if (isPlaying && followingRef.current && pin) {
+      focusAnimatingUntil.current = performance.now() + FOCUS_DURATION_MS;
+      m.easeTo({ center: pin, zoom: FOLLOW_ZOOM, duration: FOCUS_DURATION_MS });
+      return;
+    }
+    const route = new mapboxgl.LngLatBounds();
+    coordinatesRef.current.forEach((coord) => route.extend(coord));
+    if (!route.isEmpty()) m.fitBounds(route, { padding: 50, duration: 600 });
+    // Only a change of hovered clip should move the camera.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapReady, previewSegmentId]);
 
   // Zoom in on the pin and start following it when asked (when a clip starts playing).
   useEffect(() => {
@@ -498,7 +541,7 @@ export default function MapboxMap({
       } else {
         playheadMarker.current.setLngLat(position);
       }
-      if (follow && followingRef.current && performance.now() > focusAnimatingUntil.current) {
+      if (follow && followingRef.current && !previewingRef.current && performance.now() > focusAnimatingUntil.current) {
         m.jumpTo({ center: position });
       }
     };
