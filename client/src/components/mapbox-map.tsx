@@ -3,6 +3,7 @@ import mapboxgl from "mapbox-gl";
 import { initMapbox } from "@/lib/mapbox";
 import { MapTerrainControls, TERRAIN_PITCH, applyTerrain } from "@/components/map-terrain-controls";
 import { parseGpxData } from "@shared/gpx-utils";
+import { MAP_STYLES, applyMapStyleExtras, getMapStyle, loadSavedMapStyleId, saveMapStyleId } from "@/lib/map-styles";
 import type { ElevationPoint } from "@shared/gpx-utils";
 
 export interface ClipMarker {
@@ -137,6 +138,43 @@ export default function MapboxMap({
   };
   // True while a hovered clip is being previewed; the follow-cam stands aside.
   const previewingRef = useRef(false);
+  // The base layer from the "Map layer" dropdown, remembered per browser.
+  const [mapStyleId, setMapStyleId] = useState(loadSavedMapStyleId);
+  const mapStyleIdRef = useRef(mapStyleId);
+  // The focus request already acted on, so a style change doesn't replay it.
+  const handledFocusRef = useRef<{ map: mapboxgl.Map; nonce: number } | null>(null);
+  // The clip-segment hover/click listeners on the current map, so a style
+  // change that re-adds the layers doesn't register them twice.
+  const segmentListenersRef = useRef<{ map: mapboxgl.Map; off: () => void } | null>(null);
+
+  // The route line. A style change wipes it, so it is re-added after one.
+  const addTrackLayer = (m: mapboxgl.Map) => {
+    if (coordinatesRef.current.length === 0 || m.getSource('gpx-track')) return;
+    m.addSource('gpx-track', {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: [{
+          type: 'Feature',
+          properties: {},
+          geometry: { type: 'LineString', coordinates: coordinatesRef.current },
+        }],
+      },
+    });
+    m.addLayer({
+      id: 'gpx-track-line',
+      type: 'line',
+      source: 'gpx-track',
+      layout: {
+        'line-join': 'round',
+        'line-cap': 'round',
+      },
+      paint: {
+        'line-color': '#0f62fe',
+        'line-width': 3,
+      },
+    });
+  };
 
   // Initialize map and add GPX track
   useEffect(() => {
@@ -173,9 +211,7 @@ export default function MapboxMap({
     }
 
     // Store coordinates for elevation marker positioning
-    if (parsedGpxData && parsedGpxData.coordinates) {
-      coordinatesRef.current = parsedGpxData.coordinates;
-    }
+    coordinatesRef.current = parsedGpxData?.coordinates ?? [];
 
     // Calculate initial center and zoom from GPX data
     let initialCenter: [number, number] = [-74.006, 40.7128];
@@ -209,7 +245,7 @@ export default function MapboxMap({
     try {
       map.current = new mapboxgl.Map({
         container: mapContainer.current,
-        style: 'mapbox://styles/mapbox/outdoors-v12',
+        style: getMapStyle(mapStyleIdRef.current).url,
         center: initialCenter,
         zoom: initialZoom,
       });
@@ -220,42 +256,16 @@ export default function MapboxMap({
     }
 
     map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+    // Every style load, the first one included, gets its config and snow.
+    const styledMap = map.current;
+    styledMap.on('style.load', () => applyMapStyleExtras(styledMap, getMapStyle(mapStyleIdRef.current)));
 
     map.current.on('load', () => {
       if (!map.current) return;
 
       // Add GPX track if available
       if (parsedGpxData && parsedGpxData.coordinates && parsedGpxData.coordinates.length > 0) {
-        const geojsonData = {
-          type: 'FeatureCollection' as const,
-          features: [{
-            type: 'Feature' as const,
-            properties: {},
-            geometry: {
-              type: 'LineString' as const,
-              coordinates: parsedGpxData.coordinates
-            }
-          }]
-        };
-
-        map.current.addSource('gpx-track', {
-          type: 'geojson',
-          data: geojsonData,
-        });
-
-        map.current.addLayer({
-          id: 'gpx-track-line',
-          type: 'line',
-          source: 'gpx-track',
-          layout: {
-            'line-join': 'round',
-            'line-cap': 'round',
-          },
-          paint: {
-            'line-color': '#0f62fe',
-            'line-width': 3,
-          },
-        });
+        addTrackLayer(map.current);
 
         // Create elevation position marker with smooth animations
         const elevationEl = document.createElement('div');
@@ -337,6 +347,7 @@ export default function MapboxMap({
 
     return () => {
       loadedMapRef.current = null;
+      segmentListenersRef.current = null;
       setMapReady(false);
       playheadMarker.current?.remove();
       playheadMarker.current = null;
@@ -486,9 +497,19 @@ export default function MapboxMap({
       m.setFilter('clip-segments-casing', filter as any);
       m.setFilter('clip-segments-line', filter as any);
     }
+    if (segmentListenersRef.current?.map === m) segmentListenersRef.current.off();
     m.on('mousemove', 'clip-segments-line', onMove);
     m.on('mouseleave', 'clip-segments-line', onLeave);
     m.on('click', 'clip-segments-line', onClick);
+    segmentListenersRef.current = {
+      map: m,
+      off: () => {
+        popup.remove();
+        m.off('mousemove', 'clip-segments-line', onMove);
+        m.off('mouseleave', 'clip-segments-line', onLeave);
+        m.off('click', 'clip-segments-line', onClick);
+      },
+    };
     // Listeners and layers go away with the map itself (see the init effect).
   }, [mapReady, clipSegments, selectedSegmentId, previewSegmentId]);
 
@@ -525,6 +546,9 @@ export default function MapboxMap({
   useEffect(() => {
     const m = loadedMap();
     if (!m || !focusSegment) return;
+    // A style change re-runs this; only a new request should move the map.
+    if (handledFocusRef.current?.map === m && handledFocusRef.current.nonce === focusSegment.nonce) return;
+    handledFocusRef.current = { map: m, nonce: focusSegment.nonce };
     const segment = clipSegments?.find((s) => s.id === focusSegment.id);
     const center = getPlayheadPositionRef.current?.() ?? segment?.coordinates[0];
     if (!center) return;
@@ -550,6 +574,32 @@ export default function MapboxMap({
     if (!m || !center) return;
     focusAnimatingUntil.current = performance.now() + FOCUS_DURATION_MS;
     m.easeTo({ center, ...followCamera(), duration: FOCUS_DURATION_MS });
+  };
+
+  // Swap the base layer. setStyle drops our own sources and layers, so the
+  // map counts as not ready until the new style loads and the track is back;
+  // the effects keyed on mapReady then re-add segments and terrain. DOM
+  // markers (pins, photos, clip ends) aren't part of the style and stay put.
+  const changeMapStyle = (id: string) => {
+    const style = getMapStyle(id);
+    if (style.id === mapStyleIdRef.current) return;
+    mapStyleIdRef.current = style.id;
+    setMapStyleId(style.id);
+    saveMapStyleId(style.id);
+    const m = loadedMap();
+    if (!m) return; // Still loading: the first style.load picks up the new choice.
+    loadedMapRef.current = null;
+    setMapReady(false);
+    const camera = { center: m.getCenter(), zoom: m.getZoom(), pitch: m.getPitch(), bearing: m.getBearing() };
+    m.once('style.load', () => {
+      if (map.current !== m) return;
+      m.jumpTo(camera);
+      addTrackLayer(m);
+      loadedMapRef.current = m;
+      setMapReady(true);
+    });
+    // diff: false forces a full reload, so style.load always fires.
+    m.setStyle(style.url, { diff: false } as any);
   };
 
   // 3D terrain, for maps that show the terrain controls.
@@ -845,15 +895,29 @@ export default function MapboxMap({
           ⌖ Recenter on pin
         </button>
       )}
-      {showTerrainControls && (
-        <MapTerrainControls
-          className="absolute top-3 left-3 z-10"
-          is3D={is3D}
-          exaggerate={exaggerateTerrain}
-          onToggle3D={toggle3D}
-          onToggleExaggerate={() => setExaggerateTerrain((on) => !on)}
-        />
-      )}
+      <div className="absolute top-3 left-3 z-10 flex flex-col items-start gap-2">
+        {showTerrainControls && (
+          <MapTerrainControls
+            is3D={is3D}
+            exaggerate={exaggerateTerrain}
+            onToggle3D={toggle3D}
+            onToggleExaggerate={() => setExaggerateTerrain((on) => !on)}
+          />
+        )}
+        <label className="bg-card border border-border rounded-lg px-3 py-2 shadow-lg flex items-center gap-2 text-sm text-foreground">
+          <span className="font-medium">Map layer</span>
+          <select
+            value={mapStyleId}
+            onChange={(e) => changeMapStyle(e.target.value)}
+            className="bg-background border border-border rounded px-1.5 py-0.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+            data-testid="select-map-style"
+          >
+            {MAP_STYLES.map((style) => (
+              <option key={style.id} value={style.id}>{style.name}</option>
+            ))}
+          </select>
+        </label>
+      </div>
     </div>
   );
 }

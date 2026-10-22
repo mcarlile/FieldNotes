@@ -5,6 +5,7 @@ import { useTheme } from "@/contexts/theme-context";
 import type { FieldNote } from "@shared/schema";
 import { parseGpxData } from "@shared/gpx-utils";
 import { MapTerrainControls, TERRAIN_PITCH, applyTerrain } from "@/components/map-terrain-controls";
+import { applyMapStyleExtras, getMapStyle } from "@/lib/map-styles";
 
 interface HeatMapViewProps {
   fieldNotes: FieldNote[];
@@ -43,6 +44,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
   const mapStyles = [
     { id: "streets-v12", name: "Streets", description: "Classic street map" },
     { id: "outdoors-v11", name: "Outdoors", description: "Terrain and outdoor features" },
+    { id: "winter", name: "Winter", description: "Snowy monochrome map with falling snow" },
     { id: "light-v11", name: "Light", description: "Clean, minimal style" },
     { id: "dark-v11", name: "Dark", description: "Dark theme style" },
     { id: "satellite-v9", name: "Satellite", description: "Satellite imagery" },
@@ -65,11 +67,15 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     // Temporarily set mapLoaded to false to force re-render
     setMapLoaded(false);
     
-    map.current.setStyle(`mapbox://styles/mapbox/${styleId}`);
+    const winter = getMapStyle("winter");
+    const style = styleId === winter.id ? winter : { id: styleId, name: styleId, url: `mapbox://styles/mapbox/${styleId}` };
+    map.current.setStyle(style.url);
     
     // Re-apply 3D mode and heat map layers after style loads
     map.current.once('style.load', () => {
       if (!map.current) return;
+      // Winter's config and snow, or clearing the snow when leaving it.
+      applyMapStyleExtras(map.current, style);
       
       if (is3DMode && map.current) {
         applyTerrain(map.current, { is3D: true, exaggerate: exaggerateTerrain });
