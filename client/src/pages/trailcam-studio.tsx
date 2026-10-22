@@ -20,7 +20,7 @@ import { ClipEditPopover } from "@/components/clip-edit-popover";
 import MapboxMap, { ClipMarker, ClipSegment } from "@/components/mapbox-map";
 import { nearestTrackOffset, trackPositionAt, trackSegmentBetween, type CompactTimedTrack } from "@shared/gpx-utils";
 import type { TrailcamProject, VideoClip, InsertVideoClip } from "@shared/schema";
-import { apiRequest } from "@/lib/queryClient";
+import { ApiError, apiRequest } from "@/lib/queryClient";
 
 type StudioClip = VideoClip & { processingActive?: boolean };
 
@@ -63,6 +63,18 @@ export default function TrailcamStudio() {
   const [calibrating, setCalibrating] = useState(false);
   const saveSyncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resumeAfterDrag = useRef(false);
+  // The clip under the pointer in the library or timeline. The map zooms to
+  // it and hides the rest. Small delays keep a quick sweep across the cards
+  // from bouncing the map around.
+  const [hoveredClipId, setHoveredClipId] = useState<string | null>(null);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hoverClip = (clipId: string | null) => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    hoverTimer.current = setTimeout(() => setHoveredClipId(clipId), clipId ? 120 : 200);
+  };
+  useEffect(() => () => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+  }, []);
 
   const { data: projects = [], isLoading: projectsLoading } = useQuery<TrailcamProject[]>({
     queryKey: ["/api/trailcam-projects"],
@@ -110,14 +122,27 @@ export default function TrailcamStudio() {
     if (saveSyncTimer.current) clearTimeout(saveSyncTimer.current);
     saveSyncTimer.current = setTimeout(() => {
       apiRequest(`/api/trailcam-projects/${projectId}/sync-offset`, "PUT", { syncOffsetSeconds: rounded })
-        .then((response) => response.json())
-        .then((project: TrailcamProject) => {
+        .then(async (response) => {
+          // A server still running older code answers this route with the app's
+          // HTML page instead of JSON.
+          if (!response.headers.get("content-type")?.includes("application/json")) {
+            throw new Error("The server hasn't picked up this feature yet. Restart or republish it.");
+          }
+          return (await response.json()) as TrailcamProject;
+        })
+        .then((project) => {
           setSelectedProject((current) => (current?.id === project.id ? project : current));
           queryClient.invalidateQueries({ queryKey: ["/api/trailcam-projects"] });
         })
-        .catch(() =>
-          toast({ title: "Error", description: "Couldn't save the sync offset", variant: "destructive" }),
-        );
+        .catch((error: unknown) => {
+          const reason =
+            error instanceof ApiError
+              ? `${error.status}: ${(error.data as { message?: string } | null)?.message ?? "request failed"}`
+              : error instanceof Error
+                ? error.message
+                : "request failed";
+          toast({ title: "Couldn't save the sync offset", description: reason, variant: "destructive" });
+        });
     }, 600);
   };
 
@@ -216,27 +241,6 @@ export default function TrailcamStudio() {
       ? clip.color
       : clipColors[index % clipColors.length];
 
-  const clipMarkers: ClipMarker[] = selectedClip
-    ? (() => {
-        const markers: ClipMarker[] = [];
-        const clipIndex = clips.findIndex((c) => c.id === selectedClip.id);
-        const color = clipColor(selectedClip, Math.max(clipIndex, 0));
-        if (selectedClip.startLatitude != null && selectedClip.startLongitude != null) {
-          markers.push({
-            id: selectedClip.id, type: "start",
-            latitude: selectedClip.startLatitude, longitude: selectedClip.startLongitude, color,
-          });
-        }
-        if (selectedClip.endLatitude != null && selectedClip.endLongitude != null) {
-          markers.push({
-            id: selectedClip.id, type: "end",
-            latitude: selectedClip.endLatitude, longitude: selectedClip.endLongitude, color,
-          });
-        }
-        return markers;
-      })()
-    : [];
-
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
@@ -257,6 +261,26 @@ export default function TrailcamStudio() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [clips, timedTrack, syncOffset],
   );
+
+  // Start and end pins for the hovered clip, or else the selected one. Taken
+  // from the drawn segment so they sit on its ends, sync offset included.
+  const markerClip = clips.find((clip) => clip.id === hoveredClipId) ?? selectedClip;
+  const clipMarkers: ClipMarker[] = (() => {
+    if (!markerClip) return [];
+    const index = Math.max(clips.findIndex((clip) => clip.id === markerClip.id), 0);
+    const color = clipColor(markerClip, index);
+    const coordinates = clipSegments.find((segment) => segment.id === markerClip.id)?.coordinates ?? [];
+    const start = coordinates[0] ??
+      (markerClip.startLongitude != null && markerClip.startLatitude != null
+        ? [markerClip.startLongitude, markerClip.startLatitude] : null);
+    const end = coordinates[coordinates.length - 1] ??
+      (markerClip.endLongitude != null && markerClip.endLatitude != null
+        ? [markerClip.endLongitude, markerClip.endLatitude] : null);
+    const markers: ClipMarker[] = [];
+    if (start) markers.push({ id: markerClip.id, type: "start", longitude: start[0], latitude: start[1], color });
+    if (end) markers.push({ id: markerClip.id, type: "end", longitude: end[0], latitude: end[1], color });
+    return markers;
+  })();
 
   // Route position of the video's current frame: the clip's start on the
   // route, plus the sync offset, plus how far into the clip the player is.
@@ -502,6 +526,7 @@ export default function TrailcamStudio() {
                 clipMarkers={clipMarkers}
                 clipSegments={clipSegments}
                 selectedSegmentId={selectedClip?.id ?? null}
+                previewSegmentId={hoveredClipId}
                 onClipSegmentClick={(clipId) => {
                   const clip = clips.find((c) => c.id === clipId);
                   if (clip) playClip(clip);
@@ -695,6 +720,8 @@ export default function TrailcamStudio() {
                         className="absolute top-1 h-10 rounded cursor-pointer hover:opacity-80 transition-opacity overflow-hidden"
                         style={{ left: `${leftPercent}%`, width: `${widthPercent}%`, backgroundColor: color }}
                         onClick={() => playClip(clip)}
+                        onMouseEnter={() => hoverClip(clip.id)}
+                        onMouseLeave={() => hoverClip(null)}
                         data-testid={`clip-segment-${clip.id}`}
                       >
                         <div className="meta-mono text-white p-1 truncate text-left">
@@ -751,6 +778,8 @@ export default function TrailcamStudio() {
                     role={ready ? "button" : undefined}
                     tabIndex={ready ? 0 : undefined}
                     onClick={() => playClip(clip)}
+                    onMouseEnter={() => hoverClip(clip.id)}
+                    onMouseLeave={() => hoverClip(null)}
                     onKeyDown={(e) => {
                       if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
                         e.preventDefault();
