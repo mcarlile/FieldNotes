@@ -4,6 +4,7 @@ import { initMapbox, isWebGLSupported } from "@/lib/mapbox";
 import { useTheme } from "@/contexts/theme-context";
 import type { FieldNote } from "@shared/schema";
 import { parseGpxData } from "@shared/gpx-utils";
+import { MapTerrainControls, TERRAIN_PITCH, applyTerrain } from "@/components/map-terrain-controls";
 
 interface HeatMapViewProps {
   fieldNotes: FieldNote[];
@@ -16,6 +17,8 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
   const [mapLoaded, setMapLoaded] = useState(false);
   const [highlightedDensity, setHighlightedDensity] = useState<string | null>(null);
   const [is3DMode, setIs3DMode] = useState(false);
+  // On by default: this map has always shown 3D terrain exaggerated.
+  const [exaggerateTerrain, setExaggerateTerrain] = useState(true);
   const [selectedActivityType, setSelectedActivityType] = useState<string | null>(null);
   const [selectedMapStyle, setSelectedMapStyle] = useState("outdoors-v11");
   const [webGLSupported, setWebGLSupported] = useState<boolean>(true);
@@ -69,13 +72,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       if (!map.current) return;
       
       if (is3DMode && map.current) {
-        map.current.addSource("mapbox-dem", {
-          type: "raster-dem",
-          url: "mapbox://mapbox.mapbox-terrain-dem-v1",
-          tileSize: 512,
-          maxzoom: 14,
-        });
-        map.current.setTerrain({ source: "mapbox-dem", exaggeration: 4.0 });
+        applyTerrain(map.current, { is3D: true, exaggerate: exaggerateTerrain });
       }
       
       // Restore exact camera position AFTER terrain setup
@@ -210,21 +207,8 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     setIs3DMode(newIs3DMode);
     
     if (newIs3DMode) {
-      // Enable 3D mode
-      map.current.setTerrain({ source: 'mapbox-dem', exaggeration: 4.0 });
-      
-      // Add sky layer first (background)
-      if (!map.current.getLayer('sky')) {
-        map.current.addLayer({
-          id: 'sky',
-          type: 'sky',
-          paint: {
-            'sky-type': 'atmosphere',
-            'sky-atmosphere-sun': [0.0, 0.0],
-            'sky-atmosphere-sun-intensity': 15
-          }
-        }, 'water'); // Insert before water layer to keep it in background
-      }
+      // Enable 3D mode (terrain plus a sky behind it)
+      applyTerrain(map.current, { is3D: true, exaggerate: exaggerateTerrain });
       
       // Ensure route layers are above terrain by moving them to top
       const routeLayers = ['route-heat-single', 'route-heat-medium', 'route-heat-high', 'route-heat'];
@@ -236,14 +220,11 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       });
       
       // Set dramatic 3D perspective instantly
-      map.current.setPitch(55);
+      map.current.setPitch(TERRAIN_PITCH);
       map.current.setBearing(-15);
     } else {
       // Disable 3D mode
-      map.current.setTerrain(null);
-      if (map.current.getLayer('sky')) {
-        map.current.removeLayer('sky');
-      }
+      applyTerrain(map.current, { is3D: false, exaggerate: exaggerateTerrain });
       
       // Animate back to 2D view
       map.current.easeTo({
@@ -252,6 +233,12 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
         duration: 1000
       });
     }
+  };
+
+  const toggleExaggerateTerrain = () => {
+    const next = !exaggerateTerrain;
+    setExaggerateTerrain(next);
+    if (map.current && is3DMode) applyTerrain(map.current, { is3D: true, exaggerate: next });
   };
 
   // Robust heat map rendering function
@@ -893,24 +880,13 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       </div>
 
       {/* 3D Mode Toggle */}
-      <div className="absolute top-4 right-4 z-10 bg-card border border-border rounded-lg p-3 shadow-lg">
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-medium text-foreground">3D View</span>
-          <button
-            onClick={toggle3DMode}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-              is3DMode ? 'bg-primary' : 'bg-muted'
-            }`}
-            aria-label="Toggle 3D mode"
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                is3DMode ? 'translate-x-6' : 'translate-x-1'
-              }`}
-            />
-          </button>
-        </div>
-      </div>
+      <MapTerrainControls
+        className="absolute top-4 right-4 z-10"
+        is3D={is3DMode}
+        exaggerate={exaggerateTerrain}
+        onToggle3D={toggle3DMode}
+        onToggleExaggerate={toggleExaggerateTerrain}
+      />
       
       <div ref={mapContainer} className="w-full h-full" />
       
