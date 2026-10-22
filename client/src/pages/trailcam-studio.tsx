@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, Suspense } from "react";
+import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -17,7 +17,8 @@ import {
 import { NewProjectModal } from "@/components/new-project-modal";
 import { ChunkedVideoUploader } from "@/components/chunked-video-uploader";
 import { ClipEditPopover } from "@/components/clip-edit-popover";
-import MapboxMap, { ClipMarker } from "@/components/mapbox-map";
+import MapboxMap, { ClipMarker, ClipSegment } from "@/components/mapbox-map";
+import { trackPositionAt, trackSegmentBetween, type CompactTimedTrack } from "@shared/gpx-utils";
 import type { TrailcamProject, VideoClip, InsertVideoClip } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -49,6 +50,9 @@ export default function TrailcamStudio() {
   const [selectedClip, setSelectedClip] = useState<StudioClip | null>(null);
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  // Set when a clip is chosen to play; the player starts it once it mounts.
+  const autoplayClipId = useRef<string | null>(null);
+  const [mapFocus, setMapFocus] = useState<{ id: string; nonce: number } | null>(null);
 
   const { data: projects = [], isLoading: projectsLoading } = useQuery<TrailcamProject[]>({
     queryKey: ["/api/trailcam-projects"],
@@ -89,6 +93,19 @@ export default function TrailcamStudio() {
       .catch(() =>
         toast({ title: "Error", description: "Failed to reprocess video", variant: "destructive" }),
       );
+  };
+
+  // Load a clip into the player and start it. Clips that aren't ready only
+  // show their status, so there is nothing to play yet.
+  const playClip = (clip: StudioClip) => {
+    setSelectedClip(clip);
+    if (clip.processingStatus !== "ready") return;
+    if (selectedClip?.id === clip.id && videoRef.current) {
+      void videoRef.current.play().catch(() => {});
+    } else {
+      autoplayClipId.current = clip.id;
+      setCurrentTime(0);
+    }
   };
 
   const createClipMutation = useMutation({
@@ -187,6 +204,29 @@ export default function TrailcamStudio() {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const timedTrack = (selectedProject?.gpxData as { timedTrack?: CompactTimedTrack | null } | undefined)?.timedTrack;
+  const clipSegments: ClipSegment[] = useMemo(
+    () =>
+      clips.map((clip, index) => ({
+        id: clip.id,
+        title: clip.title,
+        subtitle: `${formatTime(clip.startTime)} → ${formatTime(clip.endTime)}`,
+        color: clipColor(clip, index),
+        coordinates: trackSegmentBetween(timedTrack, clip.startTime, clip.endTime),
+      })),
+    // clipColor only depends on the clip and its index.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [clips, timedTrack],
+  );
+
+  // Route position of the video's current frame: the clip's start on the
+  // route plus how far into the clip the player is.
+  const getPlayheadPosition = (): [number, number] | null => {
+    if (!selectedClip || selectedClip.processingStatus !== "ready") return null;
+    const videoTime = videoRef.current?.currentTime ?? currentTime;
+    return trackPositionAt(timedTrack, selectedClip.startTime + videoTime);
   };
 
   if (!selectedProject) {
@@ -338,6 +378,15 @@ export default function TrailcamStudio() {
               <MapboxMap
                 gpxData={selectedProject.gpxData}
                 clipMarkers={clipMarkers}
+                clipSegments={clipSegments}
+                selectedSegmentId={selectedClip?.id ?? null}
+                onClipSegmentClick={(clipId) => {
+                  const clip = clips.find((c) => c.id === clipId);
+                  if (clip) playClip(clip);
+                }}
+                focusSegment={mapFocus}
+                getPlayheadPosition={getPlayheadPosition}
+                isPlaying={isPlaying}
                 className="w-full h-full"
               />
             </Suspense>
@@ -361,12 +410,27 @@ export default function TrailcamStudio() {
               {selectedClip ? (
                 selectedClip.processingStatus === "ready" ? (
                   <video
+                    // A new element per clip, so switching clips reloads the source.
+                    key={selectedClip.id}
                     ref={videoRef}
                     className="w-full h-full object-contain"
                     controls
+                    playsInline
+                    onLoadedData={(e) => {
+                      if (autoplayClipId.current !== selectedClip.id) return;
+                      autoplayClipId.current = null;
+                      void e.currentTarget.play().catch(() => {});
+                    }}
                     onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
-                    onPlay={() => setIsPlaying(true)}
+                    onPlay={() => {
+                      setIsPlaying(true);
+                      // Zoom once per clip, so resuming after a pause keeps the user's view.
+                      setMapFocus((prev) =>
+                        prev?.id === selectedClip.id ? prev : { id: selectedClip.id, nonce: Date.now() },
+                      );
+                    }}
                     onPause={() => setIsPlaying(false)}
+                    onEnded={() => setIsPlaying(false)}
                     data-testid="video-player"
                   >
                     <source src={`/api/video-clips/${selectedClip.id}/stream`} type="video/mp4" />
@@ -505,7 +569,7 @@ export default function TrailcamStudio() {
                         type="button"
                         className="absolute top-1 h-10 rounded cursor-pointer hover:opacity-80 transition-opacity overflow-hidden"
                         style={{ left: `${leftPercent}%`, width: `${widthPercent}%`, backgroundColor: color }}
-                        onClick={() => setSelectedClip(clip)}
+                        onClick={() => playClip(clip)}
                         data-testid={`clip-segment-${clip.id}`}
                       >
                         <div className="meta-mono text-white p-1 truncate text-left">
@@ -519,7 +583,7 @@ export default function TrailcamStudio() {
                     className="absolute top-0 w-px h-full bg-foreground z-10 pointer-events-none"
                     style={{
                       left: selectedProject.duration
-                        ? `${(currentTime / selectedProject.duration) * 100}%`
+                        ? `${(((selectedClip?.startTime ?? 0) + currentTime) / selectedProject.duration) * 100}%`
                         : "0%",
                     }}
                   >
@@ -559,7 +623,18 @@ export default function TrailcamStudio() {
                 return (
                   <div
                     key={clip.id}
-                    className="w-44 flex-shrink-0 border border-border rounded overflow-hidden bg-card flex flex-col"
+                    role={ready ? "button" : undefined}
+                    tabIndex={ready ? 0 : undefined}
+                    onClick={() => playClip(clip)}
+                    onKeyDown={(e) => {
+                      if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+                        e.preventDefault();
+                        playClip(clip);
+                      }
+                    }}
+                    className={`w-44 flex-shrink-0 border rounded overflow-hidden bg-card flex flex-col ${
+                      selectedClip?.id === clip.id ? "border-foreground" : "border-border"
+                    } ${ready ? "cursor-pointer hover:border-foreground/60 transition-colors" : ""}`}
                     data-testid={`clip-card-${clip.id}`}
                   >
                     <div className="h-20 bg-black flex items-center justify-center relative flex-shrink-0">
@@ -594,6 +669,8 @@ export default function TrailcamStudio() {
                             className="w-2 h-2 rounded-full"
                             style={{ backgroundColor: clipColor(clip, index) }}
                           />
+                          {/* Popover content is portaled, but its React events still bubble to the card. */}
+                          <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                           <ClipEditPopover
                             clip={clip}
                             color={clipColor(clip, index)}
@@ -601,6 +678,7 @@ export default function TrailcamStudio() {
                             saving={updateClipMutation.isPending && updateClipMutation.variables?.id === clip.id}
                             onSave={(updates) => updateClipMutation.mutateAsync({ id: clip.id, updates })}
                           />
+                          </span>
                         </div>
                       </div>
                       <div className="meta-mono text-muted-foreground flex gap-x-2">
@@ -617,7 +695,10 @@ export default function TrailcamStudio() {
                       {(errored || stuck) && (
                         <button
                           type="button"
-                          onClick={() => retryProcessing(clip.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            retryProcessing(clip.id);
+                          }}
                           className="meta-mono text-foreground underline underline-offset-4 hover:opacity-70 transition-opacity mt-1 text-left inline-flex items-center gap-1"
                           data-testid={`button-retry-${clip.id}`}
                         >
@@ -627,12 +708,15 @@ export default function TrailcamStudio() {
                       )}
                       <button
                         type="button"
-                        onClick={() => setSelectedClip(clip)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          playClip(clip);
+                        }}
                         disabled={!ready && !errored}
                         className="meta-mono text-foreground underline underline-offset-4 hover:opacity-70 transition-opacity disabled:opacity-40 disabled:no-underline mt-auto pt-2 text-left"
                         data-testid={`button-preview-${clip.id}`}
                       >
-                        {!ready && !errored ? "Processing" : "Preview →"}
+                        {!ready && !errored ? "Processing" : ready ? "Play →" : "Details →"}
                       </button>
                     </div>
                   </div>

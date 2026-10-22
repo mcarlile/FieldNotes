@@ -455,3 +455,47 @@ export function resolveClipCoordinates(
     endLongitude: null 
   };
 }
+// Index of the last compact point at or before `offsetSeconds` (binary search;
+// a playing clip asks for its position many times a second).
+function compactIndexAtOrBefore(points: CompactTimedTrack["points"], offsetSeconds: number): number {
+  let lo = 0;
+  let hi = points.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (points[mid][0] <= offsetSeconds) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
+}
+
+/** [longitude, latitude] on the route `offsetSeconds` after its start, or null without a timed track. */
+export function trackPositionAt(track: CompactTimedTrack | null | undefined, offsetSeconds: number): [number, number] | null {
+  const points = track?.points;
+  if (!points || points.length === 0) return null;
+  if (offsetSeconds <= points[0][0]) return [points[0][2], points[0][1]];
+  const last = points[points.length - 1];
+  if (offsetSeconds >= last[0]) return [last[2], last[1]];
+  const i = compactIndexAtOrBefore(points, offsetSeconds);
+  const [t0, lat0, lng0] = points[i];
+  const [t1, lat1, lng1] = points[i + 1];
+  const f = t1 === t0 ? 0 : (offsetSeconds - t0) / (t1 - t0);
+  return [lng0 + f * (lng1 - lng0), lat0 + f * (lat1 - lat0)];
+}
+
+/** The stretch of route ridden between two offsets, as [longitude, latitude] pairs. */
+export function trackSegmentBetween(
+  track: CompactTimedTrack | null | undefined,
+  startSeconds: number,
+  endSeconds: number,
+): [number, number][] {
+  const points = track?.points;
+  const start = trackPositionAt(track, startSeconds);
+  const end = trackPositionAt(track, endSeconds);
+  if (!points || !start || !end || endSeconds <= startSeconds) return [];
+  const coords: [number, number][] = [start];
+  for (let i = compactIndexAtOrBefore(points, startSeconds) + 1; i < points.length && points[i][0] < endSeconds; i++) {
+    if (points[i][0] > startSeconds) coords.push([points[i][2], points[i][1]]);
+  }
+  coords.push(end);
+  return coords;
+}

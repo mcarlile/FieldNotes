@@ -12,6 +12,15 @@ export interface ClipMarker {
   color?: string;
 }
 
+export interface ClipSegment {
+  id: string;
+  title: string;
+  /** Shown under the title in the hover popup, e.g. the clip's time range. */
+  subtitle?: string;
+  color: string;
+  coordinates: [number, number][];
+}
+
 export interface PhotoMarker {
   id: string;
   latitude: number;
@@ -25,6 +34,16 @@ interface MapboxMapProps {
   clipMarkers?: ClipMarker[];
   photoMarkers?: PhotoMarker[];
   onPhotoMarkerClick?: (photoId: string) => void;
+  /** Route stretches covered by video clips, drawn over the track. */
+  clipSegments?: ClipSegment[];
+  selectedSegmentId?: string | null;
+  onClipSegmentClick?: (clipId: string) => void;
+  /** Zooms to a clip's segment whenever `nonce` changes. */
+  focusSegment?: { id: string; nonce: number } | null;
+  /** Where the video is on the route right now, as [longitude, latitude]. */
+  getPlayheadPosition?: () => [number, number] | null;
+  /** While true, the playhead pin is updated every frame and kept in view. */
+  isPlaying?: boolean;
   className?: string;
 }
 
@@ -34,6 +53,12 @@ export default function MapboxMap({
   clipMarkers,
   photoMarkers,
   onPhotoMarkerClick,
+  clipSegments,
+  selectedSegmentId,
+  onClipSegmentClick,
+  focusSegment,
+  getPlayheadPosition,
+  isPlaying,
   className 
 }: MapboxMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -46,6 +71,13 @@ export default function MapboxMap({
   const animationFrameRef = useRef<number | null>(null);
   const coordinatesRef = useRef<[number, number][]>([]);
   const [webglError, setWebglError] = useState(false);
+  // Set once the style has loaded, so layers added after the track can rely on it.
+  const [mapReady, setMapReady] = useState(false);
+  const playheadMarker = useRef<mapboxgl.Marker | null>(null);
+  const onClipSegmentClickRef = useRef(onClipSegmentClick);
+  useEffect(() => { onClipSegmentClickRef.current = onClipSegmentClick; }, [onClipSegmentClick]);
+  const getPlayheadPositionRef = useRef(getPlayheadPosition);
+  getPlayheadPositionRef.current = getPlayheadPosition;
 
   // Initialize map and add GPX track
   useEffect(() => {
@@ -221,9 +253,13 @@ export default function MapboxMap({
           });
         }
       }
+      setMapReady(true);
     });
 
     return () => {
+      setMapReady(false);
+      playheadMarker.current?.remove();
+      playheadMarker.current = null;
       // Clean up animation frames
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
@@ -282,6 +318,142 @@ export default function MapboxMap({
       }
     }
   }, [hoveredElevationPoint]);
+
+  // Clip segments: a thicker colored line per clip over the route. Hovering
+  // shows which clip it is; clicking loads that clip.
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !mapReady) return;
+
+    const data = {
+      type: 'FeatureCollection' as const,
+      features: (clipSegments ?? [])
+        .filter((segment) => segment.coordinates.length >= 2)
+        .map((segment) => ({
+          type: 'Feature' as const,
+          properties: {
+            id: segment.id,
+            title: segment.title,
+            subtitle: segment.subtitle ?? '',
+            color: segment.color,
+            selected: segment.id === selectedSegmentId,
+          },
+          geometry: { type: 'LineString' as const, coordinates: segment.coordinates },
+        })),
+    };
+
+    const source = m.getSource('clip-segments') as mapboxgl.GeoJSONSource | undefined;
+    if (source) {
+      source.setData(data);
+      return;
+    }
+
+    m.addSource('clip-segments', { type: 'geojson', data });
+    m.addLayer({
+      id: 'clip-segments-casing',
+      type: 'line',
+      source: 'clip-segments',
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: {
+        'line-color': '#ffffff',
+        'line-width': ['case', ['get', 'selected'], 11, 8],
+        'line-opacity': 0.9,
+      },
+    });
+    m.addLayer({
+      id: 'clip-segments-line',
+      type: 'line',
+      source: 'clip-segments',
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-width': ['case', ['get', 'selected'], 8, 5],
+      },
+    });
+
+    const popup = new mapboxgl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
+    const onMove = (e: mapboxgl.MapLayerMouseEvent) => {
+      const props = e.features?.[0]?.properties;
+      if (!props) return;
+      m.getCanvas().style.cursor = 'pointer';
+      const content = document.createElement('div');
+      const title = document.createElement('div');
+      title.style.cssText = 'font-weight:600;font-size:12px;';
+      title.textContent = String(props.title);
+      content.appendChild(title);
+      if (props.subtitle) {
+        const subtitle = document.createElement('div');
+        subtitle.style.cssText = 'font-size:11px;opacity:0.7;margin-top:2px;';
+        subtitle.textContent = `${props.subtitle} · click to play`;
+        content.appendChild(subtitle);
+      }
+      popup.setLngLat(e.lngLat).setDOMContent(content).addTo(m);
+    };
+    const onLeave = () => {
+      m.getCanvas().style.cursor = '';
+      popup.remove();
+    };
+    const onClick = (e: mapboxgl.MapLayerMouseEvent) => {
+      const id = e.features?.[0]?.properties?.id;
+      if (id) onClipSegmentClickRef.current?.(String(id));
+    };
+    m.on('mousemove', 'clip-segments-line', onMove);
+    m.on('mouseleave', 'clip-segments-line', onLeave);
+    m.on('click', 'clip-segments-line', onClick);
+    // Listeners and layers go away with the map itself (see the init effect).
+  }, [mapReady, clipSegments, selectedSegmentId]);
+
+  // Zoom to a clip's stretch of route when asked (e.g. when it starts playing).
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !mapReady || !focusSegment) return;
+    const segment = clipSegments?.find((s) => s.id === focusSegment.id);
+    if (!segment || segment.coordinates.length === 0) return;
+    const bounds = new mapboxgl.LngLatBounds();
+    segment.coordinates.forEach((coord) => bounds.extend(coord));
+    m.fitBounds(bounds, { padding: 80, maxZoom: 15, duration: 1200 });
+    // Only a new request should move the map, not every segment refresh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapReady, focusSegment?.nonce]);
+
+  // Playhead pin: where the video is on the route. Updated every frame while
+  // playing, and panned back into view if it rides off the edge.
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !mapReady) return;
+
+    const place = (follow: boolean) => {
+      const position = getPlayheadPositionRef.current?.() ?? null;
+      if (!position) {
+        playheadMarker.current?.remove();
+        playheadMarker.current = null;
+        return;
+      }
+      if (!playheadMarker.current) {
+        const el = document.createElement('div');
+        el.style.cssText = `
+          width: 18px; height: 18px; border-radius: 50%;
+          background: #ef4444; border: 3px solid #ffffff;
+          box-shadow: 0 2px 10px rgba(14, 13, 11, 0.5);
+        `;
+        el.setAttribute('data-testid', 'map-playhead');
+        playheadMarker.current = new mapboxgl.Marker(el).setLngLat(position).addTo(m);
+      } else {
+        playheadMarker.current.setLngLat(position);
+      }
+      if (follow && !m.isMoving() && !m.getBounds()?.contains(position)) {
+        m.easeTo({ center: position, duration: 600 });
+      }
+    };
+
+    place(false);
+    if (!isPlaying) return;
+    let frame = requestAnimationFrame(function tick() {
+      place(true);
+      frame = requestAnimationFrame(tick);
+    });
+    return () => cancelAnimationFrame(frame);
+  });
 
   // Handle clip markers for start/end points
   useEffect(() => {
