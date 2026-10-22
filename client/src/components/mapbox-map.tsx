@@ -38,14 +38,22 @@ interface MapboxMapProps {
   clipSegments?: ClipSegment[];
   selectedSegmentId?: string | null;
   onClipSegmentClick?: (clipId: string) => void;
-  /** Zooms to a clip's segment whenever `nonce` changes. */
+  /** Zooms in on the playhead and starts following it whenever `nonce` changes. */
   focusSegment?: { id: string; nonce: number } | null;
   /** Where the video is on the route right now, as [longitude, latitude]. */
   getPlayheadPosition?: () => [number, number] | null;
-  /** While true, the playhead pin is updated every frame and kept in view. */
+  /** While true, the playhead pin is updated every frame and the map follows it. */
   isPlaying?: boolean;
+  /** Dragging the playhead pin: called on grab, on every move, and on release. */
+  onPlayheadDragStart?: () => void;
+  onPlayheadDrag?: (position: [number, number]) => void;
+  onPlayheadDragEnd?: (position: [number, number]) => void;
   className?: string;
 }
+
+// How close the follow-cam sits, and how long the zoom-in on play takes.
+const FOLLOW_ZOOM = 16;
+const FOCUS_DURATION_MS = 1000;
 
 export default function MapboxMap({ 
   gpxData, 
@@ -59,6 +67,9 @@ export default function MapboxMap({
   focusSegment,
   getPlayheadPosition,
   isPlaying,
+  onPlayheadDragStart,
+  onPlayheadDrag,
+  onPlayheadDragEnd,
   className 
 }: MapboxMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -78,6 +89,15 @@ export default function MapboxMap({
   useEffect(() => { onClipSegmentClickRef.current = onClipSegmentClick; }, [onClipSegmentClick]);
   const getPlayheadPositionRef = useRef(getPlayheadPosition);
   getPlayheadPositionRef.current = getPlayheadPosition;
+  const playheadDragRef = useRef({ start: onPlayheadDragStart, move: onPlayheadDrag, end: onPlayheadDragEnd });
+  playheadDragRef.current = { start: onPlayheadDragStart, move: onPlayheadDrag, end: onPlayheadDragEnd };
+  const draggingPlayhead = useRef(false);
+  // Follow-cam: keep the map centered on the pin until the user pans away.
+  const [following, setFollowing] = useState(true);
+  const followingRef = useRef(true);
+  followingRef.current = following;
+  // While the zoom-in animation runs, the follow-cam leaves the camera alone.
+  const focusAnimatingUntil = useRef(0);
 
   // Initialize map and add GPX track
   useEffect(() => {
@@ -253,6 +273,10 @@ export default function MapboxMap({
           });
         }
       }
+      // Only a user's pan carries an originalEvent; ours (jumpTo/easeTo) don't.
+      map.current.on('dragstart', (e: any) => {
+        if (e.originalEvent) setFollowing(false);
+      });
       setMapReady(true);
     });
 
@@ -403,26 +427,38 @@ export default function MapboxMap({
     // Listeners and layers go away with the map itself (see the init effect).
   }, [mapReady, clipSegments, selectedSegmentId]);
 
-  // Zoom to a clip's stretch of route when asked (e.g. when it starts playing).
+  // Zoom in on the pin and start following it when asked (when a clip starts playing).
   useEffect(() => {
     const m = map.current;
     if (!m || !mapReady || !focusSegment) return;
     const segment = clipSegments?.find((s) => s.id === focusSegment.id);
-    if (!segment || segment.coordinates.length === 0) return;
-    const bounds = new mapboxgl.LngLatBounds();
-    segment.coordinates.forEach((coord) => bounds.extend(coord));
-    m.fitBounds(bounds, { padding: 80, maxZoom: 15, duration: 1200 });
+    const center = getPlayheadPositionRef.current?.() ?? segment?.coordinates[0];
+    if (!center) return;
+    setFollowing(true);
+    focusAnimatingUntil.current = performance.now() + FOCUS_DURATION_MS;
+    m.easeTo({ center, zoom: Math.max(m.getZoom(), FOLLOW_ZOOM), duration: FOCUS_DURATION_MS });
     // Only a new request should move the map, not every segment refresh.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapReady, focusSegment?.nonce]);
 
+  const resumeFollowing = () => {
+    const m = map.current;
+    const center = getPlayheadPositionRef.current?.();
+    setFollowing(true);
+    if (!m || !center) return;
+    focusAnimatingUntil.current = performance.now() + FOCUS_DURATION_MS;
+    m.easeTo({ center, zoom: Math.max(m.getZoom(), FOLLOW_ZOOM), duration: FOCUS_DURATION_MS });
+  };
+
   // Playhead pin: where the video is on the route. Updated every frame while
-  // playing, and panned back into view if it rides off the edge.
+  // playing, with the map centered on it. Dragging the pin scrubs the video.
   useEffect(() => {
     const m = map.current;
     if (!m || !mapReady) return;
 
     const place = (follow: boolean) => {
+      // The user's hand is on the pin; let it go where they put it.
+      if (draggingPlayhead.current) return;
       const position = getPlayheadPositionRef.current?.() ?? null;
       if (!position) {
         playheadMarker.current?.remove();
@@ -435,14 +471,35 @@ export default function MapboxMap({
           width: 18px; height: 18px; border-radius: 50%;
           background: #ef4444; border: 3px solid #ffffff;
           box-shadow: 0 2px 10px rgba(14, 13, 11, 0.5);
+          cursor: grab;
         `;
         el.setAttribute('data-testid', 'map-playhead');
-        playheadMarker.current = new mapboxgl.Marker(el).setLngLat(position).addTo(m);
+        el.title = 'Drag to scrub the video';
+        const marker = new mapboxgl.Marker({ element: el, draggable: true }).setLngLat(position).addTo(m);
+        const lngLat = (): [number, number] => {
+          const { lng, lat } = marker.getLngLat();
+          return [lng, lat];
+        };
+        marker.on('dragstart', () => {
+          draggingPlayhead.current = true;
+          el.style.cursor = 'grabbing';
+          playheadDragRef.current.start?.();
+        });
+        marker.on('drag', () => playheadDragRef.current.move?.(lngLat()));
+        marker.on('dragend', () => {
+          draggingPlayhead.current = false;
+          el.style.cursor = 'grab';
+          playheadDragRef.current.end?.(lngLat());
+          // Snap back onto the route at the time the video landed on.
+          const snapped = getPlayheadPositionRef.current?.();
+          if (snapped) marker.setLngLat(snapped);
+        });
+        playheadMarker.current = marker;
       } else {
         playheadMarker.current.setLngLat(position);
       }
-      if (follow && !m.isMoving() && !m.getBounds()?.contains(position)) {
-        m.easeTo({ center: position, duration: 600 });
+      if (follow && followingRef.current && performance.now() > focusAnimatingUntil.current) {
+        m.jumpTo({ center: position });
       }
     };
 
@@ -641,10 +698,19 @@ export default function MapboxMap({
   }
 
   return (
-    <div 
-      ref={mapContainer}
-      className={`bg-gray-100 ${className}`}
-      data-testid="mapbox-map"
-    />
+    <div className={`relative ${className}`}>
+      {/* Inline position: mapbox's own .mapboxgl-map class sets position: relative. */}
+      <div ref={mapContainer} className="bg-gray-100" style={{ position: 'absolute', inset: 0 }} data-testid="mapbox-map" />
+      {!following && isPlaying && (
+        <button
+          type="button"
+          onClick={resumeFollowing}
+          className="absolute bottom-8 left-1/2 -translate-x-1/2 meta-mono bg-background/95 text-foreground border border-border rounded px-3 py-1.5 shadow hover:bg-background"
+          data-testid="button-follow-pin"
+        >
+          Follow pin
+        </button>
+      )}
+    </div>
   );
 }

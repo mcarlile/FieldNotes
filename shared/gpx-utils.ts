@@ -499,3 +499,43 @@ export function trackSegmentBetween(
   coords.push(end);
   return coords;
 }
+
+/**
+ * The route offset (seconds) of the point between `minSeconds` and `maxSeconds`
+ * that lies closest to a map position. Used to turn a dragged pin back into a
+ * time. Keeping the search to a window stops a trail that doubles back from
+ * snapping to the wrong pass.
+ */
+export function nearestTrackOffset(
+  track: CompactTimedTrack | null | undefined,
+  position: [number, number],
+  minSeconds: number,
+  maxSeconds: number,
+): number | null {
+  const points = track?.points;
+  if (!points || points.length === 0 || maxSeconds < minSeconds) return null;
+  const [lng, lat] = position;
+  // Flat projection around the target: plenty accurate over a clip's length.
+  const kx = Math.cos((lat * Math.PI) / 180);
+  let bestOffset: number | null = null;
+  let bestDistance = Infinity;
+  const consider = (a: [number, number, number], b: [number, number, number]) => {
+    const ax = (a[2] - lng) * kx, ay = a[1] - lat;
+    const bx = (b[2] - lng) * kx, by = b[1] - lat;
+    const dx = bx - ax, dy = by - ay;
+    const lengthSq = dx * dx + dy * dy;
+    const f = lengthSq === 0 ? 0 : Math.max(0, Math.min(1, -(ax * dx + ay * dy) / lengthSq));
+    const px = ax + f * dx, py = ay + f * dy;
+    const distance = px * px + py * py;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestOffset = a[0] + f * (b[0] - a[0]);
+    }
+  };
+  const first = compactIndexAtOrBefore(points, minSeconds);
+  for (let i = first; i < points.length - 1 && points[i][0] < maxSeconds; i++) {
+    consider(points[i], points[i + 1]);
+  }
+  if (points.length === 1) consider(points[0], points[0]);
+  return bestOffset === null ? null : Math.max(minSeconds, Math.min(maxSeconds, bestOffset));
+}

@@ -751,6 +751,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Set how far the video clock is from the GPS clock for a project. Stored
+  // inside gpxData so the setting needs no schema change.
+  app.put("/api/trailcam-projects/:id/sync-offset", requireAuth, async (req, res) => {
+    try {
+      const offset = Number(req.body?.syncOffsetSeconds);
+      if (!Number.isFinite(offset) || Math.abs(offset) > 3600) {
+        return res.status(400).json({ message: "syncOffsetSeconds must be a number of seconds within ±3600" });
+      }
+      const existing = await storage.getTrailcamProjectById(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ message: "TrailCam project not found" });
+      }
+      const gpxData = { ...(existing.gpxData as Record<string, unknown>), syncOffsetSeconds: Math.round(offset * 100) / 100 };
+      const project = await storage.updateTrailcamProject(existing.id, { gpxData });
+      res.json(project);
+    } catch (error) {
+      console.error("Error updating TrailCam sync offset:", error);
+      res.status(500).json({ message: "Failed to update sync offset" });
+    }
+  });
+
   // Delete TrailCam project
   app.delete("/api/trailcam-projects/:id", requireAuth, async (req, res) => {
     try {
