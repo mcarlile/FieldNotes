@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { trackPositionAt, trackSegmentBetween, type CompactTimedTrack } from "./gpx-utils";
+import { nearestTrackOffset, trackPositionAt, trackSegmentBetween, type CompactTimedTrack } from "./gpx-utils";
 
 const track: CompactTimedTrack = {
   startTime: "2026-10-17T18:58:27.067Z",
@@ -29,4 +29,13 @@ test("trackSegmentBetween keeps the points inside the range plus interpolated en
   assert.ok(Math.abs(segment[3][0] - -120.25) < 1e-9);
   assert.deepEqual(trackSegmentBetween(track, 20, 10), []);
   assert.deepEqual(trackSegmentBetween(undefined, 0, 10), []);
+});
+
+test("nearestTrackOffset turns a nearby map position back into a route time", () => {
+  // Just off the route, a quarter of the way from the 10 s point to the 20 s point.
+  const t = nearestTrackOffset(track, [-120.125, 39.1251], 0, 30)!;
+  assert.ok(Math.abs(t - 12.5) < 0.05, `got ${t}`);
+  // The window clamps the answer.
+  assert.equal(nearestTrackOffset(track, [-120.3, 39.3], 0, 18), 18);
+  assert.equal(nearestTrackOffset(null, [-120, 39], 0, 30), null);
 });

@@ -18,7 +18,7 @@ import { NewProjectModal } from "@/components/new-project-modal";
 import { ChunkedVideoUploader } from "@/components/chunked-video-uploader";
 import { ClipEditPopover } from "@/components/clip-edit-popover";
 import MapboxMap, { ClipMarker, ClipSegment } from "@/components/mapbox-map";
-import { trackPositionAt, trackSegmentBetween, type CompactTimedTrack } from "@shared/gpx-utils";
+import { nearestTrackOffset, trackPositionAt, trackSegmentBetween, type CompactTimedTrack } from "@shared/gpx-utils";
 import type { TrailcamProject, VideoClip, InsertVideoClip } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -41,6 +41,9 @@ function pillButtonClass(active = false) {
   }`;
 }
 
+// How far either side of the current spot a calibration drag may move the pin.
+const CALIBRATE_RANGE_SECONDS = 300;
+
 export default function TrailcamStudio() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -53,6 +56,13 @@ export default function TrailcamStudio() {
   // Set when a clip is chosen to play; the player starts it once it mounts.
   const autoplayClipId = useRef<string | null>(null);
   const [mapFocus, setMapFocus] = useState<{ id: string; nonce: number } | null>(null);
+  // Seconds added to every clip's place on the route, to line the camera's
+  // clock up with the GPS clock. Saved on the project.
+  const [syncOffset, setSyncOffset] = useState(0);
+  // While on, dragging the pin moves the sync instead of the video.
+  const [calibrating, setCalibrating] = useState(false);
+  const saveSyncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resumeAfterDrag = useRef(false);
 
   const { data: projects = [], isLoading: projectsLoading } = useQuery<TrailcamProject[]>({
     queryKey: ["/api/trailcam-projects"],
@@ -83,6 +93,33 @@ export default function TrailcamStudio() {
   useEffect(() => {
     setSelectedClip((current) => (current ? clips.find((clip) => clip.id === current.id) ?? current : current));
   }, [clips]);
+
+  useEffect(() => {
+    const saved = (selectedProject?.gpxData as { syncOffsetSeconds?: number } | undefined)?.syncOffsetSeconds;
+    setSyncOffset(typeof saved === "number" ? saved : 0);
+    setCalibrating(false);
+    // Only on switching projects; later saves come from this page's own state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProject?.id]);
+
+  const changeSyncOffset = (value: number) => {
+    const projectId = selectedProject?.id;
+    const rounded = Math.round(value * 10) / 10;
+    setSyncOffset(rounded);
+    if (!projectId) return;
+    if (saveSyncTimer.current) clearTimeout(saveSyncTimer.current);
+    saveSyncTimer.current = setTimeout(() => {
+      apiRequest(`/api/trailcam-projects/${projectId}/sync-offset`, "PUT", { syncOffsetSeconds: rounded })
+        .then((response) => response.json())
+        .then((project: TrailcamProject) => {
+          setSelectedProject((current) => (current?.id === project.id ? project : current));
+          queryClient.invalidateQueries({ queryKey: ["/api/trailcam-projects"] });
+        })
+        .catch(() =>
+          toast({ title: "Error", description: "Couldn't save the sync offset", variant: "destructive" }),
+        );
+    }, 600);
+  };
 
   const retryProcessing = (clipId: string) => {
     apiRequest(`/api/video-clips/${clipId}/reprocess`, "POST")
@@ -214,19 +251,59 @@ export default function TrailcamStudio() {
         title: clip.title,
         subtitle: `${formatTime(clip.startTime)} → ${formatTime(clip.endTime)}`,
         color: clipColor(clip, index),
-        coordinates: trackSegmentBetween(timedTrack, clip.startTime, clip.endTime),
+        coordinates: trackSegmentBetween(timedTrack, clip.startTime + syncOffset, clip.endTime + syncOffset),
       })),
     // clipColor only depends on the clip and its index.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [clips, timedTrack],
+    [clips, timedTrack, syncOffset],
   );
 
   // Route position of the video's current frame: the clip's start on the
-  // route plus how far into the clip the player is.
+  // route, plus the sync offset, plus how far into the clip the player is.
   const getPlayheadPosition = (): [number, number] | null => {
     if (!selectedClip || selectedClip.processingStatus !== "ready") return null;
     const videoTime = videoRef.current?.currentTime ?? currentTime;
-    return trackPositionAt(timedTrack, selectedClip.startTime + videoTime);
+    return trackPositionAt(timedTrack, selectedClip.startTime + syncOffset + videoTime);
+  };
+
+  // Dragging the pin. Normally it scrubs: the video jumps to the moment the
+  // pin's spot on the route was ridden. In calibrate mode the video holds
+  // still and the drag sets the sync offset instead.
+  const handlePlayheadDragStart = () => {
+    const video = videoRef.current;
+    resumeAfterDrag.current = !!video && !video.paused && !calibrating;
+    video?.pause();
+  };
+
+  const handlePlayheadDrag = (position: [number, number], done = false) => {
+    const video = videoRef.current;
+    if (!video || !selectedClip) return;
+    const clipStart = selectedClip.startTime + syncOffset;
+    if (calibrating) {
+      const here = clipStart + video.currentTime;
+      const t = nearestTrackOffset(timedTrack, position, here - CALIBRATE_RANGE_SECONDS, here + CALIBRATE_RANGE_SECONDS);
+      if (t !== null) {
+        const offset = t - selectedClip.startTime - video.currentTime;
+        if (done) changeSyncOffset(offset);
+        else setSyncOffset(Math.round(offset * 10) / 10);
+      }
+      return;
+    }
+    const length = Number.isFinite(video.duration) ? video.duration : selectedClip.duration;
+    const t = nearestTrackOffset(timedTrack, position, clipStart, clipStart + length);
+    if (t === null) return;
+    const target = t - clipStart;
+    // fastSeek lands on a nearby keyframe, which keeps a fast drag responsive;
+    // the release does an exact seek.
+    if (!done && typeof video.fastSeek === "function") video.fastSeek(target);
+    else video.currentTime = target;
+    setCurrentTime(target);
+  };
+
+  const handlePlayheadDragEnd = (position: [number, number]) => {
+    handlePlayheadDrag(position, true);
+    if (resumeAfterDrag.current) void videoRef.current?.play().catch(() => {});
+    resumeAfterDrag.current = false;
   };
 
   if (!selectedProject) {
@@ -363,10 +440,55 @@ export default function TrailcamStudio() {
       <div className="flex-1 flex overflow-hidden">
         {/* Left — Map */}
         <div className="w-1/2 border-r border-border flex flex-col">
-          <div className="px-5 py-2.5 border-b border-border meta-mono text-muted-foreground flex items-center gap-1.5">
-            <MapIcon className="h-3 w-3" />
-            Map
+          <div className="px-5 py-2.5 border-b border-border meta-mono text-muted-foreground flex items-center justify-between gap-3">
+            <span className="flex items-center gap-1.5">
+              <MapIcon className="h-3 w-3" />
+              Map
+            </span>
+            <div className="flex items-center gap-2" data-testid="sync-controls">
+              <span title="Seconds the pin is shifted to line the camera clock up with the GPS">
+                Sync {syncOffset >= 0 ? "+" : "−"}
+                {Math.abs(syncOffset).toFixed(1)} s
+              </span>
+              <button
+                type="button"
+                onClick={() => changeSyncOffset(syncOffset - 0.5)}
+                className="border border-border rounded px-1.5 hover:text-foreground"
+                title="Pin earlier by half a second"
+                data-testid="button-sync-earlier"
+              >
+                −
+              </button>
+              <button
+                type="button"
+                onClick={() => changeSyncOffset(syncOffset + 0.5)}
+                className="border border-border rounded px-1.5 hover:text-foreground"
+                title="Pin later by half a second"
+                data-testid="button-sync-later"
+              >
+                +
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCalibrating((on) => !on);
+                  videoRef.current?.pause();
+                }}
+                className={`border rounded px-2 ${
+                  calibrating ? "border-foreground text-foreground" : "border-border hover:text-foreground"
+                }`}
+                data-testid="button-calibrate"
+              >
+                {calibrating ? "Done" : "Calibrate"}
+              </button>
+            </div>
           </div>
+          {calibrating && (
+            <div className="px-5 py-2 border-b border-border meta-mono text-foreground bg-muted/40">
+              Pause on something you can spot on the map, like a junction or a bridge, then drag the pin to where
+              you really are. The sync is saved for every clip in this project.
+            </div>
+          )}
           <div className="flex-1 bg-muted/20">
             <Suspense
               fallback={
@@ -387,6 +509,9 @@ export default function TrailcamStudio() {
                 focusSegment={mapFocus}
                 getPlayheadPosition={getPlayheadPosition}
                 isPlaying={isPlaying}
+                onPlayheadDragStart={handlePlayheadDragStart}
+                onPlayheadDrag={handlePlayheadDrag}
+                onPlayheadDragEnd={handlePlayheadDragEnd}
                 className="w-full h-full"
               />
             </Suspense>
