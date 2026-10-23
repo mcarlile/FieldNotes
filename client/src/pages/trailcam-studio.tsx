@@ -17,7 +17,7 @@ import {
 import { NewProjectModal } from "@/components/new-project-modal";
 import { ChunkedVideoUploader } from "@/components/chunked-video-uploader";
 import { ClipEditPopover } from "@/components/clip-edit-popover";
-import MapboxMap, { ClipMarker, ClipSegment } from "@/components/mapbox-map";
+import MapboxMap, { CameraAngle, ClipMarker, ClipSegment } from "@/components/mapbox-map";
 import { nearestTrackOffset, trackBearingAt, trackPositionAt, trackSegmentBetween, type CompactTimedTrack } from "@shared/gpx-utils";
 import type { TrailcamProject, VideoClip, InsertVideoClip } from "@shared/schema";
 import { ApiError, apiRequest } from "@/lib/queryClient";
@@ -62,6 +62,10 @@ export default function TrailcamStudio() {
   // While on, dragging the pin moves the sync instead of the video.
   const [calibrating, setCalibrating] = useState(false);
   const saveSyncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The 3D follow-cam's angle, set by moving the map in calibrate mode.
+  // Saved on the project; null plays with the default chase-cam.
+  const [cameraAngle, setCameraAngle] = useState<CameraAngle | null>(null);
+  const saveAngleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resumeAfterDrag = useRef(false);
   // The clip under the pointer in the library or timeline. The map zooms to
   // it and hides the rest. Small delays keep a quick sweep across the cards
@@ -109,6 +113,8 @@ export default function TrailcamStudio() {
   useEffect(() => {
     const saved = (selectedProject?.gpxData as { syncOffsetSeconds?: number } | undefined)?.syncOffsetSeconds;
     setSyncOffset(typeof saved === "number" ? saved : 0);
+    const savedAngle = (selectedProject?.gpxData as { cameraAngle?: CameraAngle | null } | undefined)?.cameraAngle;
+    setCameraAngle(savedAngle ?? null);
     setCalibrating(false);
     // Only on switching projects; later saves come from this page's own state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -143,6 +149,33 @@ export default function TrailcamStudio() {
                 ? error.message
                 : "request failed";
           toast({ title: "Couldn't save the sync offset", description: reason, variant: "destructive" });
+        });
+    }, 600);
+  };
+
+  const changeCameraAngle = (angle: CameraAngle | null) => {
+    const projectId = selectedProject?.id;
+    setCameraAngle(angle);
+    if (!projectId) return;
+    if (saveAngleTimer.current) clearTimeout(saveAngleTimer.current);
+    saveAngleTimer.current = setTimeout(() => {
+      apiRequest(`/api/trailcam-projects/${projectId}/camera-angle`, "PUT", { cameraAngle: angle })
+        .then((response) => {
+          // A server still running older code answers this route with the app's HTML page.
+          if (!response.headers.get("content-type")?.includes("application/json")) {
+            throw new Error("The server hasn't picked up this feature yet. Restart or republish it.");
+          }
+          // As with the sync offset, the angle already lives in this page's state.
+          queryClient.invalidateQueries({ queryKey: ["/api/trailcam-projects"] });
+        })
+        .catch((error: unknown) => {
+          const reason =
+            error instanceof ApiError
+              ? `${error.status}: ${(error.data as { message?: string } | null)?.message ?? "request failed"}`
+              : error instanceof Error
+                ? error.message
+                : "request failed";
+          toast({ title: "Couldn't save the camera angle", description: reason, variant: "destructive" });
         });
     }, 600);
   };
@@ -512,12 +545,24 @@ export default function TrailcamStudio() {
               >
                 {calibrating ? "Done" : "Calibrate"}
               </button>
+              {calibrating && cameraAngle && (
+                <button
+                  type="button"
+                  onClick={() => changeCameraAngle(null)}
+                  className="border border-border rounded px-2 hover:text-foreground"
+                  title="Go back to the default chase-cam angle"
+                  data-testid="button-reset-camera-angle"
+                >
+                  Reset angle
+                </button>
+              )}
             </div>
           </div>
           {calibrating && (
             <div className="px-5 py-2 border-b border-border meta-mono text-foreground bg-muted/40">
               Pause on something you can spot on the map, like a junction or a bridge, then drag the pin to where
-              you really are. The sync is saved for every clip in this project.
+              you really are. Then pan, zoom, tilt and turn the map to set the follow-cam's angle. The sync and the
+              angle are saved for every clip in this project.
             </div>
           )}
           <div className="flex-1 bg-muted/20">
@@ -531,6 +576,9 @@ export default function TrailcamStudio() {
               <MapboxMap
                 gpxData={selectedProject.gpxData}
                 showTerrainControls
+                cameraAngle={cameraAngle}
+                onCameraAngleChange={calibrating ? changeCameraAngle : undefined}
+                banner={calibrating ? "Pan and zoom to the angle you'd like this clip to start at" : null}
                 clipMarkers={clipMarkers}
                 clipSegments={clipSegments}
                 selectedSegmentId={selectedClip?.id ?? null}

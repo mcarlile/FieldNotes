@@ -23,6 +23,14 @@ export interface ClipSegment {
   coordinates: [number, number][];
 }
 
+/** A follow-cam view set in calibrate mode, relative to the direction of travel. */
+export interface CameraAngle {
+  pitch: number;
+  zoom: number;
+  /** Degrees the camera turns from facing the way the ride goes. */
+  bearingOffset: number;
+}
+
 export interface PhotoMarker {
   id: string;
   latitude: number;
@@ -56,6 +64,12 @@ interface MapboxMapProps {
   onPlayheadDragEnd?: (position: [number, number]) => void;
   /** Shows the 3D / exaggerated terrain controls in the map's corner. */
   showTerrainControls?: boolean;
+  /** The 3D follow-cam's pitch, zoom and turn from the direction of travel; unset uses the default chase-cam. */
+  cameraAngle?: CameraAngle | null;
+  /** While set, the map goes to the 3D follow view and reports the angle each time the user moves the camera. */
+  onCameraAngleChange?: (angle: CameraAngle) => void;
+  /** A note shown across the top of the map, e.g. calibrate mode's instructions. */
+  banner?: string | null;
   className?: string;
 }
 
@@ -85,6 +99,9 @@ export default function MapboxMap({
   onPlayheadDrag,
   onPlayheadDragEnd,
   showTerrainControls,
+  cameraAngle,
+  onCameraAngleChange,
+  banner,
   className 
 }: MapboxMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -129,12 +146,29 @@ export default function MapboxMap({
   const autoBearingRef = useRef(true);
   // True while the user's hand is on the camera (zooming, tilting, turning).
   const userGestureRef = useRef(false);
-  // The follow-cam's view: in 3D, close behind the pin facing the way the
-  // ride goes; in 2D, zoomed in and north-up.
+  // True from the user's first camera gesture until the camera settles.
+  const userMovedRef = useRef(false);
+  const cameraAngleRef = useRef(cameraAngle);
+  cameraAngleRef.current = cameraAngle;
+  const onCameraAngleChangeRef = useRef(onCameraAngleChange);
+  onCameraAngleChangeRef.current = onCameraAngleChange;
+  // Which way the 3D follow-cam faces: the direction of travel, turned by the
+  // calibrated offset.
+  const followBearing = () => {
+    const travel = getPlayheadBearingRef.current?.();
+    return travel == null ? null : travel + (cameraAngleRef.current?.bearingOffset ?? 0);
+  };
+  // The follow-cam's view: in 3D, the calibrated angle, or close behind the
+  // pin facing the way the ride goes; in 2D, zoomed in and north-up.
   const followCamera = () => {
     if (!is3DRef.current) return { zoom: FOLLOW_ZOOM, pitch: 0, bearing: 0 };
-    const bearing = getPlayheadBearingRef.current?.();
-    return { zoom: CHASE_ZOOM, pitch: CHASE_PITCH, ...(bearing != null ? { bearing } : {}) };
+    const angle = cameraAngleRef.current;
+    const bearing = followBearing();
+    return {
+      zoom: angle?.zoom ?? CHASE_ZOOM,
+      pitch: angle?.pitch ?? CHASE_PITCH,
+      ...(bearing != null ? { bearing } : {}),
+    };
   };
   // True while a hovered clip is being previewed; the follow-cam stands aside.
   const previewingRef = useRef(false);
@@ -327,19 +361,34 @@ export default function MapboxMap({
       // tilting keep tracking the pin, and turning the map keeps their heading.
       const m = map.current;
       m.on('dragstart', (e: any) => {
-        if (e.originalEvent) setFollowing(false);
+        if (!e.originalEvent) return;
+        userMovedRef.current = true;
+        // Calibrating the angle moves the camera around the pin, not off it.
+        if (!onCameraAngleChangeRef.current) setFollowing(false);
       });
       m.on('rotatestart', (e: any) => {
         if (e.originalEvent) autoBearingRef.current = false;
       });
       (['zoomstart', 'pitchstart', 'rotatestart'] as const).forEach((type) =>
         m.on(type, (e: any) => {
-          if (e.originalEvent) userGestureRef.current = true;
+          if (!e.originalEvent) return;
+          userGestureRef.current = true;
+          userMovedRef.current = true;
         }),
       );
       // The follow-cam waits for the gesture to finish, so it doesn't cut it off.
       m.on('moveend', () => {
         userGestureRef.current = false;
+        if (!userMovedRef.current) return;
+        userMovedRef.current = false;
+        const report = onCameraAngleChangeRef.current;
+        if (!report) return;
+        const travel = getPlayheadBearingRef.current?.() ?? 0;
+        report({
+          pitch: m.getPitch(),
+          zoom: m.getZoom(),
+          bearingOffset: ((m.getBearing() - travel + 540) % 360) - 180,
+        });
       });
       loadedMapRef.current = map.current;
       setMapReady(true);
@@ -602,6 +651,25 @@ export default function MapboxMap({
     m.setStyle(style.url, { diff: false } as any);
   };
 
+  // Calibrating the angle starts from the 3D follow view of the pin, so the
+  // user adjusts what will actually play.
+  const calibratingAngle = !!onCameraAngleChange;
+  useEffect(() => {
+    const m = loadedMap();
+    if (!m || !calibratingAngle) return;
+    if (showTerrainControls) {
+      is3DRef.current = true;
+      setIs3D(true);
+    }
+    setFollowing(true);
+    autoBearingRef.current = true;
+    const center = getPlayheadPositionRef.current?.();
+    focusAnimatingUntil.current = performance.now() + FOCUS_DURATION_MS;
+    m.easeTo({ ...(center ? { center } : {}), ...followCamera(), duration: FOCUS_DURATION_MS });
+    // Only entering calibrate mode should move the camera.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapReady, calibratingAngle]);
+
   // 3D terrain, for maps that show the terrain controls.
   useEffect(() => {
     const m = loadedMap();
@@ -674,7 +742,7 @@ export default function MapboxMap({
         !userGestureRef.current &&
         performance.now() > focusAnimatingUntil.current
       ) {
-        const target = is3DRef.current && autoBearingRef.current ? getPlayheadBearingRef.current?.() : null;
+        const target = is3DRef.current && autoBearingRef.current ? followBearing() : null;
         if (target == null) {
           m.jumpTo({ center: position });
         } else {
@@ -885,6 +953,14 @@ export default function MapboxMap({
     <div className={`relative ${className}`}>
       {/* Inline position: mapbox's own .mapboxgl-map class sets position: relative. */}
       <div ref={mapContainer} className="bg-gray-100" style={{ position: 'absolute', inset: 0 }} data-testid="mapbox-map" />
+      {banner && (
+        <div
+          className="absolute top-3 left-1/2 -translate-x-1/2 z-10 max-w-[60%] text-center meta-mono bg-foreground text-background rounded px-3 py-1.5 shadow-lg pointer-events-none"
+          data-testid="map-banner"
+        >
+          {banner}
+        </div>
+      )}
       {!following && getPlayheadPosition?.() && (
         <button
           type="button"
