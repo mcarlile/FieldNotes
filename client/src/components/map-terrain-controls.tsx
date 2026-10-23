@@ -1,7 +1,7 @@
 import type mapboxgl from "mapbox-gl";
 
-// Terrain is always exaggerated, so climbs and valleys read clearly from above.
-export const EXAGGERATED_TERRAIN = 4.0;
+// 3D terrain is always drawn at true scale, never exaggerated.
+export const TERRAIN_EXAGGERATION = 1.0;
 export const TERRAIN_PITCH = 55;
 
 const DEM_SOURCE = "mapbox-dem";
@@ -27,7 +27,7 @@ export function applyTerrain(map: mapboxgl.Map, options: { is3D: boolean }) {
   }
   map.setTerrain({
     source: DEM_SOURCE,
-    exaggeration: EXAGGERATED_TERRAIN,
+    exaggeration: TERRAIN_EXAGGERATION,
   });
   if (!map.getLayer(SKY_LAYER)) {
     map.addLayer(
