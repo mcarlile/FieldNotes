@@ -5,6 +5,7 @@ import { useTheme } from "@/contexts/theme-context";
 import type { FieldNote } from "@shared/schema";
 import { parseGpxData } from "@shared/gpx-utils";
 import { MapTerrainControls, TERRAIN_PITCH, applyTerrain } from "@/components/map-terrain-controls";
+import { applyMapStyleExtras, getMapStyle } from "@/lib/map-styles";
 
 interface HeatMapViewProps {
   fieldNotes: FieldNote[];
@@ -17,8 +18,6 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
   const [mapLoaded, setMapLoaded] = useState(false);
   const [highlightedDensity, setHighlightedDensity] = useState<string | null>(null);
   const [is3DMode, setIs3DMode] = useState(false);
-  // On by default: this map has always shown 3D terrain exaggerated.
-  const [exaggerateTerrain, setExaggerateTerrain] = useState(true);
   const [selectedActivityType, setSelectedActivityType] = useState<string | null>(null);
   const [selectedMapStyle, setSelectedMapStyle] = useState("outdoors-v11");
   const [webGLSupported, setWebGLSupported] = useState<boolean>(true);
@@ -43,6 +42,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
   const mapStyles = [
     { id: "streets-v12", name: "Streets", description: "Classic street map" },
     { id: "outdoors-v11", name: "Outdoors", description: "Terrain and outdoor features" },
+    { id: "winter", name: "Winter", description: "Snowy monochrome map with falling snow" },
     { id: "light-v11", name: "Light", description: "Clean, minimal style" },
     { id: "dark-v11", name: "Dark", description: "Dark theme style" },
     { id: "satellite-v9", name: "Satellite", description: "Satellite imagery" },
@@ -65,14 +65,18 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     // Temporarily set mapLoaded to false to force re-render
     setMapLoaded(false);
     
-    map.current.setStyle(`mapbox://styles/mapbox/${styleId}`);
+    const winter = getMapStyle("winter");
+    const style = styleId === winter.id ? winter : { id: styleId, name: styleId, url: `mapbox://styles/mapbox/${styleId}` };
+    map.current.setStyle(style.url);
     
     // Re-apply 3D mode and heat map layers after style loads
     map.current.once('style.load', () => {
       if (!map.current) return;
+      // Winter's config and snow, or clearing the snow when leaving it.
+      applyMapStyleExtras(map.current, style);
       
       if (is3DMode && map.current) {
-        applyTerrain(map.current, { is3D: true, exaggerate: exaggerateTerrain });
+        applyTerrain(map.current, { is3D: true });
       }
       
       // Restore exact camera position AFTER terrain setup
@@ -208,7 +212,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     
     if (newIs3DMode) {
       // Enable 3D mode (terrain plus a sky behind it)
-      applyTerrain(map.current, { is3D: true, exaggerate: exaggerateTerrain });
+      applyTerrain(map.current, { is3D: true });
       
       // Ensure route layers are above terrain by moving them to top
       const routeLayers = ['route-heat-single', 'route-heat-medium', 'route-heat-high', 'route-heat'];
@@ -224,7 +228,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       map.current.setBearing(-15);
     } else {
       // Disable 3D mode
-      applyTerrain(map.current, { is3D: false, exaggerate: exaggerateTerrain });
+      applyTerrain(map.current, { is3D: false });
       
       // Animate back to 2D view
       map.current.easeTo({
@@ -233,12 +237,6 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
         duration: 1000
       });
     }
-  };
-
-  const toggleExaggerateTerrain = () => {
-    const next = !exaggerateTerrain;
-    setExaggerateTerrain(next);
-    if (map.current && is3DMode) applyTerrain(map.current, { is3D: true, exaggerate: next });
   };
 
   // Robust heat map rendering function
@@ -883,9 +881,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       <MapTerrainControls
         className="absolute top-4 right-4 z-10"
         is3D={is3DMode}
-        exaggerate={exaggerateTerrain}
         onToggle3D={toggle3DMode}
-        onToggleExaggerate={toggleExaggerateTerrain}
       />
       
       <div ref={mapContainer} className="w-full h-full" />

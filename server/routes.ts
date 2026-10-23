@@ -772,6 +772,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // The follow-cam angle set in calibrate mode, kept on the project's gpxData
+  // beside the sync offset. A null angle goes back to the default chase-cam.
+  app.put("/api/trailcam-projects/:id/camera-angle", requireAuth, async (req, res) => {
+    try {
+      const angle = req.body?.cameraAngle;
+      let cameraAngle: { pitch: number; zoom: number; bearingOffset: number } | null = null;
+      if (angle != null) {
+        const pitch = Number(angle.pitch);
+        const zoom = Number(angle.zoom);
+        const bearingOffset = Number(angle.bearingOffset);
+        if (
+          !Number.isFinite(pitch) || pitch < 0 || pitch > 85 ||
+          !Number.isFinite(zoom) || zoom < 1 || zoom > 22 ||
+          !Number.isFinite(bearingOffset) || Math.abs(bearingOffset) > 180
+        ) {
+          return res.status(400).json({ message: "cameraAngle needs pitch 0–85, zoom 1–22 and bearingOffset within ±180" });
+        }
+        const round = (n: number) => Math.round(n * 100) / 100;
+        cameraAngle = { pitch: round(pitch), zoom: round(zoom), bearingOffset: round(bearingOffset) };
+      }
+      const existing = await storage.getTrailcamProjectById(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ message: "TrailCam project not found" });
+      }
+      const gpxData = { ...(existing.gpxData as Record<string, unknown>), cameraAngle };
+      const project = await storage.updateTrailcamProject(existing.id, { gpxData });
+      res.json(project);
+    } catch (error) {
+      console.error("Error updating TrailCam camera angle:", error);
+      res.status(500).json({ message: "Failed to update camera angle" });
+    }
+  });
+
   // Delete TrailCam project
   app.delete("/api/trailcam-projects/:id", requireAuth, async (req, res) => {
     try {

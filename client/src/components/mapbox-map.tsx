@@ -3,6 +3,7 @@ import mapboxgl from "mapbox-gl";
 import { initMapbox } from "@/lib/mapbox";
 import { MapTerrainControls, TERRAIN_PITCH, applyTerrain } from "@/components/map-terrain-controls";
 import { parseGpxData } from "@shared/gpx-utils";
+import { MAP_STYLES, applyMapStyleExtras, getMapStyle, loadSavedMapStyleId, saveMapStyleId } from "@/lib/map-styles";
 import type { ElevationPoint } from "@shared/gpx-utils";
 
 export interface ClipMarker {
@@ -20,6 +21,14 @@ export interface ClipSegment {
   subtitle?: string;
   color: string;
   coordinates: [number, number][];
+}
+
+/** A follow-cam view set in calibrate mode, relative to the direction of travel. */
+export interface CameraAngle {
+  pitch: number;
+  zoom: number;
+  /** Degrees the camera turns from facing the way the ride goes. */
+  bearingOffset: number;
 }
 
 export interface PhotoMarker {
@@ -53,8 +62,14 @@ interface MapboxMapProps {
   onPlayheadDragStart?: () => void;
   onPlayheadDrag?: (position: [number, number]) => void;
   onPlayheadDragEnd?: (position: [number, number]) => void;
-  /** Shows the 3D / exaggerated terrain controls in the map's corner. */
+  /** Shows the 3D terrain switch in the map's corner. */
   showTerrainControls?: boolean;
+  /** The 3D follow-cam's pitch, zoom and turn from the direction of travel; unset uses the default chase-cam. */
+  cameraAngle?: CameraAngle | null;
+  /** While set, the map goes to the 3D follow view and reports the angle each time the user moves the camera. */
+  onCameraAngleChange?: (angle: CameraAngle) => void;
+  /** A note shown across the top of the map, e.g. calibrate mode's instructions. */
+  banner?: string | null;
   className?: string;
 }
 
@@ -84,6 +99,9 @@ export default function MapboxMap({
   onPlayheadDrag,
   onPlayheadDragEnd,
   showTerrainControls,
+  cameraAngle,
+  onCameraAngleChange,
+  banner,
   className 
 }: MapboxMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -122,21 +140,74 @@ export default function MapboxMap({
   // While the zoom-in animation runs, the follow-cam leaves the camera alone.
   const focusAnimatingUntil = useRef(0);
   const [is3D, setIs3D] = useState(false);
-  const [exaggerateTerrain, setExaggerateTerrain] = useState(true);
   const is3DRef = useRef(false);
   is3DRef.current = is3D;
   const autoBearingRef = useRef(true);
   // True while the user's hand is on the camera (zooming, tilting, turning).
   const userGestureRef = useRef(false);
-  // The follow-cam's view: in 3D, close behind the pin facing the way the
-  // ride goes; in 2D, zoomed in and north-up.
+  // True from the user's first camera gesture until the camera settles.
+  const userMovedRef = useRef(false);
+  const cameraAngleRef = useRef(cameraAngle);
+  cameraAngleRef.current = cameraAngle;
+  const onCameraAngleChangeRef = useRef(onCameraAngleChange);
+  onCameraAngleChangeRef.current = onCameraAngleChange;
+  // Which way the 3D follow-cam faces: the direction of travel, turned by the
+  // calibrated offset.
+  const followBearing = () => {
+    const travel = getPlayheadBearingRef.current?.();
+    return travel == null ? null : travel + (cameraAngleRef.current?.bearingOffset ?? 0);
+  };
+  // The follow-cam's view: in 3D, the calibrated angle, or close behind the
+  // pin facing the way the ride goes; in 2D, zoomed in and north-up.
   const followCamera = () => {
     if (!is3DRef.current) return { zoom: FOLLOW_ZOOM, pitch: 0, bearing: 0 };
-    const bearing = getPlayheadBearingRef.current?.();
-    return { zoom: CHASE_ZOOM, pitch: CHASE_PITCH, ...(bearing != null ? { bearing } : {}) };
+    const angle = cameraAngleRef.current;
+    const bearing = followBearing();
+    return {
+      zoom: angle?.zoom ?? CHASE_ZOOM,
+      pitch: angle?.pitch ?? CHASE_PITCH,
+      ...(bearing != null ? { bearing } : {}),
+    };
   };
   // True while a hovered clip is being previewed; the follow-cam stands aside.
   const previewingRef = useRef(false);
+  // The base layer from the "Map layer" dropdown, remembered per browser.
+  const [mapStyleId, setMapStyleId] = useState(loadSavedMapStyleId);
+  const mapStyleIdRef = useRef(mapStyleId);
+  // The focus request already acted on, so a style change doesn't replay it.
+  const handledFocusRef = useRef<{ map: mapboxgl.Map; nonce: number } | null>(null);
+  // The clip-segment hover/click listeners on the current map, so a style
+  // change that re-adds the layers doesn't register them twice.
+  const segmentListenersRef = useRef<{ map: mapboxgl.Map; off: () => void } | null>(null);
+
+  // The route line. A style change wipes it, so it is re-added after one.
+  const addTrackLayer = (m: mapboxgl.Map) => {
+    if (coordinatesRef.current.length === 0 || m.getSource('gpx-track')) return;
+    m.addSource('gpx-track', {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: [{
+          type: 'Feature',
+          properties: {},
+          geometry: { type: 'LineString', coordinates: coordinatesRef.current },
+        }],
+      },
+    });
+    m.addLayer({
+      id: 'gpx-track-line',
+      type: 'line',
+      source: 'gpx-track',
+      layout: {
+        'line-join': 'round',
+        'line-cap': 'round',
+      },
+      paint: {
+        'line-color': '#0f62fe',
+        'line-width': 3,
+      },
+    });
+  };
 
   // Initialize map and add GPX track
   useEffect(() => {
@@ -173,9 +244,7 @@ export default function MapboxMap({
     }
 
     // Store coordinates for elevation marker positioning
-    if (parsedGpxData && parsedGpxData.coordinates) {
-      coordinatesRef.current = parsedGpxData.coordinates;
-    }
+    coordinatesRef.current = parsedGpxData?.coordinates ?? [];
 
     // Calculate initial center and zoom from GPX data
     let initialCenter: [number, number] = [-74.006, 40.7128];
@@ -209,7 +278,7 @@ export default function MapboxMap({
     try {
       map.current = new mapboxgl.Map({
         container: mapContainer.current,
-        style: 'mapbox://styles/mapbox/outdoors-v12',
+        style: getMapStyle(mapStyleIdRef.current).url,
         center: initialCenter,
         zoom: initialZoom,
       });
@@ -220,42 +289,16 @@ export default function MapboxMap({
     }
 
     map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+    // Every style load, the first one included, gets its config and snow.
+    const styledMap = map.current;
+    styledMap.on('style.load', () => applyMapStyleExtras(styledMap, getMapStyle(mapStyleIdRef.current)));
 
     map.current.on('load', () => {
       if (!map.current) return;
 
       // Add GPX track if available
       if (parsedGpxData && parsedGpxData.coordinates && parsedGpxData.coordinates.length > 0) {
-        const geojsonData = {
-          type: 'FeatureCollection' as const,
-          features: [{
-            type: 'Feature' as const,
-            properties: {},
-            geometry: {
-              type: 'LineString' as const,
-              coordinates: parsedGpxData.coordinates
-            }
-          }]
-        };
-
-        map.current.addSource('gpx-track', {
-          type: 'geojson',
-          data: geojsonData,
-        });
-
-        map.current.addLayer({
-          id: 'gpx-track-line',
-          type: 'line',
-          source: 'gpx-track',
-          layout: {
-            'line-join': 'round',
-            'line-cap': 'round',
-          },
-          paint: {
-            'line-color': '#0f62fe',
-            'line-width': 3,
-          },
-        });
+        addTrackLayer(map.current);
 
         // Create elevation position marker with smooth animations
         const elevationEl = document.createElement('div');
@@ -317,19 +360,34 @@ export default function MapboxMap({
       // tilting keep tracking the pin, and turning the map keeps their heading.
       const m = map.current;
       m.on('dragstart', (e: any) => {
-        if (e.originalEvent) setFollowing(false);
+        if (!e.originalEvent) return;
+        userMovedRef.current = true;
+        // Calibrating the angle moves the camera around the pin, not off it.
+        if (!onCameraAngleChangeRef.current) setFollowing(false);
       });
       m.on('rotatestart', (e: any) => {
         if (e.originalEvent) autoBearingRef.current = false;
       });
       (['zoomstart', 'pitchstart', 'rotatestart'] as const).forEach((type) =>
         m.on(type, (e: any) => {
-          if (e.originalEvent) userGestureRef.current = true;
+          if (!e.originalEvent) return;
+          userGestureRef.current = true;
+          userMovedRef.current = true;
         }),
       );
       // The follow-cam waits for the gesture to finish, so it doesn't cut it off.
       m.on('moveend', () => {
         userGestureRef.current = false;
+        if (!userMovedRef.current) return;
+        userMovedRef.current = false;
+        const report = onCameraAngleChangeRef.current;
+        if (!report) return;
+        const travel = getPlayheadBearingRef.current?.() ?? 0;
+        report({
+          pitch: m.getPitch(),
+          zoom: m.getZoom(),
+          bearingOffset: ((m.getBearing() - travel + 540) % 360) - 180,
+        });
       });
       loadedMapRef.current = map.current;
       setMapReady(true);
@@ -337,6 +395,7 @@ export default function MapboxMap({
 
     return () => {
       loadedMapRef.current = null;
+      segmentListenersRef.current = null;
       setMapReady(false);
       playheadMarker.current?.remove();
       playheadMarker.current = null;
@@ -486,9 +545,19 @@ export default function MapboxMap({
       m.setFilter('clip-segments-casing', filter as any);
       m.setFilter('clip-segments-line', filter as any);
     }
+    if (segmentListenersRef.current?.map === m) segmentListenersRef.current.off();
     m.on('mousemove', 'clip-segments-line', onMove);
     m.on('mouseleave', 'clip-segments-line', onLeave);
     m.on('click', 'clip-segments-line', onClick);
+    segmentListenersRef.current = {
+      map: m,
+      off: () => {
+        popup.remove();
+        m.off('mousemove', 'clip-segments-line', onMove);
+        m.off('mouseleave', 'clip-segments-line', onLeave);
+        m.off('click', 'clip-segments-line', onClick);
+      },
+    };
     // Listeners and layers go away with the map itself (see the init effect).
   }, [mapReady, clipSegments, selectedSegmentId, previewSegmentId]);
 
@@ -525,6 +594,9 @@ export default function MapboxMap({
   useEffect(() => {
     const m = loadedMap();
     if (!m || !focusSegment) return;
+    // A style change re-runs this; only a new request should move the map.
+    if (handledFocusRef.current?.map === m && handledFocusRef.current.nonce === focusSegment.nonce) return;
+    handledFocusRef.current = { map: m, nonce: focusSegment.nonce };
     const segment = clipSegments?.find((s) => s.id === focusSegment.id);
     const center = getPlayheadPositionRef.current?.() ?? segment?.coordinates[0];
     if (!center) return;
@@ -552,13 +624,58 @@ export default function MapboxMap({
     m.easeTo({ center, ...followCamera(), duration: FOCUS_DURATION_MS });
   };
 
+  // Swap the base layer. setStyle drops our own sources and layers, so the
+  // map counts as not ready until the new style loads and the track is back;
+  // the effects keyed on mapReady then re-add segments and terrain. DOM
+  // markers (pins, photos, clip ends) aren't part of the style and stay put.
+  const changeMapStyle = (id: string) => {
+    const style = getMapStyle(id);
+    if (style.id === mapStyleIdRef.current) return;
+    mapStyleIdRef.current = style.id;
+    setMapStyleId(style.id);
+    saveMapStyleId(style.id);
+    const m = loadedMap();
+    if (!m) return; // Still loading: the first style.load picks up the new choice.
+    loadedMapRef.current = null;
+    setMapReady(false);
+    const camera = { center: m.getCenter(), zoom: m.getZoom(), pitch: m.getPitch(), bearing: m.getBearing() };
+    m.once('style.load', () => {
+      if (map.current !== m) return;
+      m.jumpTo(camera);
+      addTrackLayer(m);
+      loadedMapRef.current = m;
+      setMapReady(true);
+    });
+    // diff: false forces a full reload, so style.load always fires.
+    m.setStyle(style.url, { diff: false } as any);
+  };
+
+  // Calibrating the angle starts from the 3D follow view of the pin, so the
+  // user adjusts what will actually play.
+  const calibratingAngle = !!onCameraAngleChange;
+  useEffect(() => {
+    const m = loadedMap();
+    if (!m || !calibratingAngle) return;
+    if (showTerrainControls) {
+      is3DRef.current = true;
+      setIs3D(true);
+    }
+    setFollowing(true);
+    autoBearingRef.current = true;
+    const center = getPlayheadPositionRef.current?.();
+    focusAnimatingUntil.current = performance.now() + FOCUS_DURATION_MS;
+    m.easeTo({ ...(center ? { center } : {}), ...followCamera(), duration: FOCUS_DURATION_MS });
+    // Only entering calibrate mode should move the camera.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapReady, calibratingAngle]);
+
   // 3D terrain, for maps that show the terrain controls.
   useEffect(() => {
     const m = loadedMap();
     if (!m || !showTerrainControls) return;
-    applyTerrain(m, { is3D, exaggerate: exaggerateTerrain });
+    applyTerrain(m, { is3D });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapReady, showTerrainControls, is3D, exaggerateTerrain]);
+  }, [mapReady, showTerrainControls, is3D]);
 
   const toggle3D = () => {
     const next = !is3D;
@@ -624,7 +741,7 @@ export default function MapboxMap({
         !userGestureRef.current &&
         performance.now() > focusAnimatingUntil.current
       ) {
-        const target = is3DRef.current && autoBearingRef.current ? getPlayheadBearingRef.current?.() : null;
+        const target = is3DRef.current && autoBearingRef.current ? followBearing() : null;
         if (target == null) {
           m.jumpTo({ center: position });
         } else {
@@ -835,6 +952,14 @@ export default function MapboxMap({
     <div className={`relative ${className}`}>
       {/* Inline position: mapbox's own .mapboxgl-map class sets position: relative. */}
       <div ref={mapContainer} className="bg-gray-100" style={{ position: 'absolute', inset: 0 }} data-testid="mapbox-map" />
+      {banner && (
+        <div
+          className="absolute top-3 left-1/2 -translate-x-1/2 z-10 max-w-[60%] text-center meta-mono bg-foreground text-background rounded px-3 py-1.5 shadow-lg pointer-events-none"
+          data-testid="map-banner"
+        >
+          {banner}
+        </div>
+      )}
       {!following && getPlayheadPosition?.() && (
         <button
           type="button"
@@ -845,15 +970,27 @@ export default function MapboxMap({
           ⌖ Recenter on pin
         </button>
       )}
-      {showTerrainControls && (
-        <MapTerrainControls
-          className="absolute top-3 left-3 z-10"
-          is3D={is3D}
-          exaggerate={exaggerateTerrain}
-          onToggle3D={toggle3D}
-          onToggleExaggerate={() => setExaggerateTerrain((on) => !on)}
-        />
-      )}
+      <div className="absolute top-3 left-3 z-10 flex flex-col items-start gap-2">
+        {showTerrainControls && (
+          <MapTerrainControls
+            is3D={is3D}
+            onToggle3D={toggle3D}
+          />
+        )}
+        <label className="bg-card border border-border rounded-lg px-3 py-2 shadow-lg flex items-center gap-2 text-sm text-foreground">
+          <span className="font-medium">Map layer</span>
+          <select
+            value={mapStyleId}
+            onChange={(e) => changeMapStyle(e.target.value)}
+            className="bg-background border border-border rounded px-1.5 py-0.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+            data-testid="select-map-style"
+          >
+            {MAP_STYLES.map((style) => (
+              <option key={style.id} value={style.id}>{style.name}</option>
+            ))}
+          </select>
+        </label>
+      </div>
     </div>
   );
 }
