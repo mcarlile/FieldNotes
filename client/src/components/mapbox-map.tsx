@@ -291,6 +291,10 @@ export default function MapboxMap({
     map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
     // Every style load, the first one included, gets its config and snow.
     const styledMap = map.current;
+    // The Studio viewer changes its bounded map row as mobile browser chrome
+    // expands/collapses. Mapbox otherwise only listens for window resizes.
+    const resizeObserver = new ResizeObserver(() => styledMap.resize());
+    resizeObserver.observe(mapContainer.current);
     styledMap.on('style.load', () => applyMapStyleExtras(styledMap, getMapStyle(mapStyleIdRef.current)));
 
     map.current.on('load', () => {
@@ -394,6 +398,7 @@ export default function MapboxMap({
     });
 
     return () => {
+      resizeObserver.disconnect();
       loadedMapRef.current = null;
       segmentListenersRef.current = null;
       setMapReady(false);
@@ -970,7 +975,7 @@ export default function MapboxMap({
           ⌖ Recenter on pin
         </button>
       )}
-      <div className="absolute top-3 left-3 z-10 flex flex-col items-start gap-2">
+      <div data-map-widgets className="absolute top-3 left-3 z-10 flex flex-col items-start gap-2">
         {showTerrainControls && (
           <MapTerrainControls
             is3D={is3D}

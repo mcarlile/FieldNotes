@@ -42,7 +42,7 @@ export default function GlobalHeader() {
   );
 
   return (
-    <header className="bg-background sticky top-0 z-50 backdrop-blur-sm bg-opacity-90">
+    <header data-global-header className="bg-background sticky top-0 z-50 backdrop-blur-sm bg-opacity-90">
       <div className="px-5 sm:px-8 h-11 flex items-center justify-between">
         {/* Brand wordmark */}
         <AppSwitcher onNavigate={() => setMobileOpen(false)} />

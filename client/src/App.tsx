@@ -194,7 +194,7 @@ function AppContent() {
     <>
       {showHeader && <GlobalHeader />}
       {readOnlyPreview && location !== "/" && !location.startsWith("/sign-") && (
-        <div className="border-b border-border bg-muted px-5 py-2 text-center text-xs text-foreground">
+        <div data-preview-banner className="border-b border-border bg-muted px-5 py-2 text-center text-xs text-foreground">
           Live production data · Read-only preview
         </div>
       )}

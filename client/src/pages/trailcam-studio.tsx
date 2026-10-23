@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useIsMobile } from "@/hooks/use-mobile";
+import "./trailcam-studio.css";
 import {
   ArrowLeft,
   Video,
@@ -56,6 +58,8 @@ const CALIBRATE_RANGE_SECONDS = 300;
 
 export default function TrailcamStudio() {
   const { toast } = useToast();
+  const isMobile = useIsMobile();
+  const projectViewportRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   const [selectedProject, setSelectedProject] = useState<TrailcamProject | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -71,6 +75,24 @@ export default function TrailcamStudio() {
   const [syncOffset, setSyncOffset] = useState(0);
   // While on, dragging the pin moves the sync instead of the video.
   const [calibrating, setCalibrating] = useState(false);
+  useEffect(() => {
+    if (isMobile) setCalibrating(false);
+  }, [isMobile]);
+
+  // Measure actual chrome (including a wrapping preview banner or open header
+  // drawer), rather than assuming that everything above the viewer is 44px.
+  useEffect(() => {
+    if (!selectedProject || !isMobile) return;
+    const chrome = document.querySelectorAll<HTMLElement>("[data-global-header], [data-preview-banner]");
+    const updateHeight = () => {
+      const height = Array.from(chrome).reduce((total, element) => total + element.getBoundingClientRect().height, 0);
+      projectViewportRef.current?.style.setProperty("--studio-chrome-height", `${height}px`);
+    };
+    updateHeight();
+    const observer = new ResizeObserver(updateHeight);
+    chrome.forEach((element) => observer.observe(element));
+    return () => observer.disconnect();
+  }, [selectedProject?.id, isMobile]);
   const saveSyncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The 3D follow-cam's angle, set by moving the map in calibrate mode.
   // Saved on the project; null plays with the default chase-cam.
@@ -89,6 +111,11 @@ export default function TrailcamStudio() {
   useEffect(() => () => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
   }, []);
+  useEffect(() => {
+    if (!isMobile) return;
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    setHoveredClipId(null);
+  }, [isMobile]);
 
   const [projectSearch, setProjectSearch] = useState("");
   const [projectSort, setProjectSort] = useState<"recent" | "oldest" | "name">("recent");
@@ -651,9 +678,9 @@ export default function TrailcamStudio() {
   }
 
   return (
-    <div className="h-[calc(100vh-2.75rem)] bg-background flex flex-col overflow-hidden">
+    <div ref={projectViewportRef} className="studio-project h-[calc(100vh-2.75rem)] bg-background flex flex-col overflow-hidden">
       {/* Paper-thin header */}
-      <div className="px-5 sm:px-8 py-3 border-b border-border flex items-center justify-between gap-4 flex-shrink-0">
+      <div className="studio-desktop-only px-5 sm:px-8 py-3 border-b border-border flex items-center justify-between gap-4 flex-shrink-0">
         <div className="flex items-center gap-4 min-w-0">
           <button
             type="button"
@@ -683,10 +710,10 @@ export default function TrailcamStudio() {
       </div>
 
       {/* Main split */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="studio-split flex-1 min-h-0 min-w-0 flex overflow-hidden">
         {/* Left — Map */}
-        <div className="w-1/2 border-r border-border flex flex-col">
-          <div className="px-5 py-2.5 border-b border-border meta-mono text-muted-foreground flex items-center justify-between gap-3">
+        <div className="studio-map-panel w-1/2 min-h-0 min-w-0 border-r border-border flex flex-col">
+          <div className="studio-desktop-only px-5 py-2.5 border-b border-border meta-mono text-muted-foreground flex items-center justify-between gap-3">
             <span className="flex items-center gap-1.5">
               <MapIcon className="h-3 w-3" />
               Map
@@ -741,13 +768,13 @@ export default function TrailcamStudio() {
             </div>
           </div>
           {calibrating && (
-            <div className="px-5 py-2 border-b border-border meta-mono text-foreground bg-muted/40">
+            <div className="studio-desktop-only px-5 py-2 border-b border-border meta-mono text-foreground bg-muted/40">
               Pause on something you can spot on the map, like a junction or a bridge, then drag the pin to where
               you really are. Then pan, zoom, tilt and turn the map to set the follow-cam's angle. The sync and the
               angle are saved for every clip in this project.
             </div>
           )}
-          <div className="flex-1 bg-muted/20">
+          <div className="studio-map-surface flex-1 min-h-0 min-w-0 bg-muted/20">
             <Suspense
               fallback={
                 <div className="flex items-center justify-center h-full meta-mono text-muted-foreground">
@@ -759,7 +786,7 @@ export default function TrailcamStudio() {
                 gpxData={selectedProject.gpxData}
                 showTerrainControls
                 cameraAngle={cameraAngle}
-                onCameraAngleChange={calibrating ? changeCameraAngle : undefined}
+                onCameraAngleChange={calibrating && !isMobile ? changeCameraAngle : undefined}
                 banner={calibrating ? "Pan and zoom to the angle you'd like this clip to start at" : null}
                 clipMarkers={clipMarkers}
                 clipSegments={clipSegments}
@@ -783,10 +810,10 @@ export default function TrailcamStudio() {
         </div>
 
         {/* Right — Video & Timeline */}
-        <div className="w-1/2 flex flex-col">
+        <div className="studio-player-column w-1/2 min-h-0 min-w-0 flex flex-col">
           {/* Video */}
-          <div className="flex-1 border-b border-border flex flex-col">
-            <div className="px-5 py-2.5 border-b border-border flex items-center justify-between gap-3">
+          <div className="studio-video-panel flex-1 min-h-0 min-w-0 border-b border-border flex flex-col">
+            <div className="studio-desktop-only px-5 py-2.5 border-b border-border flex items-center justify-between gap-3">
               <span className="meta-mono text-muted-foreground flex items-center gap-1.5">
                 <Video className="h-3 w-3" />
                 Video clip
@@ -795,7 +822,7 @@ export default function TrailcamStudio() {
                 <span className="meta-mono text-foreground truncate">{selectedClip.title}</span>
               )}
             </div>
-            <div className="flex-1 bg-black flex items-center justify-center relative">
+            <div className="studio-video-surface flex-1 min-h-0 min-w-0 bg-black flex items-center justify-center relative">
               {selectedClip ? (
                 selectedClip.processingStatus === "ready" ? (
                   <video
@@ -833,7 +860,7 @@ export default function TrailcamStudio() {
                     <button
                       type="button"
                       onClick={() => retryProcessing(selectedClip.id)}
-                      className="meta-mono text-white underline underline-offset-4 hover:opacity-70 mt-5 inline-flex items-center gap-1.5"
+                      className="studio-desktop-only meta-mono text-white underline underline-offset-4 hover:opacity-70 mt-5 inline-flex items-center gap-1.5"
                       data-testid="button-reprocess"
                     >
                       <RefreshCw className="h-3 w-3" />
@@ -851,7 +878,7 @@ export default function TrailcamStudio() {
                       <button
                         type="button"
                         onClick={() => retryProcessing(selectedClip.id)}
-                        className="meta-mono text-white underline underline-offset-4 hover:opacity-70 mt-5 inline-flex items-center gap-1.5"
+                        className="studio-desktop-only meta-mono text-white underline underline-offset-4 hover:opacity-70 mt-5 inline-flex items-center gap-1.5"
                         data-testid="button-reprocess-stuck"
                       >
                         <RefreshCw className="h-3 w-3" />
@@ -865,13 +892,13 @@ export default function TrailcamStudio() {
                   <Video className="h-12 w-12 mx-auto mb-4 text-gray-500" />
                   <p className="font-serif text-xl text-gray-200">Select a clip to play</p>
                   <p className="meta-mono text-gray-500 mt-2">
-                    Upload clips and choose preview to start
+                    {isMobile ? "Tap a clip below to start" : "Upload clips and choose preview to start"}
                   </p>
                 </div>
               )}
 
               {selectedClip && selectedClip.processingStatus === "ready" && (
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-black/60 rounded-full px-4 py-2 backdrop-blur-sm">
+                <div className="studio-desktop-only absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-black/60 rounded-full px-4 py-2 backdrop-blur-sm">
                   <button
                     type="button"
                     onClick={() => {
@@ -920,15 +947,10 @@ export default function TrailcamStudio() {
           </div>
 
           {/* Timeline */}
-          <div className="h-64 flex flex-col">
+          <div className="studio-desktop-only h-64 flex flex-col">
             <div className="px-5 py-2.5 border-b border-border flex items-center justify-between gap-3">
-              <span className="meta-mono text-muted-foreground">Timeline · elevation</span>
+              <span className="meta-mono text-muted-foreground">Timeline</span>
               <span className="meta-mono text-muted-foreground">{formatTime(currentTime)}</span>
-            </div>
-
-            <div className="h-16 px-5 py-2 border-b border-border">
-              <div className="h-full bg-gradient-to-r from-green-500 via-yellow-500 to-red-500 rounded opacity-60" />
-              <div className="meta-mono text-muted-foreground mt-1">Elevation profile</div>
             </div>
 
             <div className="flex-1 px-5 py-3">
@@ -986,9 +1008,10 @@ export default function TrailcamStudio() {
       </div>
 
       {/* Bottom — Clips library */}
-      <div className="h-48 border-t border-border flex flex-col flex-shrink-0">
-        <div className="px-5 py-2.5 border-b border-border flex items-center justify-between">
+      <div className="studio-clips-panel h-48 border-t border-border flex flex-col flex-shrink-0">
+        <div className="studio-clips-heading px-5 py-2.5 border-b border-border flex items-center justify-between">
           <span className="meta-mono text-muted-foreground">Clips · {clips.length}</span>
+          <div className="studio-desktop-only">
           <ChunkedVideoUploader
             onComplete={handleClipUpload}
             routeStartTime={routeStartTime}
@@ -996,15 +1019,16 @@ export default function TrailcamStudio() {
           >
             + Add clip
           </ChunkedVideoUploader>
+          </div>
         </div>
 
-        <div className="flex-1 overflow-x-auto px-5 py-3">
+        <div className="studio-clips-scroll flex-1 overflow-x-auto px-5 py-3">
           {clips.length === 0 ? (
             <div className="h-full flex items-center justify-center">
               <p className="font-serif text-muted-foreground">No clips added yet.</p>
             </div>
           ) : (
-            <div className="flex gap-3 h-full">
+            <div className="studio-clips-list flex gap-3 h-full">
               {clips.map((clip, index) => {
                 const ready = clip.processingStatus === "ready";
                 const errored = clip.processingStatus === "error";
@@ -1015,7 +1039,7 @@ export default function TrailcamStudio() {
                     role={ready ? "button" : undefined}
                     tabIndex={ready ? 0 : undefined}
                     onClick={() => playClip(clip)}
-                    onMouseEnter={() => hoverClip(clip.id)}
+                    onMouseEnter={() => { if (!isMobile) hoverClip(clip.id); }}
                     onMouseLeave={() => hoverClip(null)}
                     onKeyDown={(e) => {
                       if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
@@ -1023,12 +1047,12 @@ export default function TrailcamStudio() {
                         playClip(clip);
                       }
                     }}
-                    className={`w-44 flex-shrink-0 border rounded overflow-hidden bg-card flex flex-col ${
+                    className={`studio-clip-card w-44 flex-shrink-0 border rounded overflow-hidden bg-card flex flex-col ${
                       selectedClip?.id === clip.id ? "border-foreground" : "border-border"
                     } ${ready ? "cursor-pointer hover:border-foreground/60 transition-colors" : ""}`}
                     data-testid={`clip-card-${clip.id}`}
                   >
-                    <div className="h-20 bg-black flex items-center justify-center relative flex-shrink-0">
+                    <div className="studio-clip-thumbnail h-20 bg-black flex items-center justify-center relative flex-shrink-0">
                       {clip.thumbnailUrl ? (
                         <img
                           src={`/api/video-clips/${clip.id}/thumbnail`}
@@ -1052,7 +1076,7 @@ export default function TrailcamStudio() {
                         </div>
                       )}
                     </div>
-                    <div className="p-2.5 flex-1 flex flex-col">
+                    <div className="studio-clip-details p-2.5 flex-1 flex flex-col">
                       <div className="flex items-center justify-between gap-2 mb-1.5">
                         <h4 className="text-sm text-foreground truncate">{clip.title}</h4>
                         <div className="flex items-center gap-2 flex-shrink-0">
@@ -1061,14 +1085,14 @@ export default function TrailcamStudio() {
                             style={{ backgroundColor: clipColor(clip, index) }}
                           />
                           {/* Popover content is portaled, but its React events still bubble to the card. */}
-                          <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-                          <ClipEditPopover
+                          <span className="studio-desktop-only" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                          {!isMobile && <ClipEditPopover
                             clip={clip}
                             color={clipColor(clip, index)}
                             palette={clipColors}
                             saving={updateClipMutation.isPending && updateClipMutation.variables?.id === clip.id}
                             onSave={(updates) => updateClipMutation.mutateAsync({ id: clip.id, updates })}
-                          />
+                          />}
                           </span>
                         </div>
                       </div>
@@ -1090,7 +1114,7 @@ export default function TrailcamStudio() {
                             e.stopPropagation();
                             retryProcessing(clip.id);
                           }}
-                          className="meta-mono text-foreground underline underline-offset-4 hover:opacity-70 transition-opacity mt-1 text-left inline-flex items-center gap-1"
+                          className="studio-desktop-only meta-mono text-foreground underline underline-offset-4 hover:opacity-70 transition-opacity mt-1 text-left inline-flex items-center gap-1"
                           data-testid={`button-retry-${clip.id}`}
                         >
                           <RefreshCw className="h-3 w-3" />
