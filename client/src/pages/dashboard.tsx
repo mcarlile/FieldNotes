@@ -2,10 +2,16 @@ import { useState, forwardRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Loading } from "@carbon/react";
-import { LayoutGrid, Flame, List } from "lucide-react";
+import { LayoutGrid, Flame, List, ChevronDown, ChevronUp, CirclePlus, Upload } from "lucide-react";
 import FieldNoteCard from "@/components/field-note-card";
 import HeatMapView from "@/components/heat-map-view";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
 import { apiRequest } from "@/lib/queryClient";
 import type { FieldNote } from "@shared/schema";
@@ -75,6 +81,7 @@ export default function Dashboard() {
   const [tripTypes, setTripTypes] = useState<string[]>([]);
   const [sortOrder, setSortOrder] = useState("recent");
   const [viewMode, setViewMode] = useState<"notes" | "table" | "heatmap">("notes");
+  const [createOpen, setCreateOpen] = useState(false);
   const [distanceFilter, setDistanceFilter] = useState("any");
   const [elevationFilter, setElevationFilter] = useState("any");
 
@@ -208,10 +215,7 @@ export default function Dashboard() {
   if (viewMode === "heatmap") {
     return (
       <div className="bg-background flex flex-col" style={{ minHeight: "calc(100vh - 2.75rem)" }}>
-        <div className="px-5 sm:px-8 pt-6 pb-3 flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <div className="meta-mono text-muted-foreground">Your field notes</div>
-          </div>
+        <div className="px-5 sm:px-8 pt-6 pb-3 flex items-center justify-end gap-3 flex-wrap">
           {ModeSwitcher}
         </div>
         <div className="px-5 sm:px-8 py-4 flex items-center justify-between border-b border-border gap-3 flex-wrap">
@@ -229,10 +233,7 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-background">
       {/* Section heading + mode switcher */}
-      <div id="archive" className="px-5 sm:px-8 pt-6 pb-3 flex items-center justify-between gap-3 flex-wrap scroll-mt-12">
-        <div>
-          <div className="meta-mono text-muted-foreground">Your field notes</div>
-        </div>
+      <div id="archive" className="px-5 sm:px-8 pt-6 pb-3 flex items-center justify-end gap-3 flex-wrap scroll-mt-12">
         {ModeSwitcher}
       </div>
 
@@ -335,12 +336,40 @@ export default function Dashboard() {
             </PopoverContent>
           </Popover>
 
-          <Link
-            href="/admin"
-            className="meta-mono inline-flex min-h-[44px] items-center justify-center rounded-full bg-primary px-6 py-3 text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          >
-            Create
-          </Link>
+          <DropdownMenu open={createOpen} onOpenChange={setCreateOpen}>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className={`meta-mono inline-flex min-h-[44px] items-center justify-center gap-3 rounded-full px-6 py-3 shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
+                  createOpen
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-[#4F5563] text-white hover:bg-[#434956]"
+                }`}
+                data-testid="create-menu-trigger"
+              >
+                Create
+                {createOpen ? (
+                  <ChevronUp className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" sideOffset={8} className="min-w-[16rem] p-1">
+              <DropdownMenuItem asChild>
+                <Link href="/admin" className="min-h-11 gap-3 text-base" data-testid="create-menu-new">
+                  <CirclePlus className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
+                  Create new field note
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/inbox" className="min-h-11 gap-3 text-base" data-testid="create-menu-import">
+                  <Upload className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
+                  Import
+                </Link>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {activeFilterCount > 0 && (
             <button
