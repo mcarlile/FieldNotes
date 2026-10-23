@@ -3,12 +3,14 @@ import type { FieldNote } from "@shared/schema";
 import { parseGpxData } from "@shared/gpx-utils";
 import { staticRoutePath, validRouteCoordinates } from "./static-route-path";
 
+type RouteSource = Pick<FieldNote, "id" | "title" | "gpxData">;
+
 interface MapboxRoutePreviewProps {
-  fieldNote: FieldNote;
+  fieldNote: RouteSource;
   className?: string;
 }
 
-function buildStaticMapUrl(fieldNote: FieldNote): string | null {
+function buildStaticMapUrl(fieldNote: RouteSource): string | null {
   const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
   if (!token || !fieldNote.gpxData) return null;
 

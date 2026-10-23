@@ -2,9 +2,10 @@ import { useState, forwardRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Loading } from "@carbon/react";
-import { LayoutGrid, Flame, List, ChevronDown, ChevronUp, CirclePlus, Upload } from "lucide-react";
+import { ChevronDown, ChevronUp, CirclePlus, Upload } from "lucide-react";
 import FieldNoteCard from "@/components/field-note-card";
 import HeatMapView from "@/components/heat-map-view";
+import ViewModeSwitcher, { type ViewMode } from "@/components/view-mode-switcher";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   DropdownMenu,
@@ -80,7 +81,7 @@ export default function Dashboard() {
   const [search, setSearch] = useState("");
   const [tripTypes, setTripTypes] = useState<string[]>([]);
   const [sortOrder, setSortOrder] = useState("recent");
-  const [viewMode, setViewMode] = useState<"notes" | "table" | "heatmap">("notes");
+  const [viewMode, setViewMode] = useState<ViewMode>("notes");
   const [createOpen, setCreateOpen] = useState(false);
   const [distanceFilter, setDistanceFilter] = useState("any");
   const [elevationFilter, setElevationFilter] = useState("any");
@@ -160,57 +161,7 @@ export default function Dashboard() {
 
   const sortPillLabel = sortOptions.find((o) => o.id === sortOrder)?.label || "Sort";
 
-  const ModeSwitcher = (
-    <div
-      role="tablist"
-      aria-label="View mode"
-      className="inline-flex items-center rounded-full border border-border bg-muted/60 p-0.5"
-      data-testid="view-mode-switcher"
-    >
-      <button
-        role="tab"
-        aria-selected={viewMode === "notes"}
-        onClick={() => setViewMode("notes")}
-        className={`meta-mono flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors ${
-          viewMode === "notes"
-            ? "bg-background text-foreground shadow-[0_1px_2px_rgba(26,24,21,0.08)]"
-            : "text-muted-foreground hover:text-foreground"
-        }`}
-        data-testid="mode-notes"
-      >
-        <LayoutGrid className="h-3 w-3" />
-        Cards
-      </button>
-      <button
-        role="tab"
-        aria-selected={viewMode === "table"}
-        onClick={() => setViewMode("table")}
-        className={`meta-mono flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors ${
-          viewMode === "table"
-            ? "bg-background text-foreground shadow-[0_1px_2px_rgba(26,24,21,0.08)]"
-            : "text-muted-foreground hover:text-foreground"
-        }`}
-        data-testid="mode-table"
-      >
-        <List className="h-3 w-3" />
-        Table
-      </button>
-      <button
-        role="tab"
-        aria-selected={viewMode === "heatmap"}
-        onClick={() => setViewMode("heatmap")}
-        className={`meta-mono flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors ${
-          viewMode === "heatmap"
-            ? "bg-background text-foreground shadow-[0_1px_2px_rgba(26,24,21,0.08)]"
-            : "text-muted-foreground hover:text-foreground"
-        }`}
-        data-testid="mode-heatmap"
-      >
-        <Flame className="h-3 w-3" />
-        Heat map
-      </button>
-    </div>
-  );
+  const ModeSwitcher = <ViewModeSwitcher value={viewMode} onChange={setViewMode} />;
 
   if (viewMode === "heatmap") {
     return (

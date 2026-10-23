@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, Suspense } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft,
@@ -15,6 +15,10 @@ import {
   Loader2,
 } from "lucide-react";
 import { NewProjectModal } from "@/components/new-project-modal";
+import HeatMapView, { type HeatMapRoute } from "@/components/heat-map-view";
+import MapboxRoutePreview from "@/components/mapbox-route-preview";
+import ViewModeSwitcher, { type ViewMode } from "@/components/view-mode-switcher";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ChunkedVideoUploader } from "@/components/chunked-video-uploader";
 import { ClipEditPopover } from "@/components/clip-edit-popover";
 import MapboxMap, { CameraAngle, ClipMarker, ClipSegment } from "@/components/mapbox-map";
@@ -40,6 +44,12 @@ function pillButtonClass(active = false) {
       : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/40"
   }`;
 }
+
+const projectSortOptions = [
+  { id: "recent", label: "Most recent" },
+  { id: "oldest", label: "Oldest first" },
+  { id: "name", label: "By name" },
+] as const;
 
 // How far either side of the current spot a calibration drag may move the pin.
 const CALIBRATE_RANGE_SECONDS = 300;
@@ -80,13 +90,49 @@ export default function TrailcamStudio() {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
   }, []);
 
+  const [projectSearch, setProjectSearch] = useState("");
+  const [projectSort, setProjectSort] = useState<"recent" | "oldest" | "name">("recent");
+  const [projectView, setProjectView] = useState<ViewMode>("notes");
+
   const { data: projects = [], isLoading: projectsLoading } = useQuery<TrailcamProject[]>({
-    queryKey: ["/api/trailcam-projects"],
+    queryKey: ["/api/trailcam-projects", { search: projectSearch, sortOrder: projectSort }],
     queryFn: async () => {
-      const response = await apiRequest("/api/trailcam-projects", "GET");
+      const params = new URLSearchParams();
+      if (projectSearch) params.append("search", projectSearch);
+      params.append("sortOrder", projectSort);
+      const response = await apiRequest(`/api/trailcam-projects?${params}`, "GET");
       return response.json();
     },
+    placeholderData: keepPreviousData,
   });
+
+  // Projects shaped for the shared heat map, table and cards. Distance and
+  // gain come from the route stats saved when the GPX was uploaded.
+  const projectRoutes: HeatMapRoute[] = useMemo(
+    () =>
+      projects.map((project) => {
+        const stats = project.gpxData as { distance?: number; elevationGain?: number } | null;
+        return {
+          id: project.id,
+          title: project.title,
+          tripType: [],
+          gpxData: project.gpxData,
+          distance: typeof stats?.distance === "number" ? Math.round(stats.distance * 10) / 10 : null,
+          elevationGain: typeof stats?.elevationGain === "number" ? Math.round(stats.elevationGain) : null,
+        };
+      }),
+    [projects],
+  );
+
+  // A heat map popup links to /trailcam-studio?project=<id>; open that project
+  // once the list has it, then drop the parameter so Back returns to the list.
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get("project");
+    if (!wanted || projectsLoading) return;
+    const match = projects.find((project) => project.id === wanted);
+    if (match) setSelectedProject(match);
+    window.history.replaceState(null, "", window.location.pathname);
+  }, [projects, projectsLoading]);
 
   const { data: clips = [] } = useQuery<StudioClip[]>({
     queryKey: ["/api/video-clips", selectedProject?.id],
@@ -371,11 +417,88 @@ export default function TrailcamStudio() {
   };
 
   if (!selectedProject) {
+    const searchBar = (
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="text"
+          value={projectSearch}
+          onChange={(e) => setProjectSearch(e.target.value)}
+          placeholder="Search projects…"
+          className="meta-mono bg-transparent border-b border-border focus:border-foreground outline-none px-1 py-1.5 text-foreground placeholder:text-muted-foreground transition-colors min-w-0 w-44"
+          data-testid="input-project-search"
+        />
+        <Popover>
+          <PopoverTrigger asChild>
+            <button type="button" className={pillButtonClass()} data-testid="button-project-sort">
+              {projectSortOptions.find((o) => o.id === projectSort)?.label ?? "Sort"}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-44 p-2 bg-popover border border-border">
+            <div className="flex flex-col">
+              {projectSortOptions.map((opt) => (
+                <button
+                  key={opt.id}
+                  onClick={() => setProjectSort(opt.id)}
+                  className={`text-left text-sm px-2 py-1.5 rounded hover:bg-muted ${
+                    projectSort === opt.id ? "text-foreground" : "text-muted-foreground"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
+        {projectSearch && (
+          <button
+            onClick={() => setProjectSearch("")}
+            className="meta-mono text-muted-foreground hover:text-foreground underline underline-offset-4 ml-2"
+          >
+            Reset
+          </button>
+        )}
+        <span className="meta-mono text-muted-foreground ml-auto">
+          {projects.length} {projects.length === 1 ? "project" : "projects"}
+        </span>
+      </div>
+    );
+
+    const newProjectModal = (
+      <NewProjectModal
+        isOpen={showNewProjectModal}
+        onClose={() => setShowNewProjectModal(false)}
+        onProjectCreated={(project) => {
+          setSelectedProject(project);
+          setShowNewProjectModal(false);
+        }}
+      />
+    );
+
+    if (projectView === "heatmap") {
+      return (
+        <div className="bg-background flex flex-col" style={{ minHeight: "calc(100vh - 2.75rem)" }}>
+          <div className="px-5 sm:px-8 pt-6 pb-3 flex items-center justify-end gap-3 flex-wrap">
+            <ViewModeSwitcher value={projectView} onChange={setProjectView} />
+          </div>
+          <div className="px-5 sm:px-8 pb-3 border-b border-border">{searchBar}</div>
+          <div className="h-[calc(100vh-2.75rem-3.5rem)] min-h-[60vh]">
+            <HeatMapView fieldNotes={projectRoutes} routeHref={(id) => `/trailcam-studio?project=${id}`} />
+          </div>
+          {newProjectModal}
+        </div>
+      );
+    }
+
+    const formatDate = (value: Date | string | null) =>
+      value
+        ? new Date(value).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+        : "—";
+
     return (
       <div className="min-h-screen bg-background">
         <main className="px-5 sm:px-8 pt-6 pb-16 max-w-6xl mx-auto">
           {/* Page header */}
-          <div className="mb-10 flex flex-wrap items-end justify-between gap-4">
+          <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
             <div>
               <div className="meta-mono text-muted-foreground mb-3">
                 TrailCam · projects {projects.length > 0 && `· ${projects.length}`}
@@ -405,65 +528,124 @@ export default function TrailcamStudio() {
             </div>
           </div>
 
+          {/* Search, sort and view switcher */}
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <div className="flex-1 min-w-0">{searchBar}</div>
+            <ViewModeSwitcher value={projectView} onChange={setProjectView} />
+          </div>
+
           {/* Projects */}
           {projectsLoading ? (
             <div className="meta-mono text-muted-foreground py-12">Loading projects…</div>
           ) : projects.length === 0 ? (
             <div className="border-t border-border py-20 text-center">
-              <p className="font-serif text-2xl text-muted-foreground mb-4">No projects yet.</p>
-              <button
-                type="button"
-                onClick={() => setShowNewProjectModal(true)}
-                className="meta-mono text-foreground underline underline-offset-4 hover:opacity-70"
-                data-testid="button-create-first-project"
-              >
-                Create your first →
-              </button>
+              {projectSearch ? (
+                <p className="font-serif text-2xl text-muted-foreground">No projects match “{projectSearch}”.</p>
+              ) : (
+                <>
+                  <p className="font-serif text-2xl text-muted-foreground mb-4">No projects yet.</p>
+                  <button
+                    type="button"
+                    onClick={() => setShowNewProjectModal(true)}
+                    className="meta-mono text-foreground underline underline-offset-4 hover:opacity-70"
+                    data-testid="button-create-first-project"
+                  >
+                    Create your first →
+                  </button>
+                </>
+              )}
+            </div>
+          ) : projectView === "table" ? (
+            <div className="w-full overflow-x-auto">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="meta-mono text-left text-muted-foreground font-normal pb-2 pr-6">Title</th>
+                    <th className="meta-mono text-left text-muted-foreground font-normal pb-2 pr-6">Date</th>
+                    <th className="meta-mono text-right text-muted-foreground font-normal pb-2 pr-6">Duration</th>
+                    <th className="meta-mono text-right text-muted-foreground font-normal pb-2">Distance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {projects.map((project, index) => {
+                    const distance = projectRoutes[index]?.distance;
+                    return (
+                      <tr key={project.id} className="border-b border-border">
+                        <td className="py-2.5 pr-6">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedProject(project)}
+                            className="font-serif text-left text-foreground hover:opacity-70 transition-opacity"
+                            style={{ fontSize: "1.05rem" }}
+                            data-testid={`row-project-${project.id}`}
+                          >
+                            {project.title}
+                          </button>
+                        </td>
+                        <td className="meta-mono text-muted-foreground py-2.5 pr-6 whitespace-nowrap">
+                          {formatDate(project.startTime ?? project.createdAt)}
+                        </td>
+                        <td className="meta-mono text-muted-foreground py-2.5 pr-6 text-right whitespace-nowrap">
+                          {project.duration ? formatTime(project.duration) : "—"}
+                        </td>
+                        <td className="meta-mono text-muted-foreground py-2.5 text-right whitespace-nowrap">
+                          {distance != null ? `${distance} mi` : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           ) : (
-            <div className="border-t border-border divide-y divide-border">
-              {projects.map((project) => (
-                <button
-                  key={project.id}
-                  type="button"
-                  onClick={() => setSelectedProject(project)}
-                  className="w-full text-left py-5 flex items-start justify-between gap-6 group hover:bg-muted/30 -mx-5 sm:-mx-8 px-5 sm:px-8 transition-colors"
-                  data-testid={`tile-project-${project.id}`}
-                >
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-serif text-2xl text-foreground group-hover:underline underline-offset-4">
-                      {project.title}
-                    </h3>
-                    {project.description && (
-                      <p className="text-foreground/70 mt-1 line-clamp-2">{project.description}</p>
-                    )}
-                    <div className="meta-mono text-muted-foreground mt-2 flex flex-wrap gap-x-3">
-                      {project.duration && <span>{formatTime(project.duration)}</span>}
-                      {project.startTime && (
-                        <>
-                          {project.duration && <span>·</span>}
-                          <span>{new Date(project.startTime).toLocaleDateString()}</span>
-                        </>
-                      )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 items-start gap-3 sm:gap-4">
+              {projects.map((project, index) => {
+                const distance = projectRoutes[index]?.distance;
+                return (
+                  <button
+                    key={project.id}
+                    type="button"
+                    onClick={() => setSelectedProject(project)}
+                    className="group block text-left"
+                    data-testid={`tile-project-${project.id}`}
+                  >
+                    <div className="w-full overflow-hidden bg-muted" style={{ aspectRatio: "4 / 3" }}>
+                      <MapboxRoutePreview fieldNote={project} className="w-full h-full" />
                     </div>
-                  </div>
-                  <span className="meta-mono text-muted-foreground group-hover:text-foreground transition-colors">
-                    Open →
-                  </span>
-                </button>
-              ))}
+                    <div className="pt-2 pb-1">
+                      <h3
+                        className="font-serif text-foreground leading-tight group-hover:underline underline-offset-4"
+                        style={{ fontSize: "1.05rem" }}
+                      >
+                        {project.title}
+                      </h3>
+                      {project.description && (
+                        <p className="text-sm text-foreground/70 mt-1 line-clamp-2">{project.description}</p>
+                      )}
+                      <div className="meta-mono text-muted-foreground mt-1 flex flex-wrap gap-x-2">
+                        <span>{formatDate(project.startTime ?? project.createdAt)}</span>
+                        {project.duration ? (
+                          <>
+                            <span>·</span>
+                            <span>{formatTime(project.duration)}</span>
+                          </>
+                        ) : null}
+                        {distance != null && (
+                          <>
+                            <span>·</span>
+                            <span>{distance} mi</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           )}
         </main>
 
-        <NewProjectModal
-          isOpen={showNewProjectModal}
-          onClose={() => setShowNewProjectModal(false)}
-          onProjectCreated={(project) => {
-            setSelectedProject(project);
-            setShowNewProjectModal(false);
-          }}
-        />
+        {newProjectModal}
       </div>
     );
   }

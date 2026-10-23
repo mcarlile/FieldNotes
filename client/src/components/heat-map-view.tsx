@@ -7,11 +7,17 @@ import { parseGpxData } from "@shared/gpx-utils";
 import { MapTerrainControls, TERRAIN_PITCH, applyTerrain } from "@/components/map-terrain-controls";
 import { applyMapStyleExtras, getMapStyle } from "@/lib/map-styles";
 
+// Anything with a route can go on the heat map: field notes, or Studio
+// projects shaped like them.
+export type HeatMapRoute = Pick<FieldNote, "id" | "title" | "tripType" | "gpxData" | "distance" | "elevationGain">;
+
 interface HeatMapViewProps {
-  fieldNotes: FieldNote[];
+  fieldNotes: HeatMapRoute[];
+  // Where a route's popup link goes. Defaults to the field note page.
+  routeHref?: (id: string) => string;
 }
 
-export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
+export default function HeatMapView({ fieldNotes, routeHref = (id) => `/field-notes/${id}` }: HeatMapViewProps) {
   const { theme } = useTheme();
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -614,7 +620,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       const popupContent = intersectingNotes.length === 1 && intersectingNotes[0]
         ? // Single route
           `<div class="text-sm max-w-64">
-             <a href="/field-notes/${intersectingNotes[0].id}" class="font-semibold underline" style="color: ${colors.primary}; text-decoration: underline;">
+             <a href="${routeHref(intersectingNotes[0].id)}" class="font-semibold underline" style="color: ${colors.primary}; text-decoration: underline;">
                ${intersectingNotes[0].title}
              </a><br/>
              <span style="color: #6b7280;">${Array.isArray(intersectingNotes[0].tripType) ? intersectingNotes[0].tripType.join(', ') : intersectingNotes[0].tripType}</span><br/>
@@ -626,7 +632,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
              <strong>${intersectingNotes.length} Routes Overlap Here:</strong><br/>
              ${intersectingNotes.filter(note => note).map(note => 
                `<div class="mt-2 pl-2 border-l-2" style="border-color: ${colors.warning};">
-                  <a href="/field-notes/${note!.id}" class="font-semibold underline" style="color: ${colors.primary}; text-decoration: underline;">
+                  <a href="${routeHref(note!.id)}" class="font-semibold underline" style="color: ${colors.primary}; text-decoration: underline;">
                     ${note!.title}
                   </a><br/>
                   <span class="text-xs" style="color: #6b7280;">${Array.isArray(note!.tripType) ? note!.tripType.join(', ') : note!.tripType} • ${note!.distance}mi</span>
@@ -838,9 +844,12 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     }
   };
 
+  const hasActivityTypes = fieldNotes.some((note) => note.tripType.length > 0);
+
   return (
     <div className="relative w-full h-screen">
-      {/* Activity Type Filter */}
+      {/* Activity Type Filter, left out when no route has a type */}
+      {hasActivityTypes && (
       <div className="absolute top-4 left-4 z-10 bg-card border border-border rounded-lg p-3 shadow-lg min-w-[200px]">
         <div className="space-y-2">
           <label className="text-sm font-medium text-foreground block">Filter by Activity</label>
@@ -858,9 +867,10 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
           </select>
         </div>
       </div>
+      )}
 
       {/* Map Layer Selector */}
-      <div className="absolute top-4 left-4 mt-20 z-10 bg-card border border-border rounded-lg p-3 shadow-lg min-w-[200px]">
+      <div className={`absolute top-4 left-4 ${hasActivityTypes ? "mt-20" : ""} z-10 bg-card border border-border rounded-lg p-3 shadow-lg min-w-[200px]`}>
         <div className="space-y-2">
           <label className="text-sm font-medium text-foreground block">Map Layer</label>
           <select
