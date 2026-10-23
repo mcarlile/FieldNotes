@@ -18,8 +18,6 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
   const [mapLoaded, setMapLoaded] = useState(false);
   const [highlightedDensity, setHighlightedDensity] = useState<string | null>(null);
   const [is3DMode, setIs3DMode] = useState(false);
-  // On by default: this map has always shown 3D terrain exaggerated.
-  const [exaggerateTerrain, setExaggerateTerrain] = useState(true);
   const [selectedActivityType, setSelectedActivityType] = useState<string | null>(null);
   const [selectedMapStyle, setSelectedMapStyle] = useState("outdoors-v11");
   const [webGLSupported, setWebGLSupported] = useState<boolean>(true);
@@ -78,7 +76,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       applyMapStyleExtras(map.current, style);
       
       if (is3DMode && map.current) {
-        applyTerrain(map.current, { is3D: true, exaggerate: exaggerateTerrain });
+        applyTerrain(map.current, { is3D: true });
       }
       
       // Restore exact camera position AFTER terrain setup
@@ -214,7 +212,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
     
     if (newIs3DMode) {
       // Enable 3D mode (terrain plus a sky behind it)
-      applyTerrain(map.current, { is3D: true, exaggerate: exaggerateTerrain });
+      applyTerrain(map.current, { is3D: true });
       
       // Ensure route layers are above terrain by moving them to top
       const routeLayers = ['route-heat-single', 'route-heat-medium', 'route-heat-high', 'route-heat'];
@@ -230,7 +228,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       map.current.setBearing(-15);
     } else {
       // Disable 3D mode
-      applyTerrain(map.current, { is3D: false, exaggerate: exaggerateTerrain });
+      applyTerrain(map.current, { is3D: false });
       
       // Animate back to 2D view
       map.current.easeTo({
@@ -239,12 +237,6 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
         duration: 1000
       });
     }
-  };
-
-  const toggleExaggerateTerrain = () => {
-    const next = !exaggerateTerrain;
-    setExaggerateTerrain(next);
-    if (map.current && is3DMode) applyTerrain(map.current, { is3D: true, exaggerate: next });
   };
 
   // Robust heat map rendering function
@@ -889,9 +881,7 @@ export default function HeatMapView({ fieldNotes }: HeatMapViewProps) {
       <MapTerrainControls
         className="absolute top-4 right-4 z-10"
         is3D={is3DMode}
-        exaggerate={exaggerateTerrain}
         onToggle3D={toggle3DMode}
-        onToggleExaggerate={toggleExaggerateTerrain}
       />
       
       <div ref={mapContainer} className="w-full h-full" />

@@ -62,7 +62,7 @@ interface MapboxMapProps {
   onPlayheadDragStart?: () => void;
   onPlayheadDrag?: (position: [number, number]) => void;
   onPlayheadDragEnd?: (position: [number, number]) => void;
-  /** Shows the 3D / exaggerated terrain controls in the map's corner. */
+  /** Shows the 3D terrain switch in the map's corner. */
   showTerrainControls?: boolean;
   /** The 3D follow-cam's pitch, zoom and turn from the direction of travel; unset uses the default chase-cam. */
   cameraAngle?: CameraAngle | null;
@@ -140,7 +140,6 @@ export default function MapboxMap({
   // While the zoom-in animation runs, the follow-cam leaves the camera alone.
   const focusAnimatingUntil = useRef(0);
   const [is3D, setIs3D] = useState(false);
-  const [exaggerateTerrain, setExaggerateTerrain] = useState(true);
   const is3DRef = useRef(false);
   is3DRef.current = is3D;
   const autoBearingRef = useRef(true);
@@ -674,9 +673,9 @@ export default function MapboxMap({
   useEffect(() => {
     const m = loadedMap();
     if (!m || !showTerrainControls) return;
-    applyTerrain(m, { is3D, exaggerate: exaggerateTerrain });
+    applyTerrain(m, { is3D });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapReady, showTerrainControls, is3D, exaggerateTerrain]);
+  }, [mapReady, showTerrainControls, is3D]);
 
   const toggle3D = () => {
     const next = !is3D;
@@ -975,9 +974,7 @@ export default function MapboxMap({
         {showTerrainControls && (
           <MapTerrainControls
             is3D={is3D}
-            exaggerate={exaggerateTerrain}
             onToggle3D={toggle3D}
-            onToggleExaggerate={() => setExaggerateTerrain((on) => !on)}
           />
         )}
         <label className="bg-card border border-border rounded-lg px-3 py-2 shadow-lg flex items-center gap-2 text-sm text-foreground">

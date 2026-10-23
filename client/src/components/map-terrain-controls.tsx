@@ -1,9 +1,7 @@
 import type mapboxgl from "mapbox-gl";
 
-// Exaggerated terrain makes climbs and valleys read clearly from above; 1 is
-// true scale.
+// Terrain is always exaggerated, so climbs and valleys read clearly from above.
 export const EXAGGERATED_TERRAIN = 4.0;
-export const TRUE_SCALE_TERRAIN = 1.0;
 export const TERRAIN_PITCH = 55;
 
 const DEM_SOURCE = "mapbox-dem";
@@ -13,7 +11,7 @@ const SKY_LAYER = "sky";
  * Turns 3D terrain on or off on a loaded map. Safe to call repeatedly, and
  * again after a style change wipes the terrain source.
  */
-export function applyTerrain(map: mapboxgl.Map, options: { is3D: boolean; exaggerate: boolean }) {
+export function applyTerrain(map: mapboxgl.Map, options: { is3D: boolean }) {
   if (!options.is3D) {
     map.setTerrain(null);
     if (map.getLayer(SKY_LAYER)) map.removeLayer(SKY_LAYER);
@@ -29,7 +27,7 @@ export function applyTerrain(map: mapboxgl.Map, options: { is3D: boolean; exagge
   }
   map.setTerrain({
     source: DEM_SOURCE,
-    exaggeration: options.exaggerate ? EXAGGERATED_TERRAIN : TRUE_SCALE_TERRAIN,
+    exaggeration: EXAGGERATED_TERRAIN,
   });
   if (!map.getLayer(SKY_LAYER)) {
     map.addLayer(
@@ -50,16 +48,14 @@ export function applyTerrain(map: mapboxgl.Map, options: { is3D: boolean; exagge
 
 interface MapTerrainControlsProps {
   is3D: boolean;
-  exaggerate: boolean;
   onToggle3D: () => void;
-  onToggleExaggerate: () => void;
   className?: string;
 }
 
-/** The 3D switch and "Exaggerate terrain" checkbox shared by our maps. */
-export function MapTerrainControls({ is3D, exaggerate, onToggle3D, onToggleExaggerate, className }: MapTerrainControlsProps) {
+/** The 3D switch shared by our maps. */
+export function MapTerrainControls({ is3D, onToggle3D, className }: MapTerrainControlsProps) {
   return (
-    <div className={`bg-card border border-border rounded-lg p-3 shadow-lg space-y-2 ${className ?? ""}`}>
+    <div className={`bg-card border border-border rounded-lg p-3 shadow-lg ${className ?? ""}`}>
       <div className="flex items-center justify-between gap-3">
         <span className="text-sm font-medium text-foreground">3D View</span>
         <button
@@ -79,21 +75,6 @@ export function MapTerrainControls({ is3D, exaggerate, onToggle3D, onToggleExagg
           />
         </button>
       </div>
-      <label
-        className={`flex items-center gap-2 text-sm text-foreground select-none ${
-          is3D ? "cursor-pointer" : "opacity-50 cursor-not-allowed"
-        }`}
-        title={is3D ? undefined : "Turn on 3D to see terrain"}
-      >
-        <input
-          type="checkbox"
-          checked={exaggerate}
-          onChange={onToggleExaggerate}
-          disabled={!is3D}
-          data-testid="checkbox-exaggerate-terrain"
-        />
-        Exaggerate terrain
-      </label>
     </div>
   );
 }
