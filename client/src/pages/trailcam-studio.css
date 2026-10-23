@@ -1,14 +1,21 @@
 /* Only the open project is a bounded mobile viewer; the project list is unchanged. */
 @media (max-width: 767px) {
-  .studio-project {
+  /* Deliberately outrank the root's single-class Tailwind flex/height utilities,
+     regardless of stylesheet extraction order in a production build. */
+  .studio-project.studio-project {
     height: calc(100vh - var(--studio-chrome-height, 2.75rem));
     height: calc(100dvh - var(--studio-chrome-height, 2.75rem));
+    max-height: calc(100vh - var(--studio-chrome-height, 2.75rem));
+    max-height: calc(100dvh - var(--studio-chrome-height, 2.75rem));
     display: grid;
-    grid-template-rows: minmax(0, 2fr) minmax(0, 2fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 3fr) minmax(0, 5fr) minmax(0, 2fr);
+    gap: 0;
     min-height: 0;
     min-width: 0;
     width: 100%;
     overflow: hidden;
+    overscroll-behavior: none;
   }
 
   .studio-project .studio-desktop-only,
@@ -27,12 +34,28 @@
   .studio-project .studio-map-panel,
   .studio-project .studio-video-panel,
   .studio-project .studio-clips-panel {
+    grid-column: 1;
+    align-self: stretch;
     width: 100%;
     height: auto;
     min-height: 0;
     min-width: 0;
     overflow: hidden;
     border-right: 0;
+  }
+
+  /* The split and player wrappers above are display:contents on mobile. Place
+     their three visible descendants explicitly; hidden toolbars get no row. */
+  .studio-project .studio-map-panel {
+    grid-row: 1;
+  }
+
+  .studio-project .studio-video-panel {
+    grid-row: 2;
+  }
+
+  .studio-project .studio-clips-panel {
+    grid-row: 3;
   }
 
   .studio-project .studio-map-surface,
