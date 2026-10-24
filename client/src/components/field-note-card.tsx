@@ -4,6 +4,7 @@ import MapboxRoutePreview from "./mapbox-route-preview";
 
 interface FieldNoteWithPhotoCount extends FieldNote {
   photoCount?: number;
+  videoCount?: number;
 }
 
 interface FieldNoteCardProps {
@@ -79,6 +80,14 @@ export default function FieldNoteCard({ fieldNote, searchTerm, compact = false }
           {fieldNote.elevationGain != null && <span>{fieldNote.elevationGain} ft</span>}
           {(fieldNote.distance != null || fieldNote.elevationGain != null) && <span>·</span>}
           <span>{formatDate(fieldNote.date.toString())}</span>
+          {!!fieldNote.videoCount && (
+            <>
+              <span>·</span>
+              <span data-testid={`video-count-${fieldNote.id}`}>
+                ▶ {fieldNote.videoCount} {fieldNote.videoCount === 1 ? "video" : "videos"}
+              </span>
+            </>
+          )}
         </div>
       </div>
     </Link>

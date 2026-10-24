@@ -29,10 +29,11 @@ async function readProduction(path: string, query: Record<string, string>, userI
       tripType: query.tripType,
       sortOrder: query.sortOrder as "recent" | "oldest" | "name" | undefined,
     })).filter(note => note.userId === userId);
-    return Promise.all(notes.map(async note => ({
-      ...note,
-      photoCount: (await storage.getPhotosByFieldNoteId(note.id)).length,
-    })));
+    const counts = await storage.getTripMediaCounts(notes.map(note => note.id));
+    return notes
+      .map(note => ({ ...note, ...(counts.get(note.id) ?? { photoCount: 0, videoCount: 0 }) }))
+      .filter(note =>
+        query.media === "photos" ? note.photoCount > 0 : query.media === "videos" ? note.videoCount > 0 : true);
   }
   if (path === "/api/expeditions") return storage.getExpeditionsByUser(userId);
   if (path === "/api/inbox") return storage.getInboxItems(userId);
@@ -42,7 +43,9 @@ async function readProduction(path: string, query: Record<string, string>, userI
     const note = await storage.getFieldNoteById(noteMatch[1]);
     if (!note || note.userId !== userId) return null;
     const photos = await storage.getPhotosByFieldNoteId(note.id);
-    return noteMatch[2] ? photos : { ...note, photos };
+    if (noteMatch[2]) return photos;
+    const videoClips = await storage.getVideoClipsByTripId(note.id);
+    return { ...note, photos, videoClips, photoCount: photos.length, videoCount: videoClips.length };
   }
   const photoMatch = /^\/api\/photos\/([^/]+)$/.exec(path);
   if (photoMatch) {
@@ -59,21 +62,17 @@ async function readProduction(path: string, query: Record<string, string>, userI
       .filter(item => item.fieldNote.userId === userId);
     return { ...expedition, fieldNotes };
   }
-  // TrailCam currently has no per-user ownership and is already publicly
-  // readable in the app. Keep its previews consistent with those public reads.
-  if (path === "/api/trailcam-projects") {
-    return storage.getTrailcamProjects({
-      search: query.search,
-      sortOrder: query.sortOrder as "recent" | "oldest" | "name" | undefined,
-    });
-  }
   if (path === "/api/video-clips") {
-    return query.projectId ? storage.getVideoClipsByProjectId(query.projectId) : null;
+    const tripId = query.tripId ?? query.projectId;
+    const note = tripId ? await storage.getFieldNoteById(tripId) : undefined;
+    return note?.userId === userId ? storage.getVideoClipsByTripId(note.id) : null;
   }
-  const projectMatch = /^\/api\/trailcam-projects\/([^/]+)$/.exec(path);
-  if (projectMatch) return (await storage.getTrailcamProjectById(projectMatch[1])) ?? null;
   const clipMatch = /^\/api\/video-clips\/([^/]+)$/.exec(path);
-  if (clipMatch) return (await storage.getVideoClipById(clipMatch[1])) ?? null;
+  if (clipMatch) {
+    const clip = await storage.getVideoClipById(clipMatch[1]);
+    const note = clip?.fieldNoteId ? await storage.getFieldNoteById(clip.fieldNoteId) : undefined;
+    return note?.userId === userId ? clip : null;
+  }
   return undefined;
 }
 

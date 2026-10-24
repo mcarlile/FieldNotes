@@ -3,14 +3,16 @@ import { z } from "zod";
 import { storage } from "./storage";
 import { objectStorageService } from "./objectStorage";
 import { requireAuth } from "./middlewares/clerkAuth";
-import { createClipWithCoordinates, createProjectFromGpx } from "./trailcam";
+import { createClipWithCoordinates, createTripFromGpx, tripDurationSeconds } from "./trailcam";
 import { clipOffsetSeconds } from "@shared/clip-timing";
 import { isVideoProcessingActive, reprocessVideoClip } from "./videoProcessor";
+import type { FieldNote } from "@shared/schema";
 
 /**
  * A small Model Context Protocol server (Streamable HTTP, stateless, JSON
- * responses) so Claude can create TrailCam projects and add clips for the
- * signed-in user. Video bytes never pass through MCP: `request_upload` hands
+ * responses) so Claude can create trips and add video clips for the
+ * signed-in user. A "project" in the tool names is a trip: TrailCam Studio
+ * projects became trips with the same ids. Video bytes never pass through MCP: `request_upload` hands
  * out a signed storage URL that the client PUTs the file to directly.
  */
 
@@ -30,17 +32,18 @@ class ToolError extends Error {}
 const tools = [
   {
     name: "list_projects",
-    description: "List TrailCam Studio projects, newest first.",
+    description: "List your trips, newest first, with how many photos and video clips each has.",
     inputSchema: {
       type: "object",
       properties: {
-        search: { type: "string", description: "Only projects whose title matches." },
+        search: { type: "string", description: "Only trips whose title or description matches." },
+        has_videos: { type: "boolean", description: "Only trips that have video clips." },
       },
     },
   },
   {
     name: "get_project",
-    description: "Get one project with its route start time and its video clips.",
+    description: "Get one trip with its route start time and its video clips.",
     inputSchema: {
       type: "object",
       properties: { project_id: { type: "string" } },
@@ -64,9 +67,9 @@ const tools = [
   {
     name: "create_project",
     description:
-      "Create a TrailCam Studio project from a GPX route. Pass the GPX either inline as `gpx` " +
+      "Create a trip from a GPX route, ready for video clips. Pass the GPX either inline as `gpx` " +
       "or, for large files, as `gpx_object_path` from request_upload. The route's first timed " +
-      "point becomes the project start.",
+      "point becomes the trip start. Returns the trip id to use as project_id.",
     inputSchema: {
       type: "object",
       properties: {
@@ -75,6 +78,11 @@ const tools = [
         gpx: { type: "string", description: "GPX file contents." },
         gpx_object_path: { type: "string", description: "object_path of an uploaded GPX file." },
         gpx_filename: { type: "string" },
+        trip_type: {
+          type: "array",
+          items: { type: "string" },
+          description: "Activity types, e.g. [\"hike\"]. Optional.",
+        },
       },
       required: ["title"],
     },
@@ -82,7 +90,7 @@ const tools = [
   {
     name: "add_clip",
     description:
-      "Add an uploaded video to a project. Place it with `recorded_at` (the UTC time the video " +
+      "Add an uploaded video to a trip. Place it with `recorded_at` (the UTC time the video " +
       "starts, e.g. from the original camera file's creation_time) or `start_seconds` (seconds " +
       "after the route start). The clip is transcoded in the background.",
     inputSchema: {
@@ -116,7 +124,7 @@ const tools = [
 
 const getProjectArgs = z.object({ project_id: z.string() });
 const reprocessClipArgs = z.object({ clip_id: z.string() });
-const listProjectsArgs = z.object({ search: z.string().optional() });
+const listProjectsArgs = z.object({ search: z.string().optional(), has_videos: z.boolean().optional() });
 const requestUploadArgs = z.object({ content_type: z.string().optional() });
 const createProjectArgs = z.object({
   title: z.string().min(1),
@@ -124,6 +132,7 @@ const createProjectArgs = z.object({
   gpx: z.string().optional(),
   gpx_object_path: z.string().optional(),
   gpx_filename: z.string().optional(),
+  trip_type: z.array(z.string()).optional(),
 });
 const addClipArgs = z.object({
   project_id: z.string(),
@@ -137,23 +146,25 @@ const addClipArgs = z.object({
   file_size_bytes: z.number().optional(),
 });
 
-function routeStartOf(project: { gpxData: unknown; startTime: Date | null }): Date | null {
-  const timedStart = (project.gpxData as { timedTrack?: { startTime?: string } } | null)?.timedTrack?.startTime;
+function routeStartOf(trip: { gpxData: unknown; startTime: Date | null }): Date | null {
+  const timedStart = (trip.gpxData as { timedTrack?: { startTime?: string } } | null)?.timedTrack?.startTime;
   if (timedStart) return new Date(timedStart);
-  return project.startTime ? new Date(project.startTime) : null;
+  return trip.startTime ? new Date(trip.startTime) : null;
 }
 
-function summarizeProject(project: any) {
-  const gpx = project.gpxData ?? {};
+function summarizeTrip(trip: FieldNote, counts?: { photoCount: number; videoCount: number }) {
   return {
-    id: project.id,
-    title: project.title,
-    description: project.description,
-    route_start: routeStartOf(project)?.toISOString() ?? null,
-    route_duration_seconds: project.duration,
-    distance_miles: gpx.distance,
-    elevation_gain_feet: gpx.elevationGain,
-    created_at: project.createdAt,
+    id: trip.id,
+    title: trip.title,
+    description: trip.description,
+    trip_type: trip.tripType,
+    date: trip.date,
+    route_start: routeStartOf(trip)?.toISOString() ?? null,
+    route_duration_seconds: tripDurationSeconds(trip),
+    distance_miles: trip.distance,
+    elevation_gain_feet: trip.elevationGain,
+    ...(counts ? { photo_count: counts.photoCount, video_count: counts.videoCount } : {}),
+    created_at: trip.createdAt,
   };
 }
 
@@ -172,20 +183,34 @@ async function readUploadedText(objectPath: string): Promise<string> {
   return contents.toString("utf-8");
 }
 
-async function callTool(name: string, args: unknown): Promise<unknown> {
+async function ownedTrip(id: string, userId: string | undefined): Promise<FieldNote> {
+  const trip = await storage.getFieldNoteById(id);
+  if (!trip || !userId || trip.userId !== userId) throw new ToolError("Trip not found.");
+  return trip;
+}
+
+function requireUser(userId: string | undefined): string {
+  if (!userId) throw new ToolError("Sign in to use this tool.");
+  return userId;
+}
+
+async function callTool(name: string, args: unknown, userId?: string): Promise<unknown> {
   switch (name) {
     case "list_projects": {
-      const { search } = listProjectsArgs.parse(args ?? {});
-      const projects = await storage.getTrailcamProjects({ search, sortOrder: "recent" });
-      return projects.map(summarizeProject);
+      const { search, has_videos } = listProjectsArgs.parse(args ?? {});
+      const owner = requireUser(userId);
+      const trips = (await storage.getFieldNotes({ search, sortOrder: "recent" })).filter((trip) => trip.userId === owner);
+      const counts = await storage.getTripMediaCounts(trips.map((trip) => trip.id));
+      return trips
+        .filter((trip) => !has_videos || (counts.get(trip.id)?.videoCount ?? 0) > 0)
+        .map((trip) => summarizeTrip(trip, counts.get(trip.id)));
     }
     case "get_project": {
       const { project_id } = getProjectArgs.parse(args);
-      const project = await storage.getTrailcamProjectById(project_id);
-      if (!project) throw new ToolError("Project not found.");
-      const clips = await storage.getVideoClipsByProjectId(project_id);
+      const trip = await ownedTrip(project_id, userId);
+      const clips = await storage.getVideoClipsByTripId(project_id);
       return {
-        ...summarizeProject(project),
+        ...summarizeTrip(trip),
         clips: clips.map((clip) => ({
           id: clip.id,
           title: clip.title,
@@ -217,21 +242,27 @@ async function callTool(name: string, args: unknown): Promise<unknown> {
       if (Buffer.byteLength(gpxContent) > MAX_GPX_BYTES) {
         throw new ToolError("GPX file is larger than 25 MB.");
       }
-      let project;
+      const owner = requireUser(userId);
+      let trip;
       try {
-        project = await createProjectFromGpx({
+        trip = await createTripFromGpx({
+          userId: owner,
           title: input.title,
           description: input.description,
+          tripType: input.trip_type,
           gpxContent,
           filename: input.gpx_filename,
         });
       } catch (error) {
         throw new ToolError(`Could not read the GPX: ${error instanceof Error ? error.message : String(error)}`);
       }
-      return summarizeProject(project);
+      return summarizeTrip(trip);
     }
     case "reprocess_clip": {
       const { clip_id } = reprocessClipArgs.parse(args);
+      const clip = await storage.getVideoClipById(clip_id);
+      if (!clip?.fieldNoteId) throw new ToolError("Clip not found.");
+      await ownedTrip(clip.fieldNoteId, userId);
       const result = await reprocessVideoClip(clip_id);
       if (result === "not_found") throw new ToolError("Clip not found.");
       if (result === "already_active") throw new ToolError("This clip is already processing or waiting its turn.");
@@ -239,12 +270,11 @@ async function callTool(name: string, args: unknown): Promise<unknown> {
     }
     case "add_clip": {
       const input = addClipArgs.parse(args);
-      const project = await storage.getTrailcamProjectById(input.project_id);
-      if (!project) throw new ToolError("Project not found.");
+      const trip = await ownedTrip(input.project_id, userId);
 
       let startSeconds = input.start_seconds;
       if (startSeconds === undefined && input.recorded_at) {
-        const offset = clipOffsetSeconds(new Date(input.recorded_at), routeStartOf(project));
+        const offset = clipOffsetSeconds(new Date(input.recorded_at), routeStartOf(trip));
         if (offset === null) {
           throw new ToolError("recorded_at is before the route starts or more than two days after it.");
         }
@@ -260,7 +290,7 @@ async function callTool(name: string, args: unknown): Promise<unknown> {
 
       const duration = Math.round(input.duration_seconds * 1000) / 1000;
       const clip = await createClipWithCoordinates({
-        projectId: input.project_id,
+        fieldNoteId: trip.id,
         title: input.title ?? input.filename.replace(/\.[^/.]+$/, ""),
         filename: input.filename,
         url: input.object_path,
@@ -286,7 +316,7 @@ async function callTool(name: string, args: unknown): Promise<unknown> {
   }
 }
 
-export async function handleRpc(message: JsonRpcRequest): Promise<object | null> {
+export async function handleRpc(message: JsonRpcRequest, userId?: string): Promise<object | null> {
   const respond = (result: unknown) => ({ jsonrpc: "2.0", id: message.id ?? null, result });
   const fail = (code: number, text: string) => ({ jsonrpc: "2.0", id: message.id ?? null, error: { code, message: text } });
 
@@ -301,7 +331,7 @@ export async function handleRpc(message: JsonRpcRequest): Promise<object | null>
         capabilities: { tools: {} },
         serverInfo: { name: "big-miles", version: "1.0.0" },
         instructions:
-          "Big Miles TrailCam Studio. To build a project: create_project with the GPX, then for each " +
+          "Big Miles trips with video. To build one: create_project with the GPX (it makes a trip), then for each " +
           "video call request_upload, PUT the file to upload_url, and call add_clip with its object_path. " +
           "Clips process one at a time; if one fails or is stuck, call reprocess_clip.",
       });
@@ -313,7 +343,7 @@ export async function handleRpc(message: JsonRpcRequest): Promise<object | null>
     case "tools/call": {
       const name = message.params?.name;
       try {
-        const result = await callTool(name, message.params?.arguments);
+        const result = await callTool(name, message.params?.arguments, userId);
         return respond({ content: [{ type: "text", text: JSON.stringify(result, null, 2) }] });
       } catch (error) {
         const text =
@@ -335,14 +365,14 @@ export async function handleRpc(message: JsonRpcRequest): Promise<object | null>
 }
 
 export function registerMcpRoutes(app: Express) {
-  app.post("/mcp", requireAuth, async (req: Request, res: Response) => {
+  app.post("/mcp", requireAuth, async (req: Request & { dbUser?: { id: string } }, res: Response) => {
     const body = req.body;
     const messages: JsonRpcRequest[] = Array.isArray(body) ? body : [body];
     if (messages.length === 0 || messages.some((m) => !m || m.jsonrpc !== "2.0" || typeof m.method !== "string")) {
       return res.status(400).json({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid Request" } });
     }
 
-    const responses = (await Promise.all(messages.map(handleRpc))).filter(Boolean);
+    const responses = (await Promise.all(messages.map((m) => handleRpc(m, req.dbUser?.id)))).filter(Boolean);
     if (responses.length === 0) {
       return res.status(202).end();
     }

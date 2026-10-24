@@ -59,7 +59,7 @@ export const fieldNotes = pgTable("field_notes", {
   description: text("description").notNull(),
   tripType: text("trip_type").array().notNull(),
   date: timestamp("date").notNull(),
-  distance: real("distance"), // in kilometers
+  distance: real("distance"), // in miles
   elevationGain: real("elevation_gain"), // in meters
   gpxData: jsonb("gpx_data"), // stored GPX track data
   stravaId: text("strava_id"), // Strava activity/route ID
@@ -67,6 +67,11 @@ export const fieldNotes = pgTable("field_notes", {
   isPublished: boolean("is_published").notNull().default(false),
   publishedAt: timestamp("published_at"),
   slug: text("slug").unique(),
+  // Start and end of the GPX's timed track; video clips are placed relative to startTime.
+  startTime: timestamp("start_time"),
+  endTime: timestamp("end_time"),
+  // Video playback settings for trips with clips (sync offset, follow-cam angle).
+  playback: jsonb("playback"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   userIdIdx: index("field_notes_user_id_idx").on(table.userId),
@@ -120,6 +125,7 @@ export const photos = pgTable("photos", {
 
 export const fieldNotesRelations = relations(fieldNotes, ({ many }) => ({
   photos: many(photos),
+  videoClips: many(videoClips),
   expeditionFieldNotes: many(expeditionFieldNotes),
 }));
 
@@ -154,6 +160,8 @@ export const trailcamProjects = pgTable("trailcam_projects", {
   duration: real("duration"), // total project duration in seconds
   startTime: timestamp("start_time"), // project start timestamp
   endTime: timestamp("end_time"), // project end timestamp
+  // Set once the project has been copied into field_notes as a trip.
+  migratedAt: timestamp("migrated_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   titleIdx: index("trailcam_projects_title_idx").on(table.title),
@@ -161,7 +169,9 @@ export const trailcamProjects = pgTable("trailcam_projects", {
 
 export const videoClips = pgTable("video_clips", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").references(() => trailcamProjects.id).notNull(),
+  // Legacy TrailCam project link; clips now belong to a trip via fieldNoteId.
+  projectId: varchar("project_id").references(() => trailcamProjects.id),
+  fieldNoteId: varchar("field_note_id").references(() => fieldNotes.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   filename: text("filename").notNull(),
   url: text("url").notNull(), // Original high-res video URL
@@ -182,6 +192,7 @@ export const videoClips = pgTable("video_clips", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   projectIdIdx: index("video_clips_project_id_idx").on(table.projectId),
+  fieldNoteIdIdx: index("video_clips_field_note_id_idx").on(table.fieldNoteId),
   startTimeIdx: index("video_clips_start_time_idx").on(table.startTime),
 }));
 
@@ -190,7 +201,10 @@ export const insertFieldNoteSchema = createInsertSchema(fieldNotes).omit({
   createdAt: true,
 }).extend({
   date: z.coerce.date(),
-  tripType: z.array(z.string()).min(1),
+  // Trips moved over from TrailCam Studio have no activity type yet.
+  tripType: z.array(z.string()),
+  startTime: z.coerce.date().nullish(),
+  endTime: z.coerce.date().nullish(),
 });
 
 export const insertPhotoSchema = createInsertSchema(photos).omit({
@@ -207,6 +221,10 @@ export const videoClipsRelations = relations(videoClips, ({ one }) => ({
   project: one(trailcamProjects, {
     fields: [videoClips.projectId],
     references: [trailcamProjects.id],
+  }),
+  fieldNote: one(fieldNotes, {
+    fields: [videoClips.fieldNoteId],
+    references: [fieldNotes.id],
   }),
 }));
 
@@ -242,4 +260,20 @@ export type Photo = typeof photos.$inferSelect;
 export type TrailcamProject = typeof trailcamProjects.$inferSelect;
 export type VideoClip = typeof videoClips.$inferSelect;
 export type Expedition = typeof expeditions.$inferSelect;
+
+/** Follow-cam angle chosen in calibrate mode. */
+export interface CameraAngle {
+  pitch: number;
+  zoom: number;
+  bearingOffset: number;
+}
+
+/** Saved on a trip's `playback` column once it has video. */
+export interface TripPlayback {
+  syncOffsetSeconds?: number;
+  cameraAngle?: CameraAngle | null;
+}
+
+/** A trip as the list API returns it, with how many photos and videos it has. */
+export type TripListItem = FieldNote & { photoCount: number; videoCount: number };
 export type ExpeditionFieldNote = typeof expeditionFieldNotes.$inferSelect;

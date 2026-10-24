@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertFieldNoteSchema, insertPhotoSchema, insertTrailcamProjectSchema, insertVideoClipSchema, insertExpeditionSchema } from "@shared/schema";
+import { insertFieldNoteSchema, insertPhotoSchema, insertVideoClipSchema, insertExpeditionSchema, type TripPlayback } from "@shared/schema";
 import { ObjectStorageService, ObjectNotFoundError, objectStorageService } from "./objectStorage";
 import { extractExifData, extractExifFromBuffer } from "./exif-extractor";
 import { isVideoProcessingActive, reprocessVideoClip } from "./videoProcessor";
@@ -13,7 +13,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import * as crypto from 'crypto';
-import { createClipWithCoordinates } from "./trailcam";
+import { createClipWithCoordinates, tripDurationSeconds } from "./trailcam";
 import { generateApiToken } from "./apiTokens";
 import { registerMcpRoutes } from "./mcp";
 import { getValidStravaToken, stravaFetch, buildGpxFromActivity, importGpxToInbox } from "./strava";
@@ -222,23 +222,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get all field notes with optional filters (includes photo count)
   app.get("/api/field-notes", requireAuth, async (req: any, res) => {
     try {
-      const { search, tripType, sortOrder } = req.query;
+      const { search, tripType, sortOrder, media } = req.query;
       const fieldNotes = (await storage.getFieldNotes({
         search: search as string,
         tripType: tripType as string,
         sortOrder: sortOrder as 'recent' | 'oldest' | 'name',
       })).filter((note) => note.userId === req.dbUser.id);
 
-      // Fetch photo counts for all field notes efficiently
-      const fieldNotesWithCounts = await Promise.all(
-        fieldNotes.map(async (note) => {
-          const photos = await storage.getPhotosByFieldNoteId(note.id);
-          return {
-            ...note,
-            photoCount: photos.length,
-          };
-        })
-      );
+      // Every trip carries its photo and video counts; ?media=photos or
+      // ?media=videos keeps only the trips that have some.
+      const counts = await storage.getTripMediaCounts(fieldNotes.map((note) => note.id));
+      const fieldNotesWithCounts = fieldNotes
+        .map((note) => ({ ...note, ...(counts.get(note.id) ?? { photoCount: 0, videoCount: 0 }) }))
+        .filter((note) =>
+          media === "photos" ? note.photoCount > 0 : media === "videos" ? note.videoCount > 0 : true,
+        );
 
       res.json(fieldNotesWithCounts);
     } catch (error) {
@@ -256,11 +254,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Field note not found" });
       }
 
-      // Also fetch photos in the same request to reduce round trips
-      const photos = await storage.getPhotosByFieldNoteId(id);
+      // Also fetch photos and video clips in the same request to reduce round trips
+      const [photos, videoClips] = await Promise.all([
+        storage.getPhotosByFieldNoteId(id),
+        storage.getVideoClipsByTripId(id),
+      ]);
       const fieldNoteWithPhotos = {
         ...fieldNote,
-        photos
+        photos,
+        videoClips,
+        photoCount: photos.length,
+        videoCount: videoClips.length,
       };
 
       // Add cache headers for better performance
@@ -697,141 +701,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // MCP endpoint so Claude can create projects and add clips for the user
   registerMcpRoutes(app);
 
-  // Get all TrailCam projects
-  app.get("/api/trailcam-projects", async (req, res) => {
+  // Video playback settings for a trip with clips: the sync offset that
+  // lines the camera clock up with the GPS clock, and the follow-cam angle
+  // set in calibrate mode (null goes back to the default chase-cam).
+  app.put("/api/field-notes/:id/playback", requireAuth, async (req: any, res) => {
     try {
-      const { search, sortOrder } = req.query;
-      const projects = await storage.getTrailcamProjects({
-        search: search as string,
-        sortOrder: sortOrder as 'recent' | 'oldest' | 'name',
-      });
-      res.json(projects);
-    } catch (error) {
-      console.error("Error fetching TrailCam projects:", error);
-      res.status(500).json({ message: "Failed to fetch TrailCam projects" });
-    }
-  });
-
-  // Get specific TrailCam project by ID
-  app.get("/api/trailcam-projects/:id", async (req, res) => {
-    try {
-      const { id } = req.params;
-      const project = await storage.getTrailcamProjectById(id);
-      if (!project) {
-        return res.status(404).json({ message: "TrailCam project not found" });
+      if (!await getOwnedFieldNote(req.params.id, req.dbUser.id)) {
+        return res.status(404).json({ message: "Field note not found" });
       }
-      res.json(project);
-    } catch (error) {
-      console.error("Error fetching TrailCam project:", error);
-      res.status(500).json({ message: "Failed to fetch TrailCam project" });
-    }
-  });
-
-  // Create new TrailCam project
-  app.post("/api/trailcam-projects", requireAuth, async (req, res) => {
-    try {
-      const validatedData = insertTrailcamProjectSchema.parse(req.body);
-      const project = await storage.createTrailcamProject(validatedData);
-      res.status(201).json(project);
-    } catch (error) {
-      console.error("Error creating TrailCam project:", error);
-      res.status(400).json({ message: "Failed to create TrailCam project" });
-    }
-  });
-
-  // Update TrailCam project
-  app.put("/api/trailcam-projects/:id", requireAuth, async (req, res) => {
-    try {
-      const { id } = req.params;
-      const validatedData = insertTrailcamProjectSchema.partial().parse(req.body);
-      const project = await storage.updateTrailcamProject(id, validatedData);
-      if (!project) {
-        return res.status(404).json({ message: "TrailCam project not found" });
-      }
-      res.json(project);
-    } catch (error) {
-      console.error("Error updating TrailCam project:", error);
-      res.status(400).json({ message: "Failed to update TrailCam project" });
-    }
-  });
-
-  // Set how far the video clock is from the GPS clock for a project. Stored
-  // inside gpxData so the setting needs no schema change.
-  app.put("/api/trailcam-projects/:id/sync-offset", requireAuth, async (req, res) => {
-    try {
-      const offset = Number(req.body?.syncOffsetSeconds);
-      if (!Number.isFinite(offset) || Math.abs(offset) > 3600) {
-        return res.status(400).json({ message: "syncOffsetSeconds must be a number of seconds within ±3600" });
-      }
-      const existing = await storage.getTrailcamProjectById(req.params.id);
-      if (!existing) {
-        return res.status(404).json({ message: "TrailCam project not found" });
-      }
-      const gpxData = { ...(existing.gpxData as Record<string, unknown>), syncOffsetSeconds: Math.round(offset * 100) / 100 };
-      const project = await storage.updateTrailcamProject(existing.id, { gpxData });
-      res.json(project);
-    } catch (error) {
-      console.error("Error updating TrailCam sync offset:", error);
-      res.status(500).json({ message: "Failed to update sync offset" });
-    }
-  });
-
-  // The follow-cam angle set in calibrate mode, kept on the project's gpxData
-  // beside the sync offset. A null angle goes back to the default chase-cam.
-  app.put("/api/trailcam-projects/:id/camera-angle", requireAuth, async (req, res) => {
-    try {
-      const angle = req.body?.cameraAngle;
-      let cameraAngle: { pitch: number; zoom: number; bearingOffset: number } | null = null;
-      if (angle != null) {
-        const pitch = Number(angle.pitch);
-        const zoom = Number(angle.zoom);
-        const bearingOffset = Number(angle.bearingOffset);
-        if (
-          !Number.isFinite(pitch) || pitch < 0 || pitch > 85 ||
-          !Number.isFinite(zoom) || zoom < 1 || zoom > 22 ||
-          !Number.isFinite(bearingOffset) || Math.abs(bearingOffset) > 180
-        ) {
-          return res.status(400).json({ message: "cameraAngle needs pitch 0–85, zoom 1–22 and bearingOffset within ±180" });
+      const round = (n: number) => Math.round(n * 100) / 100;
+      const patch: TripPlayback = {};
+      if (req.body?.syncOffsetSeconds !== undefined) {
+        const offset = Number(req.body.syncOffsetSeconds);
+        if (!Number.isFinite(offset) || Math.abs(offset) > 3600) {
+          return res.status(400).json({ message: "syncOffsetSeconds must be a number of seconds within ±3600" });
         }
-        const round = (n: number) => Math.round(n * 100) / 100;
-        cameraAngle = { pitch: round(pitch), zoom: round(zoom), bearingOffset: round(bearingOffset) };
+        patch.syncOffsetSeconds = round(offset);
       }
-      const existing = await storage.getTrailcamProjectById(req.params.id);
-      if (!existing) {
-        return res.status(404).json({ message: "TrailCam project not found" });
+      if (req.body?.cameraAngle !== undefined) {
+        const angle = req.body.cameraAngle;
+        if (angle === null) {
+          patch.cameraAngle = null;
+        } else {
+          const pitch = Number(angle?.pitch);
+          const zoom = Number(angle?.zoom);
+          const bearingOffset = Number(angle?.bearingOffset);
+          if (
+            !Number.isFinite(pitch) || pitch < 0 || pitch > 85 ||
+            !Number.isFinite(zoom) || zoom < 1 || zoom > 22 ||
+            !Number.isFinite(bearingOffset) || Math.abs(bearingOffset) > 180
+          ) {
+            return res.status(400).json({ message: "cameraAngle needs pitch 0–85, zoom 1–22 and bearingOffset within ±180" });
+          }
+          patch.cameraAngle = { pitch: round(pitch), zoom: round(zoom), bearingOffset: round(bearingOffset) };
+        }
       }
-      const gpxData = { ...(existing.gpxData as Record<string, unknown>), cameraAngle };
-      const project = await storage.updateTrailcamProject(existing.id, { gpxData });
-      res.json(project);
+      const trip = await storage.updateTripPlayback(req.params.id, patch);
+      res.json(trip);
     } catch (error) {
-      console.error("Error updating TrailCam camera angle:", error);
-      res.status(500).json({ message: "Failed to update camera angle" });
+      console.error("Error updating trip playback:", error);
+      res.status(500).json({ message: "Failed to update playback settings" });
     }
   });
 
-  // Delete TrailCam project
-  app.delete("/api/trailcam-projects/:id", requireAuth, async (req, res) => {
-    try {
-      const { id } = req.params;
-      const deleted = await storage.deleteTrailcamProject(id);
-      if (!deleted) {
-        return res.status(404).json({ message: "TrailCam project not found" });
-      }
-      res.status(204).end();
-    } catch (error) {
-      console.error("Error deleting TrailCam project:", error);
-      res.status(500).json({ message: "Failed to delete TrailCam project" });
-    }
-  });
+  // A clip is reachable only through a trip its caller owns.
+  async function getOwnedClip(id: string, userId: string) {
+    const clip = await storage.getVideoClipById(id);
+    if (!clip?.fieldNoteId) return undefined;
+    return (await getOwnedFieldNote(clip.fieldNoteId, userId)) ? clip : undefined;
+  }
 
-  // Get video clips for a project
-  app.get("/api/video-clips", async (req, res) => {
+  // Get the video clips on a trip. `projectId` is the name the Studio used
+  // before projects became trips; the ids are the same.
+  app.get("/api/video-clips", requireAuth, async (req: any, res) => {
     try {
-      const { projectId } = req.query;
-      if (!projectId) {
-        return res.status(400).json({ message: "projectId is required" });
+      const tripId = (req.query.tripId ?? req.query.projectId) as string | undefined;
+      if (!tripId) {
+        return res.status(400).json({ message: "tripId is required" });
       }
-      const clips = await storage.getVideoClipsByProjectId(projectId as string);
+      if (!await getOwnedFieldNote(tripId, req.dbUser.id)) {
+        return res.status(404).json({ message: "Field note not found" });
+      }
+      const clips = await storage.getVideoClipsByTripId(tripId);
       // processingActive lets the studio tell a clip waiting its turn from
       // one whose job died, which it offers to retry.
       res.json(clips.map((clip) => ({ ...clip, processingActive: isVideoProcessingActive(clip.id) })));
@@ -842,10 +773,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get specific video clip by ID
-  app.get("/api/video-clips/:id", async (req, res) => {
+  app.get("/api/video-clips/:id", requireAuth, async (req: any, res) => {
     try {
-      const { id } = req.params;
-      const clip = await storage.getVideoClipById(id);
+      const clip = await getOwnedClip(req.params.id, req.dbUser.id);
       if (!clip) {
         return res.status(404).json({ message: "Video clip not found" });
       }
@@ -856,11 +786,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Create new video clip
-  app.post("/api/video-clips", requireAuth, async (req, res) => {
+  // Add a video clip to a trip
+  app.post("/api/video-clips", requireAuth, async (req: any, res) => {
     try {
-      const validatedData = insertVideoClipSchema.parse(req.body);
-      const clip = await createClipWithCoordinates(validatedData);
+      const tripId = req.body?.fieldNoteId ?? req.body?.projectId;
+      if (typeof tripId !== "string" || !await getOwnedFieldNote(tripId, req.dbUser.id)) {
+        return res.status(404).json({ message: "Field note not found" });
+      }
+      const validatedData = insertVideoClipSchema.parse({ ...req.body, projectId: null, fieldNoteId: tripId });
+      const clip = await createClipWithCoordinates({ ...validatedData, fieldNoteId: tripId });
       res.status(201).json(clip);
     } catch (error) {
       console.error("Error creating video clip:", error);
@@ -868,12 +802,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Update video clip
-  app.put("/api/video-clips/:id", requireAuth, async (req, res) => {
+  // Update video clip. It stays on its trip.
+  app.put("/api/video-clips/:id", requireAuth, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const validatedData = insertVideoClipSchema.partial().parse(req.body);
-      const clip = await storage.updateVideoClip(id, validatedData);
+      if (!await getOwnedClip(id, req.dbUser.id)) {
+        return res.status(404).json({ message: "Video clip not found" });
+      }
+      const { projectId: _projectId, fieldNoteId: _fieldNoteId, ...updates } = insertVideoClipSchema.partial().parse(req.body);
+      const clip = await storage.updateVideoClip(id, updates);
       if (!clip) {
         return res.status(404).json({ message: "Video clip not found" });
       }
@@ -885,25 +822,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Recalculate GPS coordinates for a video clip
-  app.post("/api/video-clips/:id/recalculate-coordinates", async (req, res) => {
+  app.post("/api/video-clips/:id/recalculate-coordinates", requireAuth, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const clip = await storage.getVideoClipById(id);
+      const clip = await getOwnedClip(id, req.dbUser.id);
 
-      if (!clip) {
+      if (!clip?.fieldNoteId) {
         return res.status(404).json({ message: "Video clip not found" });
       }
 
-      const project = await storage.getTrailcamProjectById(clip.projectId);
-      if (!project?.gpxData) {
-        return res.status(400).json({ message: "Project has no GPX data" });
+      const trip = await storage.getFieldNoteById(clip.fieldNoteId);
+      if (!trip?.gpxData) {
+        return res.status(400).json({ message: "Trip has no GPX data" });
       }
 
       const coords = resolveClipCoordinates(
-        project.gpxData,
+        trip.gpxData,
         clip.startTime,
         clip.endTime,
-        project.duration || undefined
+        tripDurationSeconds(trip) ?? undefined
       );
 
       console.log(`Recalculated clip ${id} coordinates: start(${coords.startLatitude}, ${coords.startLongitude}), end(${coords.endLatitude}, ${coords.endLongitude})`);
@@ -923,9 +860,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete video clip
-  app.delete("/api/video-clips/:id", requireAuth, async (req, res) => {
+  app.delete("/api/video-clips/:id", requireAuth, async (req: any, res) => {
     try {
       const { id } = req.params;
+      if (!await getOwnedClip(id, req.dbUser.id)) {
+        return res.status(404).json({ message: "Video clip not found" });
+      }
       const deleted = await storage.deleteVideoClip(id);
       if (!deleted) {
         return res.status(404).json({ message: "Video clip not found" });
@@ -1024,8 +964,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Retry video processing (if it failed)
-  app.post("/api/video-clips/:id/reprocess", async (req, res) => {
+  app.post("/api/video-clips/:id/reprocess", requireAuth, async (req: any, res) => {
     try {
+      if (!await getOwnedClip(req.params.id, req.dbUser.id)) {
+        return res.status(404).json({ message: "Video clip not found" });
+      }
       const result = await reprocessVideoClip(req.params.id);
       if (result === 'not_found') {
         return res.status(404).json({ message: "Video clip not found" });

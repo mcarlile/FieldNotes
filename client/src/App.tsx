@@ -22,7 +22,7 @@ import Home from "@/pages/home";
 import Dashboard from "@/pages/dashboard";
 import FieldNoteDetail from "@/pages/field-note-detail";
 import Admin from "@/pages/admin";
-import TrailcamStudio from "@/pages/trailcam-studio";
+import TrailcamStudioRedirect from "@/pages/trailcam-studio";
 import ConnectClaude from "@/pages/connect-claude";
 import InboxPage from "@/pages/inbox";
 import Expeditions from "@/pages/expeditions";
@@ -214,7 +214,7 @@ function AppContent() {
         <Route path="/admin">{() => readOnlyPreview ? readOnlyPage : <RequireAuth component={Admin} />}</Route>
         <Route path="/admin/:id">{() => readOnlyPreview ? readOnlyPage : <RequireAuth component={Admin} />}</Route>
         <Route path="/field-notes/:id/edit">{() => readOnlyPreview ? readOnlyPage : <RequireAuth component={Admin} />}</Route>
-        <Route path="/trailcam-studio">{() => <RequireAuth component={TrailcamStudio} />}</Route>
+        <Route path="/trailcam-studio">{() => <RequireAuth component={TrailcamStudioRedirect} />}</Route>
         <Route path="/connect-claude">{() => readOnlyPreview ? readOnlyPage : <RequireAuth component={ConnectClaude} />}</Route>
         <Route path="/inbox">{() => <RequireAuth component={InboxPage} />}</Route>
         <Route path="/expeditions">{() => <RequireAuth component={Expeditions} />}</Route>
@@ -234,9 +234,7 @@ function ClerkProviderWithRoutes() {
   const [location, setLocation] = useLocation();
 
   useEffect(() => {
-    document.title = /^\/trailcam-studio(?:\/|$)/.test(location)
-      ? "Big Miles Studio"
-      : "Big Miles Map";
+    document.title = "Big Miles Map";
     for (const name of ["application-name", "apple-mobile-web-app-title"]) {
       let meta = document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`);
       if (!meta) {
