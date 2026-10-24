@@ -16,26 +16,6 @@ enum MapLayer: String, CaseIterable, Identifiable {
     var name: String { self == .standard ? "Default" : "Satellite" }
 }
 
-/// The map layer dropdown, as on the web route map.
-struct MapLayerMenu: View {
-    @Binding var layer: MapLayer
-
-    var body: some View {
-        Menu {
-            Picker("Map layer", selection: $layer) {
-                ForEach(MapLayer.allCases) { Text($0.name).tag($0) }
-            }
-        } label: {
-            Image(systemName: "square.3.layers.3d")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundColor(.black)
-                .frame(width: 36, height: 36)
-                .background(.regularMaterial, in: Circle())
-        }
-        .accessibilityLabel("Map layer")
-    }
-}
-
 private struct MapControlButton: View {
     var systemImage: String? = nil
     var text: String? = nil
@@ -80,6 +60,11 @@ struct TrailMap: View {
     var layer: MapLayer = .standard
     /// When given, the caller shows the location and 3D buttons itself.
     var controls: Binding<MapControls>? = nil
+    /// Open on the user's location (when they allow it) instead of the routes.
+    var startAtUserLocation = false
+    /// Height covered by something floating over the bottom of the map (a
+    /// details panel): the controls sit above it and the route fits above it.
+    var bottomInset: CGFloat = 0
     var onSelectRoutes: (([String]) -> Void)? = nil
     var onSelectPhoto: ((Photo) -> Void)? = nil
 
@@ -89,7 +74,8 @@ struct TrailMap: View {
         #if os(iOS)
         let state = controls?.wrappedValue ?? ownControls
         TrailMapView(routes: routes, photos: photos, heat: heat, layer: layer, is3D: state.is3D,
-                     locateRequest: state.locateRequest,
+                     locateRequest: state.locateRequest, startAtUserLocation: startAtUserLocation,
+                     bottomInset: bottomInset,
                      onSelectRoutes: onSelectRoutes, onSelectPhoto: onSelectPhoto)
             .overlay(alignment: .bottomTrailing) {
                 if controls == nil {
@@ -98,12 +84,44 @@ struct TrailMap: View {
                         Map3DButton(controls: $ownControls)
                     }
                     .padding(12)
-                    .padding(.bottom, 16)
+                    .padding(.bottom, 16 + bottomInset)
                 }
             }
         #else
         RouteMapView(coordinates: routes.first?.coordinates ?? [])
         #endif
+    }
+}
+
+/// Toolbar version of the map controls, shared by the home heat map and
+/// trip pages so both put the same buttons in the same place (the Duo's
+/// sidebar). Layers and 3D share a menu: the sidebar fits three buttons
+/// beside search.
+struct MapOptionsMenu: View {
+    @Binding var layer: MapLayer
+    @Binding var controls: MapControls
+
+    var body: some View {
+        Menu {
+            Picker("Map layer", selection: $layer) {
+                ForEach(MapLayer.allCases) { Text($0.name).tag($0) }
+            }
+            Toggle("3D terrain", systemImage: "mountain.2", isOn: $controls.is3D)
+        } label: {
+            Image(systemName: "square.3.layers.3d")
+        }
+        .accessibilityLabel("Map options")
+    }
+}
+
+struct MapLocateToolbarButton: View {
+    @Binding var controls: MapControls
+
+    var body: some View {
+        Button { controls.locateRequest += 1 } label: {
+            Image(systemName: "location")
+        }
+        .accessibilityLabel("Show my location")
     }
 }
 
@@ -134,6 +152,8 @@ private struct TrailMapView: UIViewRepresentable {
     var layer: MapLayer
     var is3D: Bool
     var locateRequest: Int
+    var startAtUserLocation: Bool
+    var bottomInset: CGFloat
     var onSelectRoutes: (([String]) -> Void)?
     var onSelectPhoto: ((Photo) -> Void)?
 
@@ -145,12 +165,14 @@ private struct TrailMapView: UIViewRepresentable {
         ))
         map.ornaments.options.scaleBar.visibility = .hidden
         context.coordinator.attach(to: map, layer: layer)
+        if startAtUserLocation { context.coordinator.centerOnFirstLocation() }
         return map
     }
 
     func updateUIView(_ map: MapView, context: Context) {
         let c = context.coordinator
         c.parent = self
+        c.bottomInset = bottomInset
         c.update(layer: layer, is3D: is3D, routes: routes, heat: heat, photos: photos)
         if c.locateRequest != locateRequest {
             c.locateRequest = locateRequest
@@ -163,6 +185,7 @@ private struct TrailMapView: UIViewRepresentable {
     final class Coordinator: NSObject {
         var parent: TrailMapView?
         var locateRequest = 0
+        var bottomInset: CGFloat = 0
 
         private weak var map: MapView?
         private var cancelables = Set<AnyCancelable>()
@@ -328,7 +351,7 @@ private struct TrailMapView: UIViewRepresentable {
             guard let map, !fitted, map.bounds.width > 0 else { return }
             let coords = routes.flatMap(\.coordinates)
             guard coords.count >= 2 else { return }
-            let padding = UIEdgeInsets(top: 60, left: 40, bottom: 60, right: 40)
+            let padding = UIEdgeInsets(top: 100, left: 40, bottom: 60 + bottomInset, right: 40)
             if let camera = try? map.mapboxMap.camera(
                 for: coords, camera: CameraOptions(pitch: is3D ? 60 : 0),
                 coordinatesPadding: padding, maxZoom: 15, offset: nil
@@ -360,6 +383,18 @@ private struct TrailMapView: UIViewRepresentable {
         }
 
         // MARK: Location
+
+        /// Shows the puck (asking for permission if needed) and moves the
+        /// camera to the first fix. Without permission the map stays on the routes.
+        func centerOnFirstLocation() {
+            guard let map else { return }
+            map.location.options.puckType = .puck2D(.makeDefault(showBearing: true))
+            map.location.onLocationChange.observeNext { [weak self, weak map] locations in
+                guard let map, let location = locations.last else { return }
+                self?.fitted = true  // the routes fit shouldn't move it afterwards
+                map.camera.ease(to: CameraOptions(center: location.coordinate, zoom: 13), duration: 0.8)
+            }.store(in: &cancelables)
+        }
 
         func followUser() {
             guard let map else { return }

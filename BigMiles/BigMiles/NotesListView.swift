@@ -10,7 +10,8 @@ struct NotesListView: View {
     @State private var path: [FieldNote] = []
     @State private var showNewTrip = false
     @State private var showStravaImport = false
-    @AppStorage("homeShowsMap") private var showsMap = false
+    /// The app always opens on the map.
+    @State private var showsMap = true
     @AppStorage("mapLayer") private var mapLayer: MapLayer = .standard
     @State private var selectedRouteIds: [String] = []
     @State private var mapControls = MapControls()
@@ -58,7 +59,10 @@ struct NotesListView: View {
                 }
             }
             .navigationTitle("Field Notes")
-            .toolbar(showsMap && !isLoading ? .hidden : .visible, for: .navigationBar)
+            // In map mode the bar stays (so the toggle sits where it does on the
+            // list) but goes transparent over the edge-to-edge map.
+            .toolbarTitleDisplayMode(showsMap ? .inline : .automatic)
+            .toolbarBackground(showsMap ? .hidden : .automatic, for: .navigationBar)
             .navigationDestination(for: FieldNote.self) { note in
                 NoteDetailView(note: note)
             }
@@ -73,31 +77,23 @@ struct NotesListView: View {
                 ToolbarItem(placement: .principal) {
                     ViewModeToggle(showsMap: $showsMap)
                 }
-                ToolbarItem(placement: .primaryAction) {
-                    createMenu { Image(systemName: "plus") }
+                if !showsMap {
+                    ToolbarItem(placement: .primaryAction) {
+                        createMenu { Image(systemName: "plus") }
+                    }
                 }
                 // Map mode puts its buttons in the bottom toolbar beside search,
                 // which the iPhone Duo shows in its right-hand sidebar.
                 if showsMap {
                     ToolbarItemGroup(placement: .bottomBar) {
                         createMenu { Image(systemName: "plus") }
-                        Menu {
-                            Picker("Map layer", selection: $mapLayer) {
-                                ForEach(MapLayer.allCases) { Text($0.name).tag($0) }
-                            }
-                        } label: {
-                            Image(systemName: "square.3.layers.3d")
-                        }
-                        .accessibilityLabel("Map layer")
-                        Button { mapControls.locateRequest += 1 } label: {
-                            Image(systemName: "location")
-                        }
-                        .accessibilityLabel("Show my location")
-                        Button { mapControls.is3D.toggle() } label: {
-                            Text(mapControls.is3D ? "2D" : "3D").font(.system(size: 14, weight: .bold))
-                        }
-                        .accessibilityLabel(mapControls.is3D ? "Flat map" : "3D map")
+                        MapOptionsMenu(layer: $mapLayer, controls: $mapControls)
+                        MapLocateToolbarButton(controls: $mapControls)
                     }
+                    // With custom bottom-bar items, iOS only keeps search there
+                    // when asked to.
+                    ToolbarSpacer(.fixed, placement: .bottomBar)
+                    DefaultToolbarItem(kind: .search, placement: .bottomBar)
                 }
             }
             .background(sand.ignoresSafeArea())
@@ -125,28 +121,17 @@ struct NotesListView: View {
 
     // MARK: Map mode
 
-    /// Edge-to-edge heat map with the logo and view toggle floating on it.
+    /// Edge-to-edge heat map under a transparent navigation bar.
     private var fullScreenMap: some View {
         TrailMap(
             routes: filtered.map { TrailRoute(id: $0.id, coordinates: $0.mapCoordinates) },
             heat: true,
             layer: mapLayer,
             controls: $mapControls,
+            startAtUserLocation: true,
             onSelectRoutes: { selectedRouteIds = $0 }
         )
         .ignoresSafeArea()
-        .overlay(alignment: .top) {
-            ZStack(alignment: .topLeading) {
-                ViewModeToggle(showsMap: $showsMap)
-                    .padding(2)
-                    .background(.regularMaterial, in: Capsule())
-                    .frame(maxWidth: .infinity)
-                Image("BigMilesLogo")
-                    .accessibilityLabel("Big Miles")
-            }
-            .padding([.leading, .top], 8)
-            .padding(.trailing, 8)
-        }
     }
 
     // Same two entries as the web dashboard's Create dropdown.
@@ -188,8 +173,8 @@ private struct ViewModeToggle: View {
 
     var body: some View {
         Picker("View", selection: $showsMap) {
-            Image(systemName: "list.bullet").tag(false).accessibilityLabel("List")
             Image(systemName: "map").tag(true).accessibilityLabel("Map")
+            Image(systemName: "list.bullet").tag(false).accessibilityLabel("List")
         }
         .pickerStyle(.segmented)
         .frame(width: 110)
