@@ -440,11 +440,6 @@ export default function Dashboard() {
                         >
                           {note.title}
                         </Link>
-                        {note.videoCount > 0 && (
-                          <span className="meta-mono text-muted-foreground ml-2 whitespace-nowrap">
-                            ▶ {note.videoCount}
-                          </span>
-                        )}
                       </td>
                       <td className="meta-mono text-muted-foreground py-2.5 pr-6 whitespace-nowrap">
                         {typeStr}
