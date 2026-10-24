@@ -53,7 +53,7 @@ struct NotesListView: View {
             }
             .searchable(text: $searchText, prompt: "Search")
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .primaryAction) {
                     Button("Sign out") { auth.logout() }
                         .foregroundColor(muted)
                         .font(.system(size: 14))

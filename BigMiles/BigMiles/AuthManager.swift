@@ -1,12 +1,17 @@
 import Foundation
+import Combine
 import AuthenticationServices
 import Security
+#if canImport(UIKit)
 import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 @MainActor
 class AuthManager: ObservableObject {
     static let shared = AuthManager()
-    private static let tokenKey = "com.bigmiles.authToken"
+    nonisolated private static let tokenKey = "com.bigmiles.authToken"
 
     @Published var isAuthenticated = false
     @Published var currentUser: User?
@@ -61,17 +66,23 @@ final class WindowProvider: NSObject, ASWebAuthenticationPresentationContextProv
     private override init() {}
 
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        UIApplication.shared.connectedScenes
+        #if canImport(UIKit)
+        return UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .flatMap { $0.windows }
             .first { $0.isKeyWindow } ?? UIWindow()
+        #elseif canImport(AppKit)
+        return NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first ?? NSWindow()
+        #else
+        return ASPresentationAnchor()
+        #endif
     }
 }
 
 // MARK: - Keychain helpers
 
 enum Keychain {
-    static func read(_ key: String) -> String? {
+    nonisolated static func read(_ key: String) -> String? {
         let q: [CFString: Any] = [
             kSecClass:       kSecClassGenericPassword,
             kSecAttrAccount: key,
@@ -85,7 +96,7 @@ enum Keychain {
         return String(data: data, encoding: .utf8)
     }
 
-    static func save(_ key: String, value: String) {
+    nonisolated static func save(_ key: String, value: String) {
         delete(key)
         let attrs: [CFString: Any] = [
             kSecClass:       kSecClassGenericPassword,
@@ -95,7 +106,7 @@ enum Keychain {
         SecItemAdd(attrs as CFDictionary, nil)
     }
 
-    static func delete(_ key: String) {
+    nonisolated static func delete(_ key: String) {
         let q: [CFString: Any] = [kSecClass: kSecClassGenericPassword, kSecAttrAccount: key]
         SecItemDelete(q as CFDictionary)
     }

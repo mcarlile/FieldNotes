@@ -44,7 +44,7 @@ enum API {
 
         if let http = response as? HTTPURLResponse {
             if http.statusCode == 401 {
-                await AuthManager.shared.logout()
+                AuthManager.shared.logout()
                 throw APIError.unauthorized
             }
             if http.statusCode >= 400 {

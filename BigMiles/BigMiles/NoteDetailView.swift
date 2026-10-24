@@ -98,9 +98,9 @@ struct NoteDetailView: View {
         }
         .background(sand.ignoresSafeArea())
         .navigationTitle(display.title)
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbarTitleDisplayMode(.inline)
         .task { await loadFull() }
-        .fullScreenCover(item: $lightbox) { photo in
+        .lightboxCover(item: $lightbox) { photo in
             LightboxView(
                 initial: photo,
                 photos: display.photos ?? [],
@@ -194,3 +194,20 @@ struct LightboxView: View {
         }
     }
 }
+
+// MARK: - Cross-platform lightbox presentation
+
+private extension View {
+    @ViewBuilder
+    func lightboxCover<Item: Identifiable, Content: View>(
+        item: Binding<Item?>,
+        @ViewBuilder content: @escaping (Item) -> Content
+    ) -> some View {
+        #if os(iOS) || os(visionOS) || os(tvOS)
+        self.fullScreenCover(item: item, content: content)
+        #else
+        self.sheet(item: item, content: content)
+        #endif
+    }
+}
+
