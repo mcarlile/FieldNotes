@@ -1,5 +1,6 @@
 import SwiftUI
 import MapKit
+import CoreLocation
 
 // MARK: - Mapbox base layers
 
@@ -41,6 +42,27 @@ struct MapLayerMenu: View {
     }
 }
 
+private struct MapControlButton: View {
+    var systemImage: String? = nil
+    var text: String? = nil
+    let label: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Group {
+                if let systemImage { Image(systemName: systemImage) }
+                else { Text(text ?? "").font(.system(size: 13, weight: .bold)) }
+            }
+            .font(.system(size: 15, weight: .medium))
+            .foregroundColor(.black)
+            .frame(width: 36, height: 36)
+            .background(.regularMaterial, in: Circle())
+        }
+        .accessibilityLabel(label)
+    }
+}
+
 struct TrailRoute: Identifiable {
     let id: String
     let coordinates: [CLLocationCoordinate2D]
@@ -56,10 +78,26 @@ struct TrailMap: View {
     var onSelectRoutes: (([String]) -> Void)? = nil
     var onSelectPhoto: ((Photo) -> Void)? = nil
 
+    @State private var is3D = false
+    @State private var locateRequest = 0
+
     var body: some View {
         #if os(iOS)
-        TrailMapView(routes: routes, photos: photos, heat: heat, layer: layer,
+        TrailMapView(routes: routes, photos: photos, heat: heat, layer: layer, is3D: is3D,
+                     locateRequest: locateRequest,
                      onSelectRoutes: onSelectRoutes, onSelectPhoto: onSelectPhoto)
+            .overlay(alignment: .bottomTrailing) {
+                VStack(spacing: 8) {
+                    MapControlButton(systemImage: "location", label: "Show my location") {
+                        locateRequest += 1
+                    }
+                    MapControlButton(text: is3D ? "2D" : "3D", label: is3D ? "Flat map" : "3D map") {
+                        is3D.toggle()
+                    }
+                }
+                .padding(12)
+                .padding(.bottom, 16)
+            }
             .overlay(alignment: .bottomLeading) {
                 Text("© Mapbox © OpenStreetMap")
                     .font(.system(size: 9))
@@ -95,6 +133,8 @@ private struct TrailMapView: UIViewRepresentable {
     var photos: [Photo]
     var heat: Bool
     var layer: MapLayer
+    var is3D: Bool
+    var locateRequest: Int
     var onSelectRoutes: (([String]) -> Void)?
     var onSelectPhoto: ((Photo) -> Void)?
 
@@ -115,13 +155,34 @@ private struct TrailMapView: UIViewRepresentable {
         let c = context.coordinator
         c.parent = self
 
-        if c.layer != layer {
+        // Mapbox raster tiles are flat, so 3D swaps them for Apple's own map
+        // with real terrain (satellite stays satellite) and tilts the camera.
+        if c.layer != layer || c.is3D != is3D {
+            let modeChanged = c.is3D != nil && c.is3D != is3D
             c.layer = layer
+            c.is3D = is3D
             map.overlays.compactMap { $0 as? MKTileOverlay }.forEach(map.removeOverlay)
-            let tiles = MKTileOverlay(urlTemplate: layer.tileTemplate)
-            tiles.tileSize = CGSize(width: 512, height: 512)
-            tiles.canReplaceMapContent = true
-            map.addOverlay(tiles, level: .aboveLabels)
+            if is3D {
+                map.preferredConfiguration = layer == .satellite
+                    ? MKHybridMapConfiguration(elevationStyle: .realistic)
+                    : MKStandardMapConfiguration(elevationStyle: .realistic, emphasisStyle: .muted)
+            } else {
+                map.preferredConfiguration = MKStandardMapConfiguration()
+                let tiles = MKTileOverlay(urlTemplate: layer.tileTemplate)
+                tiles.tileSize = CGSize(width: 512, height: 512)
+                tiles.canReplaceMapContent = true
+                map.insertOverlay(tiles, at: 0, level: .aboveLabels)
+            }
+            if modeChanged {
+                let camera = map.camera.copy() as! MKMapCamera
+                camera.pitch = is3D ? 60 : 0
+                map.setCamera(camera, animated: true)
+            }
+        }
+
+        if c.locateRequest != locateRequest {
+            c.locateRequest = locateRequest
+            c.showUserLocation(on: map)
         }
 
         let routeKey = routes.map { "\($0.id):\($0.coordinates.count)" }.joined(separator: ",") + "|\(heat)"
@@ -200,9 +261,13 @@ private struct TrailMapView: UIViewRepresentable {
 
     // MARK: Coordinator
 
-    final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
+    final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate, CLLocationManagerDelegate {
         var parent: TrailMapView?
         var layer: MapLayer?
+        var is3D: Bool?
+        var locateRequest = 0
+        private let locationManager = CLLocationManager()
+        private weak var locatingMap: MKMapView?
         var routeKey = ""
         var photoKey = "-"
         var lines: [(String, MKPolyline)] = []
@@ -214,6 +279,29 @@ private struct TrailMapView: UIViewRepresentable {
             UIColor(red: 220/255, green: 38/255, blue: 38/255, alpha: 1),   // #dc2626
         ]
         private static let ink = UIColor(red: 26/255, green: 24/255, blue: 21/255, alpha: 1)
+
+        // MARK: Location
+
+        func showUserLocation(on map: MKMapView) {
+            switch locationManager.authorizationStatus {
+            case .notDetermined:
+                locatingMap = map
+                locationManager.delegate = self
+                locationManager.requestWhenInUseAuthorization()
+            case .authorizedWhenInUse, .authorizedAlways:
+                map.showsUserLocation = true
+                map.setUserTrackingMode(.follow, animated: true)
+            default:
+                // Denied in Settings; nothing to show.
+                break
+            }
+        }
+
+        func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+            guard let map = locatingMap, manager.authorizationStatus != .notDetermined else { return }
+            locatingMap = nil
+            showUserLocation(on: map)
+        }
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             if let tiles = overlay as? MKTileOverlay {
