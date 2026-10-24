@@ -80,6 +80,8 @@ struct TrailMap: View {
     var layer: MapLayer = .standard
     /// When given, the caller shows the location and 3D buttons itself.
     var controls: Binding<MapControls>? = nil
+    /// Open on the user's location (when they allow it) instead of the routes.
+    var startAtUserLocation = false
     var onSelectRoutes: (([String]) -> Void)? = nil
     var onSelectPhoto: ((Photo) -> Void)? = nil
 
@@ -89,7 +91,7 @@ struct TrailMap: View {
         #if os(iOS)
         let state = controls?.wrappedValue ?? ownControls
         TrailMapView(routes: routes, photos: photos, heat: heat, layer: layer, is3D: state.is3D,
-                     locateRequest: state.locateRequest,
+                     locateRequest: state.locateRequest, startAtUserLocation: startAtUserLocation,
                      onSelectRoutes: onSelectRoutes, onSelectPhoto: onSelectPhoto)
             .overlay(alignment: .bottomTrailing) {
                 if controls == nil {
@@ -134,6 +136,7 @@ private struct TrailMapView: UIViewRepresentable {
     var layer: MapLayer
     var is3D: Bool
     var locateRequest: Int
+    var startAtUserLocation: Bool
     var onSelectRoutes: (([String]) -> Void)?
     var onSelectPhoto: ((Photo) -> Void)?
 
@@ -145,6 +148,7 @@ private struct TrailMapView: UIViewRepresentable {
         ))
         map.ornaments.options.scaleBar.visibility = .hidden
         context.coordinator.attach(to: map, layer: layer)
+        if startAtUserLocation { context.coordinator.centerOnFirstLocation() }
         return map
     }
 
@@ -360,6 +364,18 @@ private struct TrailMapView: UIViewRepresentable {
         }
 
         // MARK: Location
+
+        /// Shows the puck (asking for permission if needed) and moves the
+        /// camera to the first fix. Without permission the map stays on the routes.
+        func centerOnFirstLocation() {
+            guard let map else { return }
+            map.location.options.puckType = .puck2D(.makeDefault(showBearing: true))
+            map.location.onLocationChange.observeNext { [weak self, weak map] locations in
+                guard let map, let location = locations.last else { return }
+                self?.fitted = true  // the routes fit shouldn't move it afterwards
+                map.camera.ease(to: CameraOptions(center: location.coordinate, zoom: 13), duration: 0.8)
+            }.store(in: &cancelables)
+        }
 
         func followUser() {
             guard let map else { return }
