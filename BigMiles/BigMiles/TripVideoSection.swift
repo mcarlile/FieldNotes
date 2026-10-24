@@ -52,11 +52,6 @@ final class TripVideoPlayback: ObservableObject {
 struct TripVideoSection: View {
     let clips: [VideoClip]
     @ObservedObject var playback: TripVideoPlayback
-    /// In the side column on wide screens the clips wrap into a grid under
-    /// the player instead of scrolling sideways.
-    var stacked = false
-    /// Shows a button that hides the side column.
-    var onCollapse: (() -> Void)? = nil
 
     private let ink    = Color(red: 26/255,  green: 24/255,  blue: 21/255)
     private let muted  = Color(red: 138/255, green: 132/255, blue: 126/255)
@@ -64,22 +59,10 @@ struct TripVideoSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("VIDEOS · \(clips.count)")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(muted)
-                    .tracking(0.8)
-                Spacer()
-                if let onCollapse {
-                    Button(action: onCollapse) {
-                        Image(systemName: "sidebar.right")
-                            .font(.system(size: 15))
-                            .foregroundColor(muted)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Hide videos")
-                }
-            }
+            Text("VIDEOS · \(clips.count)")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(muted)
+                .tracking(0.8)
 
             ZStack {
                 Color.black
@@ -98,25 +81,17 @@ struct TripVideoSection: View {
             .aspectRatio(16 / 9, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 10))
 
-            if stacked {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 10, alignment: .top)], spacing: 12) {
-                    clipButtons
-                }
-            } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) { clipButtons }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(clips) { clip in
+                        Button { playback.play(clip) } label: { card(clip) }
+                            .buttonStyle(.plain)
+                            .disabled(!clip.isReady)
+                    }
                 }
             }
         }
         .onDisappear { playback.stop() }
-    }
-
-    private var clipButtons: some View {
-        ForEach(clips) { clip in
-            Button { playback.play(clip) } label: { card(clip) }
-                .buttonStyle(.plain)
-                .disabled(!clip.isReady)
-        }
     }
 
     private func card(_ clip: VideoClip) -> some View {
