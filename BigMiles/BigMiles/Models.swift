@@ -105,9 +105,20 @@ struct Photo: Codable, Identifiable, Hashable {
     let timestamp: String?
     let camera: String?
 
-    /// Uploaded photos are stored as site-relative paths (/objects/uploads/…).
+    /// Uploaded photos are usually stored as site-relative paths
+    /// (/objects/uploads/…); resolve those the way the web map does.
     var imageURL: URL? {
-        url.hasPrefix("/") ? URL(string: API.base + url) : URL(string: url)
+        let raw = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        let full: String
+        if raw.hasPrefix("http://") || raw.hasPrefix("https://") {
+            full = raw
+        } else if raw.hasPrefix("//") {
+            full = "https:" + raw
+        } else {
+            full = API.base + (raw.hasPrefix("/") ? "" : "/") + raw
+        }
+        return URL(string: full)
+            ?? full.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed).flatMap(URL.init(string:))
     }
 
     var coordinate: CLLocationCoordinate2D? {

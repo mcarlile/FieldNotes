@@ -90,13 +90,22 @@ struct NoteDetailView: View {
                             spacing: 10
                         ) {
                             ForEach(photos) { photo in
-                                AsyncImage(url: photo.imageURL) { img in
-                                    img.resizable().scaledToFill()
-                                } placeholder: {
-                                    Rectangle().fill(border)
-                                }
-                                .frame(height: 160)
-                                .clipped()
+                                Rectangle().fill(border)
+                                    .frame(height: 160)
+                                    .overlay {
+                                        AsyncImage(url: photo.imageURL) { phase in
+                                            switch phase {
+                                            case .success(let img):
+                                                img.resizable().scaledToFill()
+                                            case .failure:
+                                                Image(systemName: "photo.badge.exclamationmark")
+                                                    .foregroundColor(muted)
+                                            default:
+                                                ProgressView()
+                                            }
+                                        }
+                                    }
+                                    .clipped()
                                 .cornerRadius(8)
                                 .onTapGesture { lightbox = photo }
                             }
