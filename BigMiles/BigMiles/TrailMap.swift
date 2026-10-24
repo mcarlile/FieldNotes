@@ -62,6 +62,14 @@ struct TrailRoute: Identifiable {
     let coordinates: [CLLocationCoordinate2D]
 }
 
+/// The map's 3D and "show my location" state, for screens that put those
+/// buttons in their own toolbar.
+struct MapControls {
+    var is3D = false
+    /// Bump to fly to the user's location.
+    var locateRequest = 0
+}
+
 /// A Mapbox map with routes and photo pins, plus location and 3D terrain
 /// controls. In heat mode routes are colored by how many trips overlap, like
 /// the web heat map.
@@ -70,34 +78,50 @@ struct TrailMap: View {
     var photos: [Photo] = []
     var heat = false
     var layer: MapLayer = .standard
-    /// Extra space under the controls, e.g. for a floating search bar.
-    var controlsBottomPadding: CGFloat = 16
+    /// When given, the caller shows the location and 3D buttons itself.
+    var controls: Binding<MapControls>? = nil
     var onSelectRoutes: (([String]) -> Void)? = nil
     var onSelectPhoto: ((Photo) -> Void)? = nil
 
-    @State private var is3D = false
-    @State private var locateRequest = 0
+    @State private var ownControls = MapControls()
 
     var body: some View {
         #if os(iOS)
-        TrailMapView(routes: routes, photos: photos, heat: heat, layer: layer, is3D: is3D,
-                     locateRequest: locateRequest,
+        let state = controls?.wrappedValue ?? ownControls
+        TrailMapView(routes: routes, photos: photos, heat: heat, layer: layer, is3D: state.is3D,
+                     locateRequest: state.locateRequest,
                      onSelectRoutes: onSelectRoutes, onSelectPhoto: onSelectPhoto)
             .overlay(alignment: .bottomTrailing) {
-                VStack(spacing: 8) {
-                    MapControlButton(systemImage: "location", label: "Show my location") {
-                        locateRequest += 1
+                if controls == nil {
+                    VStack(spacing: 8) {
+                        MapLocateButton(controls: $ownControls)
+                        Map3DButton(controls: $ownControls)
                     }
-                    MapControlButton(text: is3D ? "2D" : "3D", label: is3D ? "Flat map" : "3D map") {
-                        is3D.toggle()
-                    }
+                    .padding(12)
+                    .padding(.bottom, 16)
                 }
-                .padding(12)
-                .padding(.bottom, controlsBottomPadding)
             }
         #else
         RouteMapView(coordinates: routes.first?.coordinates ?? [])
         #endif
+    }
+}
+
+struct MapLocateButton: View {
+    @Binding var controls: MapControls
+    var body: some View {
+        MapControlButton(systemImage: "location", label: "Show my location") {
+            controls.locateRequest += 1
+        }
+    }
+}
+
+struct Map3DButton: View {
+    @Binding var controls: MapControls
+    var body: some View {
+        MapControlButton(text: controls.is3D ? "2D" : "3D", label: controls.is3D ? "Flat map" : "3D map") {
+            controls.is3D.toggle()
+        }
     }
 }
 
