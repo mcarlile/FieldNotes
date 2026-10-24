@@ -17,6 +17,8 @@ final class TripVideoPlayback: ObservableObject {
     /// Bumped each time a clip starts playing; the map zooms in behind the
     /// pin and starts following it, as on the web.
     @Published private(set) var focusRequest = 0
+    /// The video fills the screen; the same player keeps going.
+    @Published var fullScreen = false
     private var timeObserver: Any?
     private var statusObserver: AnyCancellable?
 
@@ -92,9 +94,23 @@ struct TripVideoSection: View {
 
             ZStack {
                 Color.black
-                if playback.clip != nil {
+                // One player can only show in one place, so the inline view
+                // steps aside while the video is full screen.
+                if playback.clip != nil && !playback.fullScreen {
                     VideoPlayer(player: playback.player)
-                } else {
+                        .overlay(alignment: .topTrailing) {
+                            Button { playback.fullScreen = true } label: {
+                                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .padding(8)
+                                    .background(.black.opacity(0.45), in: Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .padding(8)
+                            .accessibilityLabel("Full screen")
+                        }
+                } else if playback.clip == nil {
                     VStack(spacing: 6) {
                         Image(systemName: "play.rectangle")
                             .font(.system(size: 28))
@@ -117,7 +133,11 @@ struct TripVideoSection: View {
                 }
             }
         }
-        .onDisappear { playback.stop() }
+        // Going full screen covers this view; only leaving the trip stops it.
+        .onDisappear { if !playback.fullScreen { playback.stop() } }
+        .fullScreenVideo(isPresented: $playback.fullScreen) {
+            FullScreenVideo(playback: playback)
+        }
     }
 
     private func card(_ clip: VideoClip) -> some View {
@@ -151,5 +171,42 @@ struct TripVideoSection: View {
         }
         .frame(width: 140, alignment: .leading)
         .contentShape(Rectangle())
+    }
+}
+
+/// The playing clip filling the screen, with a button back to the trip.
+private struct FullScreenVideo: View {
+    @ObservedObject var playback: TripVideoPlayback
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black.ignoresSafeArea()
+            VideoPlayer(player: playback.player)
+                .ignoresSafeArea()
+            Button { playback.fullScreen = false } label: {
+                Image(systemName: "arrow.down.right.and.arrow.up.left")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(10)
+                    .background(.black.opacity(0.45), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .padding(16)
+            .accessibilityLabel("Exit full screen")
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func fullScreenVideo<Content: View>(
+        isPresented: Binding<Bool>,
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+        #if os(iOS) || os(visionOS) || os(tvOS)
+        self.fullScreenCover(isPresented: isPresented, content: content)
+        #else
+        self.sheet(isPresented: isPresented, content: content)
+        #endif
     }
 }
