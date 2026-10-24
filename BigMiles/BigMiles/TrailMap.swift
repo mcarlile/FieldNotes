@@ -364,8 +364,9 @@ private struct TrailMapView: UIViewRepresentable {
         func followUser() {
             guard let map else { return }
             map.location.options.puckType = .puck2D(.makeDefault(showBearing: true))
+            // Pitch is left alone so following the puck doesn't fight the 3D toggle.
             let state = map.viewport.makeFollowPuckViewportState(options: FollowPuckViewportStateOptions(
-                zoom: 14, bearing: nil, pitch: is3D ? 60 : 0
+                zoom: 14, bearing: nil, pitch: nil
             ))
             map.viewport.transition(to: state)
         }

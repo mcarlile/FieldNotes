@@ -136,23 +136,16 @@ struct NotesListView: View {
         )
         .ignoresSafeArea()
         .overlay(alignment: .top) {
-            ZStack {
+            ZStack(alignment: .topLeading) {
                 ViewModeToggle(showsMap: $showsMap)
-                    .padding(4)
+                    .padding(2)
                     .background(.regularMaterial, in: Capsule())
-                HStack(alignment: .top) {
-                    Text("Big Miles")
-                        .font(.system(size: 20, weight: .bold, design: .serif))
-                        .kerning(-0.5)
-                        .foregroundColor(.black)
-                        .padding(.horizontal, 12)
-                        .frame(height: 40)
-                        .background(.regularMaterial, in: Capsule())
-                    Spacer()
-                }
+                    .frame(maxWidth: .infinity)
+                Image("BigMilesLogo")
+                    .accessibilityLabel("Big Miles")
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 4)
+            .padding([.leading, .top], 8)
+            .padding(.trailing, 8)
         }
     }
 
