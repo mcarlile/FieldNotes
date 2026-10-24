@@ -18,6 +18,12 @@ struct NoteDetailView: View {
     @State private var panelExpanded = false
     @State private var mapControls = MapControls()
     @StateObject private var playback = TripVideoPlayback()
+    /// On wide screens (the Duo unfolded) videos sit in a side panel beside the map.
+    @State private var videoPanelOpen = true
+
+    /// Width from which a trip's videos move out of the details panel into a
+    /// collapsible column on the right, with the map still beside them.
+    private static let sideVideoMinWidth: CGFloat = 700
 
     private var videoClips: [VideoClip] { display.videoClips ?? [] }
 
@@ -30,7 +36,7 @@ struct NoteDetailView: View {
     var body: some View {
         Group {
             if display.mapCoordinates.isEmpty {
-                ScrollView { details.padding(20) }
+                ScrollView { details(includeVideo: true).padding(20) }
                     .background(sand.ignoresSafeArea())
             } else {
                 mapWithPanel
@@ -69,14 +75,58 @@ struct NoteDetailView: View {
     // MARK: Full-screen map
 
     /// The map fills the screen under a see-through navigation bar; the trip
-    /// details sit in a panel over its bottom that drags up to read more.
+    /// details sit in a panel over its bottom that drags up to read more. On
+    /// wide screens a trip's videos get their own collapsible column on the right.
     private var mapWithPanel: some View {
         GeometryReader { geo in
+            let sideVideo = !videoClips.isEmpty && geo.size.width >= Self.sideVideoMinWidth
+            HStack(spacing: 0) {
+                mapAndDetails(geo: geo, includeVideo: !sideVideo)
+                    .overlay(alignment: .topTrailing) {
+                        if sideVideo && !videoPanelOpen {
+                            Button {
+                                withAnimation(.snappy) { videoPanelOpen = true }
+                            } label: {
+                                Label("Videos", systemImage: "sidebar.right")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(.regularMaterial, in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .padding(12)
+                            .accessibilityLabel("Show videos")
+                        }
+                    }
+                if sideVideo && videoPanelOpen {
+                    videoSidePanel
+                        .frame(width: min(420, geo.size.width * 0.42))
+                        .transition(.move(edge: .trailing))
+                }
+            }
+        }
+    }
+
+    /// The trip's videos in a column beside the map: player on top, clips below.
+    private var videoSidePanel: some View {
+        ScrollView {
+            TripVideoSection(clips: videoClips, playback: playback, stacked: true) {
+                withAnimation(.snappy) { videoPanelOpen = false }
+            }
+            .padding(16)
+        }
+        .background(sand.ignoresSafeArea(edges: .bottom))
+        .overlay(alignment: .leading) {
+            Rectangle().fill(border).frame(width: 1).ignoresSafeArea()
+        }
+    }
+
+    private func mapAndDetails(geo: GeometryProxy, includeVideo: Bool) -> some View {
             let collapsed = geo.size.height * 0.36
             let expanded = geo.size.height * 0.82
             let panelHeight = panelExpanded ? expanded : collapsed
 
-            ZStack(alignment: .bottom) {
+            return ZStack(alignment: .bottom) {
                 TrailMap(
                     routes: [TrailRoute(id: display.id, coordinates: display.mapCoordinates)],
                     photos: display.photos ?? [],
@@ -104,7 +154,7 @@ struct NoteDetailView: View {
                             }
                         })
                     ScrollView {
-                        details.padding(.horizontal, 20).padding(.bottom, 20)
+                        details(includeVideo: includeVideo).padding(.horizontal, 20).padding(.bottom, 20)
                     }
                     .scrollDisabled(!panelExpanded)
                 }
@@ -113,17 +163,16 @@ struct NoteDetailView: View {
                 .shadow(color: .black.opacity(0.15), radius: 12, y: -2)
                 .offset(y: geo.safeAreaInsets.bottom)
             }
-        }
     }
 
     // MARK: Details
 
-    private var details: some View {
+    private func details(includeVideo: Bool) -> some View {
         VStack(alignment: .leading, spacing: 16) {
 
             // Trips with video (formerly Studio projects) lead with the
             // player: playback only, calibration stays on the web.
-            if !videoClips.isEmpty {
+            if includeVideo && !videoClips.isEmpty {
                 TripVideoSection(clips: videoClips, playback: playback)
             }
 
