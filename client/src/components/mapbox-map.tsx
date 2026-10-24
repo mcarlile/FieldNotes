@@ -12,23 +12,38 @@ export interface ClipMarker {
   color?: string;
 }
 
-interface MapboxMapProps {
-  gpxData: any;
-  hoveredElevationPoint?: ElevationPoint | null;
-  clipMarkers?: ClipMarker[];
-  className?: string;
+export interface PhotoMarker {
+  id: string;
+  latitude: number;
+  longitude: number;
+  url?: string;
 }
 
-export default function MapboxMap({ 
-  gpxData, 
-  hoveredElevationPoint, 
+interface MapboxMapProps {
+  gpxData?: any;
+  // Pre-parsed coordinate array — alternative to gpxData
+  coordinates?: [number, number][];
+  hoveredElevationPoint?: ElevationPoint | null;
+  clipMarkers?: ClipMarker[];
+  photoMarkers?: PhotoMarker[];
+  className?: string;
+  height?: string;
+}
+
+export default function MapboxMap({
+  gpxData,
+  coordinates: coordinatesProp,
+  hoveredElevationPoint,
   clipMarkers,
-  className 
+  photoMarkers,
+  className,
+  height,
 }: MapboxMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const elevationMarker = useRef<mapboxgl.Marker | null>(null);
   const clipMarkersRef = useRef<Map<string, mapboxgl.Marker>>(new Map());
+  const photoMarkersRef = useRef<Map<string, mapboxgl.Marker>>(new Map());
   const animationFrameRef = useRef<number | null>(null);
   const coordinatesRef = useRef<[number, number][]>([]);
   const [webglError, setWebglError] = useState(false);
@@ -53,9 +68,11 @@ export default function MapboxMap({
       return;
     }
 
-    // Parse GPX data if it's a string
+    // Parse GPX data or use pre-parsed coordinates
     let parsedGpxData: any = null;
-    if (gpxData) {
+    if (coordinatesProp && coordinatesProp.length > 0) {
+      parsedGpxData = { coordinates: coordinatesProp };
+    } else if (gpxData) {
       try {
         if (typeof gpxData === 'string') {
           parsedGpxData = parseGpxData(gpxData);
@@ -210,21 +227,21 @@ export default function MapboxMap({
     });
 
     return () => {
-      // Clean up animation frames
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
-      
       if (elevationMarker.current) {
         elevationMarker.current.remove();
         elevationMarker.current = null;
       }
+      photoMarkersRef.current.forEach(m => m.remove());
+      photoMarkersRef.current.clear();
       if (map.current) {
         map.current.remove();
         map.current = null;
       }
     };
-  }, [gpxData]);
+  }, [gpxData, coordinatesProp]);
 
   // Handle elevation profile hover with immediate, responsive updates
   useEffect(() => {
@@ -232,11 +249,13 @@ export default function MapboxMap({
 
     const markerEl = elevationMarker.current.getElement();
     const ringEl = markerEl.querySelector('.elevation-ring') as HTMLElement;
-    
+
     if (hoveredElevationPoint && hoveredElevationPoint.coordinates) {
-      // Use the coordinates directly from the ElevationPoint
       const [longitude, latitude] = hoveredElevationPoint.coordinates;
-      
+
+      // Guard: skip obviously invalid coordinates (0,0 is the Gulf of Guinea)
+      if (longitude === 0 && latitude === 0) return;
+
       // Immediate position update for responsive sync
       elevationMarker.current.setLngLat([longitude, latitude]);
       
@@ -344,6 +363,78 @@ export default function MapboxMap({
     };
   }, [clipMarkers]);
 
+  // Handle photo markers
+  useEffect(() => {
+    if (!map.current) return;
+
+    const addPhotoMarkers = () => {
+      if (!map.current) return;
+
+      const currentIds = new Set(photoMarkers?.map(m => m.id) || []);
+
+      // Remove stale markers
+      photoMarkersRef.current.forEach((marker, id) => {
+        if (!currentIds.has(id)) {
+          marker.remove();
+          photoMarkersRef.current.delete(id);
+        }
+      });
+
+      photoMarkers?.forEach((pm) => {
+        if (photoMarkersRef.current.has(pm.id)) {
+          photoMarkersRef.current.get(pm.id)?.setLngLat([pm.longitude, pm.latitude]);
+          return;
+        }
+
+        const el = document.createElement('div');
+        el.style.cssText = `
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          border: 2px solid #fff;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+          cursor: pointer;
+          overflow: hidden;
+          background: #e8e4de;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        `;
+
+        if (pm.url) {
+          const img = document.createElement('img');
+          const src = pm.url.startsWith('http') || pm.url.startsWith('//')
+            ? pm.url
+            : `${window.location.origin}${pm.url.startsWith('/') ? '' : '/'}${pm.url}`;
+          img.src = src;
+          img.style.cssText = `width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none;`;
+          img.onerror = () => { img.style.display = 'none'; };
+          el.appendChild(img);
+        } else {
+          // Simple dot when no photo URL
+          el.style.background = '#1a1815';
+          el.style.width = '10px';
+          el.style.height = '10px';
+          el.style.border = '2px solid #f4f1ec';
+        }
+
+        const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+          .setLngLat([pm.longitude, pm.latitude])
+          .addTo(map.current!);
+
+        photoMarkersRef.current.set(pm.id, marker);
+      });
+    };
+
+    if (!map.current.loaded()) {
+      map.current.on('load', addPhotoMarkers);
+      return () => { map.current?.off('load', addPhotoMarkers); };
+    }
+
+    addPhotoMarkers();
+  }, [photoMarkers]);
+
   // Show fallback UI if WebGL is not supported
   if (webglError) {
     return (
@@ -364,9 +455,10 @@ export default function MapboxMap({
   }
 
   return (
-    <div 
+    <div
       ref={mapContainer}
-      className={`bg-gray-100 ${className}`}
+      className={`bg-gray-100 ${className ?? ''}`}
+      style={height ? { height } : undefined}
       data-testid="mapbox-map"
     />
   );

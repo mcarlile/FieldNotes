@@ -75,7 +75,7 @@ function DayCard({ note, index, onPhotoClick }: {
                 coordinates={gpxCoords}
                 photoMarkers={note.photos
                   .filter(p => p.latitude && p.longitude)
-                  .map(p => ({ id: p.id, latitude: p.latitude!, longitude: p.longitude! }))}
+                  .map(p => ({ id: p.id, latitude: p.latitude!, longitude: p.longitude!, url: p.url }))}
                 height="100%"
               />
             </div>
