@@ -13,6 +13,7 @@ struct NotesListView: View {
     @AppStorage("homeShowsMap") private var showsMap = false
     @AppStorage("mapLayer") private var mapLayer: MapLayer = .standard
     @State private var selectedRouteIds: [String] = []
+    @State private var mapControls = MapControls()
 
     private let sand   = Color(red: 245/255, green: 240/255, blue: 232/255)
     private let border = Color(red: 232/255, green: 226/255, blue: 214/255)
@@ -75,6 +76,29 @@ struct NotesListView: View {
                 ToolbarItem(placement: .primaryAction) {
                     createMenu { Image(systemName: "plus") }
                 }
+                // Map mode puts its buttons in the bottom toolbar beside search,
+                // which the iPhone Duo shows in its right-hand sidebar.
+                if showsMap {
+                    ToolbarItemGroup(placement: .bottomBar) {
+                        createMenu { Image(systemName: "plus") }
+                        Menu {
+                            Picker("Map layer", selection: $mapLayer) {
+                                ForEach(MapLayer.allCases) { Text($0.name).tag($0) }
+                            }
+                        } label: {
+                            Image(systemName: "square.3.layers.3d")
+                        }
+                        .accessibilityLabel("Map layer")
+                        Button { mapControls.locateRequest += 1 } label: {
+                            Image(systemName: "location")
+                        }
+                        .accessibilityLabel("Show my location")
+                        Button { mapControls.is3D.toggle() } label: {
+                            Text(mapControls.is3D ? "2D" : "3D").font(.system(size: 14, weight: .bold))
+                        }
+                        .accessibilityLabel(mapControls.is3D ? "Flat map" : "3D map")
+                    }
+                }
             }
             .background(sand.ignoresSafeArea())
             .refreshable { await loadNotes() }
@@ -101,44 +125,27 @@ struct NotesListView: View {
 
     // MARK: Map mode
 
-    /// Edge-to-edge heat map with the logo, view toggle and buttons floating on it.
+    /// Edge-to-edge heat map with the logo and view toggle floating on it.
     private var fullScreenMap: some View {
         TrailMap(
             routes: filtered.map { TrailRoute(id: $0.id, coordinates: $0.mapCoordinates) },
             heat: true,
             layer: mapLayer,
-            controlsBottomPadding: 28,
+            controls: $mapControls,
             onSelectRoutes: { selectedRouteIds = $0 }
         )
         .ignoresSafeArea()
         .overlay(alignment: .top) {
-            ZStack {
+            ZStack(alignment: .topLeading) {
                 ViewModeToggle(showsMap: $showsMap)
-                    .padding(4)
+                    .padding(2)
                     .background(.regularMaterial, in: Capsule())
-                HStack(alignment: .top) {
-                    Text("Big Miles")
-                        .font(.system(size: 20, weight: .bold, design: .serif))
-                        .kerning(-0.5)
-                        .foregroundColor(.black)
-                        .padding(.horizontal, 12)
-                        .frame(height: 40)
-                        .background(.regularMaterial, in: Capsule())
-                    Spacer()
-                    VStack(spacing: 8) {
-                        createMenu {
-                            Image(systemName: "plus")
-                                .font(.system(size: 17, weight: .semibold))
-                                .foregroundColor(.black)
-                                .frame(width: 40, height: 40)
-                                .background(.regularMaterial, in: Circle())
-                        }
-                        MapLayerMenu(layer: $mapLayer)
-                    }
-                }
+                    .frame(maxWidth: .infinity)
+                Image("BigMilesLogo")
+                    .accessibilityLabel("Big Miles")
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 4)
+            .padding([.leading, .top], 8)
+            .padding(.trailing, 8)
         }
     }
 
