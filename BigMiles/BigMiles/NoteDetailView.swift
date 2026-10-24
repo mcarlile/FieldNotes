@@ -19,7 +19,22 @@ struct NoteDetailView: View {
     @State private var mapControls = MapControls()
     @StateObject private var playback = TripVideoPlayback()
 
+    @State private var videoPanelOpen = true
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    #endif
+
     private var videoClips: [VideoClip] { display.videoClips ?? [] }
+
+    /// The Duo (and other wide screens) shows videos in their own
+    /// collapsible panel on the right, with the map still in view beside it.
+    private var videosInSidebar: Bool {
+        #if os(iOS)
+        return sizeClass == .regular && !videoClips.isEmpty && !display.mapCoordinates.isEmpty
+        #else
+        return false
+        #endif
+    }
 
     /// Where the playing clip was filmed, using the sync offset calibrated on the web.
     private var playhead: CLLocationCoordinate2D? {
@@ -32,6 +47,14 @@ struct NoteDetailView: View {
             if display.mapCoordinates.isEmpty {
                 ScrollView { details.padding(20) }
                     .background(sand.ignoresSafeArea())
+            } else if videosInSidebar {
+                HStack(spacing: 0) {
+                    mapWithPanel
+                    if videoPanelOpen {
+                        videoSidebar
+                            .transition(.move(edge: .trailing))
+                    }
+                }
             } else {
                 mapWithPanel
             }
@@ -43,6 +66,16 @@ struct NoteDetailView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Edit") { showEdit = true }
+            }
+            if videosInSidebar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        withAnimation(.snappy) { videoPanelOpen.toggle() }
+                    } label: {
+                        Image(systemName: "sidebar.right")
+                    }
+                    .accessibilityLabel(videoPanelOpen ? "Hide videos" : "Show videos")
+                }
             }
             // Same map buttons, in the same place, as the home heat map.
             if !display.mapCoordinates.isEmpty {
@@ -116,6 +149,22 @@ struct NoteDetailView: View {
         }
     }
 
+    // MARK: Video sidebar
+
+    /// Right-hand video panel on wide screens; the playhead pin keeps moving
+    /// on the map beside it.
+    private var videoSidebar: some View {
+        ScrollView {
+            TripVideoSection(clips: videoClips, playback: playback)
+                .padding(16)
+        }
+        .frame(width: 360)
+        .background(sand.ignoresSafeArea())
+        .overlay(alignment: .leading) {
+            Rectangle().fill(border).frame(width: 1).ignoresSafeArea()
+        }
+    }
+
     // MARK: Details
 
     private var details: some View {
@@ -123,7 +172,7 @@ struct NoteDetailView: View {
 
             // Trips with video (formerly Studio projects) lead with the
             // player: playback only, calibration stays on the web.
-            if !videoClips.isEmpty {
+            if !videoClips.isEmpty && !videosInSidebar {
                 TripVideoSection(clips: videoClips, playback: playback)
             }
 
