@@ -551,7 +551,7 @@ export default function TripVideoStudio({ trip }: { trip: FieldNote }) {
           </div>
         </div>
 
-        {/* Right — Video & Timeline */}
+        {/* Right — Video */}
         <div className="studio-player-column w-1/2 min-h-0 min-w-0 flex flex-col">
           {/* Video */}
           <div className="studio-video-panel flex-1 min-h-0 min-w-0 border-b border-border flex flex-col">
@@ -685,65 +685,6 @@ export default function TripVideoStudio({ trip }: { trip: FieldNote }) {
                   </span>
                 </div>
               )}
-            </div>
-          </div>
-
-          {/* Timeline */}
-          <div className="studio-desktop-only h-64 flex flex-col">
-            <div className="px-5 py-2.5 border-b border-border flex items-center justify-between gap-3">
-              <span className="meta-mono text-muted-foreground">Timeline</span>
-              <span className="meta-mono text-muted-foreground">{formatTime(currentTime)}</span>
-            </div>
-
-            <div className="flex-1 px-5 py-3">
-              <div className="relative h-full">
-                <div className="h-5 border-b border-border relative mb-2 meta-mono text-muted-foreground">
-                  <span className="absolute left-0 bottom-1">0:00</span>
-                  {selectedProject.duration && (
-                    <span className="absolute right-0 bottom-1">{formatTime(selectedProject.duration)}</span>
-                  )}
-                </div>
-
-                <div className="relative h-12 bg-muted/30 rounded">
-                  {clips.map((clip, index) => {
-                    const color = clipColor(clip, index);
-                    const leftPercent = selectedProject.duration
-                      ? (clip.startTime / selectedProject.duration) * 100
-                      : 0;
-                    const widthPercent = selectedProject.duration
-                      ? ((clip.endTime - clip.startTime) / selectedProject.duration) * 100
-                      : 20;
-
-                    return (
-                      <button
-                        key={clip.id}
-                        type="button"
-                        className="absolute top-1 h-10 rounded cursor-pointer hover:opacity-80 transition-opacity overflow-hidden"
-                        style={{ left: `${leftPercent}%`, width: `${widthPercent}%`, backgroundColor: color }}
-                        onClick={() => playClip(clip)}
-                        onMouseEnter={() => hoverClip(clip.id)}
-                        onMouseLeave={() => hoverClip(null)}
-                        data-testid={`clip-segment-${clip.id}`}
-                      >
-                        <div className="meta-mono text-white p-1 truncate text-left">
-                          {clip.title}
-                        </div>
-                      </button>
-                    );
-                  })}
-
-                  <div
-                    className="absolute top-0 w-px h-full bg-foreground z-10 pointer-events-none"
-                    style={{
-                      left: selectedProject.duration
-                        ? `${(((selectedClip?.startTime ?? 0) + currentTime) / selectedProject.duration) * 100}%`
-                        : "0%",
-                    }}
-                  >
-                    <div className="absolute -top-1 -left-1 w-2 h-2 bg-foreground rounded-full" />
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         </div>
