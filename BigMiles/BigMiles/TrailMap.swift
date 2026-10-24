@@ -10,10 +10,23 @@ import MapboxMaps
 /// The web route map's "Map layer" choices.
 enum MapLayer: String, CaseIterable, Identifiable {
     case standard = "outdoors-v12"
+    case topo = "topo"
     case satellite = "satellite-streets-v12"
 
     var id: String { rawValue }
-    var name: String { self == .standard ? "Default" : "Satellite" }
+
+    var name: String {
+        switch self {
+        case .standard:  return "Default"
+        case .topo:      return "Topo"
+        case .satellite: return "Satellite"
+        }
+    }
+
+    /// Topo is Mapbox Light with hillshade and contour lines added on top.
+    var styleURI: StyleURI? {
+        StyleURI(rawValue: "mapbox://styles/mapbox/\(self == .topo ? "light-v11" : rawValue)")
+    }
 }
 
 private struct MapControlButton: View {
@@ -161,7 +174,7 @@ private struct TrailMapView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> MapView {
         let map = MapView(frame: .zero, mapInitOptions: MapInitOptions(
-            styleURI: StyleURI(rawValue: "mapbox://styles/mapbox/\(layer.rawValue)")
+            styleURI: layer.styleURI
         ))
         map.ornaments.options.scaleBar.visibility = .hidden
         context.coordinator.attach(to: map, layer: layer)
@@ -220,6 +233,7 @@ private struct TrailMapView: UIViewRepresentable {
             // everything is re-added each time a style finishes loading.
             map.mapboxMap.onStyleLoaded.observe { [weak self] _ in
                 self?.styleReady = true
+                self?.installTopoLayers()
                 self?.installRouteLayer()
                 self?.applyTerrain()
             }.store(in: &cancelables)
@@ -236,7 +250,7 @@ private struct TrailMapView: UIViewRepresentable {
             if self.layer != layer {
                 self.layer = layer
                 styleReady = false
-                map.mapboxMap.styleURI = StyleURI(rawValue: "mapbox://styles/mapbox/\(layer.rawValue)")
+                map.mapboxMap.styleURI = layer.styleURI
             }
             if self.is3D != is3D {
                 self.is3D = is3D
@@ -361,19 +375,68 @@ private struct TrailMapView: UIViewRepresentable {
             }
         }
 
+        // MARK: Topo
+
+        /// Hillshade plus contour lines from Mapbox Terrain, labeled in feet
+        /// on every index contour, under the routes.
+        private func installTopoLayers() {
+            guard let map, layer == .topo else { return }
+            let style: MapboxMap = map.mapboxMap
+            ensureDemSource()
+
+            var shade = HillshadeLayer(id: "topo-hillshade", source: demId)
+            shade.hillshadeExaggeration = .constant(0.35)
+            shade.hillshadeShadowColor = .constant(StyleColor(UIColor(red: 0.35, green: 0.3, blue: 0.25, alpha: 1)))
+            try? style.addLayer(shade)
+
+            var contours = VectorSource(id: "topo-terrain")
+            contours.url = "mapbox://mapbox.mapbox-terrain-v2"
+            try? style.addSource(contours)
+
+            // `index` marks every 5th / 10th line; those are drawn heavier and labeled.
+            let isIndex = Exp(.match) { Exp(.get) { "index" }; [5, 10]; true; false }
+            let brown = UIColor(red: 0.62, green: 0.45, blue: 0.3, alpha: 1)
+
+            var lines = LineLayer(id: "topo-contours", source: "topo-terrain")
+            lines.sourceLayer = "contour"
+            lines.lineColor = .constant(StyleColor(brown))
+            lines.lineOpacity = .constant(0.7)
+            lines.lineWidth = .expression(Exp(.switchCase) { isIndex; 1.3; 0.6 })
+            try? style.addLayer(lines)
+
+            var labels = SymbolLayer(id: "topo-contour-labels", source: "topo-terrain")
+            labels.sourceLayer = "contour"
+            labels.filter = isIndex
+            labels.symbolPlacement = .constant(.line)
+            labels.textField = .expression(Exp(.concat) {
+                Exp(.toString) { Exp(.round) { Exp(.product) { Exp(.get) { "ele" }; 3.28084 } } }
+                " ft"
+            })
+            labels.textSize = .constant(10)
+            labels.textColor = .constant(StyleColor(brown))
+            labels.textHaloColor = .constant(StyleColor(.white))
+            labels.textHaloWidth = .constant(1.2)
+            try? style.addLayer(labels)
+        }
+
+        private func ensureDemSource() {
+            guard let map else { return }
+            let style: MapboxMap = map.mapboxMap
+            guard !style.sourceExists(withId: demId) else { return }
+            var dem = RasterDemSource(id: demId)
+            dem.url = "mapbox://mapbox.mapbox-terrain-dem-v1"
+            dem.tileSize = 512
+            dem.maxzoom = 14
+            try? style.addSource(dem)
+        }
+
         // MARK: 3D terrain
 
         private func applyTerrain() {
             guard let map, styleReady else { return }
             let style: MapboxMap = map.mapboxMap
             if is3D {
-                if !style.sourceExists(withId: demId) {
-                    var dem = RasterDemSource(id: demId)
-                    dem.url = "mapbox://mapbox.mapbox-terrain-dem-v1"
-                    dem.tileSize = 512
-                    dem.maxzoom = 14
-                    try? style.addSource(dem)
-                }
+                ensureDemSource()
                 var terrain = Terrain(sourceId: demId)
                 terrain.exaggeration = .constant(1)  // true scale, as on the web
                 try? style.setTerrain(terrain)
