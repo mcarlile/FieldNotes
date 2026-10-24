@@ -67,10 +67,13 @@ final class WindowProvider: NSObject, ASWebAuthenticationPresentationContextProv
 
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
         #if canImport(UIKit)
-        return UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap { $0.windows }
-            .first { $0.isKeyWindow } ?? UIWindow()
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        if let key = scenes.flatMap(\.windows).first(where: \.isKeyWindow) {
+            return key
+        }
+        // The sign-in button lives in a window, so a scene always exists here.
+        guard let scene = scenes.first else { fatalError("Sign-in started without a window scene") }
+        return UIWindow(windowScene: scene)
         #elseif canImport(AppKit)
         return NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first ?? NSWindow()
         #else
