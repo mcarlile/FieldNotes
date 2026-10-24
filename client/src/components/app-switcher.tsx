@@ -1,4 +1,4 @@
-import { Link, useLocation } from "wouter";
+import { Link } from "wouter";
 import { Check, ChevronDown } from "lucide-react";
 import {
   DropdownMenu,
@@ -12,9 +12,9 @@ interface AppSwitcherProps {
 }
 
 export default function AppSwitcher({ onNavigate }: AppSwitcherProps) {
-  const [location] = useLocation();
-  const isStudio = /^\/trailcam-studio(?:\/|$)/.test(location);
-  const currentApp = isStudio ? "Studio" : "Map";
+  // Studio projects became trips, so the map is the only app. Trips with
+  // video are the dashboard's "Contains videos" filter.
+  const currentApp = "Map";
 
   return (
     <div
@@ -47,22 +47,20 @@ export default function AppSwitcher({ onNavigate }: AppSwitcherProps) {
             <Link
               href="/dashboard"
               onClick={onNavigate}
-              aria-current={!isStudio ? "page" : undefined}
+              aria-current="page"
               className="min-h-11 gap-4"
             >
               Big Miles Map
-              {!isStudio && <Check className="ml-auto h-4 w-4" aria-hidden="true" />}
+              <Check className="ml-auto h-4 w-4" aria-hidden="true" />
             </Link>
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
             <Link
-              href="/trailcam-studio"
+              href="/dashboard?media=videos"
               onClick={onNavigate}
-              aria-current={isStudio ? "page" : undefined}
               className="min-h-11 gap-4"
             >
-              Big Miles Studio
-              {isStudio && <Check className="ml-auto h-4 w-4" aria-hidden="true" />}
+              Trips with video
             </Link>
           </DropdownMenuItem>
         </DropdownMenuContent>

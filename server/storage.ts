@@ -1,4 +1,4 @@
-import { fieldNotes, photos, trailcamProjects, videoClips, webhookTokens, gpxInbox, stravaConnections, expeditions, expeditionFieldNotes, type FieldNote, type Photo, type InsertFieldNote, type InsertPhoto, type TrailcamProject, type VideoClip, type InsertTrailcamProject, type InsertVideoClip, type WebhookToken, type GpxInboxItem, type StravaConnection, type InsertStravaConnection, type Expedition, type InsertExpedition, type ExpeditionFieldNote } from "@shared/schema";
+import { fieldNotes, photos, trailcamProjects, videoClips, webhookTokens, gpxInbox, stravaConnections, expeditions, expeditionFieldNotes, type TripPlayback, type FieldNote, type Photo, type InsertFieldNote, type InsertPhoto, type TrailcamProject, type VideoClip, type InsertTrailcamProject, type InsertVideoClip, type WebhookToken, type GpxInboxItem, type StravaConnection, type InsertStravaConnection, type Expedition, type InsertExpedition, type ExpeditionFieldNote } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, like, ilike, and, or, sql, inArray } from "drizzle-orm";
 import { MAX_TRIP_PHOTOS } from "@shared/photo-limit";
@@ -22,6 +22,11 @@ function toApiTokenSummary(row: any): ApiTokenSummary {
   };
 }
 
+export interface TripMediaCounts {
+  photoCount: number;
+  videoCount: number;
+}
+
 export interface IStorage {
   // Field Notes
   getFieldNotes(options?: {
@@ -33,6 +38,8 @@ export interface IStorage {
   createFieldNote(fieldNote: InsertFieldNote): Promise<FieldNote>;
   updateFieldNote(id: string, fieldNote: Partial<InsertFieldNote>): Promise<FieldNote | undefined>;
   deleteFieldNote(id: string): Promise<boolean>;
+  getTripMediaCounts(ids: string[]): Promise<Map<string, TripMediaCounts>>;
+  updateTripPlayback(id: string, patch: TripPlayback): Promise<FieldNote | undefined>;
 
   // Photos
   getPhotosByFieldNoteId(fieldNoteId: string): Promise<Photo[]>;
@@ -54,7 +61,7 @@ export interface IStorage {
   deleteTrailcamProject(id: string): Promise<boolean>;
 
   // Video Clips
-  getVideoClipsByProjectId(projectId: string): Promise<VideoClip[]>;
+  getVideoClipsByTripId(tripId: string): Promise<VideoClip[]>;
   getVideoClipById(id: string): Promise<VideoClip | undefined>;
   createVideoClip(clip: InsertVideoClip): Promise<VideoClip>;
   updateVideoClip(id: string, clip: Partial<InsertVideoClip>): Promise<VideoClip | undefined>;
@@ -185,6 +192,36 @@ export class DatabaseStorage implements IStorage {
     // Then delete the field note
     const result = await db.delete(fieldNotes).where(eq(fieldNotes.id, id));
     return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  async getTripMediaCounts(ids: string[]): Promise<Map<string, TripMediaCounts>> {
+    const counts = new Map<string, TripMediaCounts>(ids.map((id) => [id, { photoCount: 0, videoCount: 0 }]));
+    if (ids.length === 0) return counts;
+    const [photoRows, clipRows] = await Promise.all([
+      db.select({ id: photos.fieldNoteId, total: sql<number>`count(*)::int` })
+        .from(photos).where(inArray(photos.fieldNoteId, ids)).groupBy(photos.fieldNoteId),
+      db.select({ id: videoClips.fieldNoteId, total: sql<number>`count(*)::int` })
+        .from(videoClips).where(inArray(videoClips.fieldNoteId, ids)).groupBy(videoClips.fieldNoteId),
+    ]);
+    for (const row of photoRows) {
+      const entry = counts.get(row.id);
+      if (entry) entry.photoCount = row.total;
+    }
+    for (const row of clipRows) {
+      const entry = row.id ? counts.get(row.id) : undefined;
+      if (entry) entry.videoCount = row.total;
+    }
+    return counts;
+  }
+
+  async updateTripPlayback(id: string, patch: TripPlayback): Promise<FieldNote | undefined> {
+    return db.transaction(async (tx) => {
+      const [note] = await tx.select().from(fieldNotes).where(eq(fieldNotes.id, id)).for("update");
+      if (!note) return undefined;
+      const playback = { ...((note.playback as TripPlayback | null) ?? {}), ...patch };
+      const [updated] = await tx.update(fieldNotes).set({ playback }).where(eq(fieldNotes.id, id)).returning();
+      return updated;
+    });
   }
 
   async getPhotosByFieldNoteId(fieldNoteId: string): Promise<Photo[]> {
@@ -354,8 +391,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Video Clips
-  async getVideoClipsByProjectId(projectId: string): Promise<VideoClip[]> {
-    return await db.select().from(videoClips).where(eq(videoClips.projectId, projectId)).orderBy(asc(videoClips.startTime));
+  async getVideoClipsByTripId(tripId: string): Promise<VideoClip[]> {
+    return await db.select().from(videoClips).where(eq(videoClips.fieldNoteId, tripId)).orderBy(asc(videoClips.startTime));
   }
 
   async getVideoClipById(id: string): Promise<VideoClip | undefined> {
@@ -713,6 +750,9 @@ export class MemStorage implements IStorage {
       isPublished: false,
       publishedAt: null,
       slug: null,
+      startTime: null,
+      endTime: null,
+      playback: null,
       createdAt: new Date("2024-07-16T10:00:00Z")
     },
     {
@@ -737,6 +777,9 @@ export class MemStorage implements IStorage {
       isPublished: false,
       publishedAt: null,
       slug: null,
+      startTime: null,
+      endTime: null,
+      playback: null,
       createdAt: new Date("2024-06-21T09:15:00Z")
     }
   ];
@@ -857,10 +900,27 @@ export class MemStorage implements IStorage {
       isPublished: false,
       publishedAt: null,
       slug: null,
+      startTime: insertFieldNote.startTime ?? null,
+      endTime: insertFieldNote.endTime ?? null,
+      playback: insertFieldNote.playback ?? null,
       createdAt: new Date()
     };
     this.fieldNotesData.push(fieldNote);
     return fieldNote;
+  }
+
+  async getTripMediaCounts(ids: string[]): Promise<Map<string, TripMediaCounts>> {
+    return new Map(ids.map((id) => [id, {
+      photoCount: this.photosData.filter(photo => photo.fieldNoteId === id).length,
+      videoCount: this.videoClipsData.filter(clip => clip.fieldNoteId === id).length,
+    }]));
+  }
+
+  async updateTripPlayback(id: string, patch: TripPlayback): Promise<FieldNote | undefined> {
+    const note = this.fieldNotesData.find(n => n.id === id);
+    if (!note) return undefined;
+    note.playback = { ...((note.playback as TripPlayback | null) ?? {}), ...patch };
+    return note;
   }
 
   async getPhotosByFieldNoteId(fieldNoteId: string): Promise<Photo[]> {
@@ -970,6 +1030,7 @@ export class MemStorage implements IStorage {
       duration: insertProject.duration ?? null,
       startTime: insertProject.startTime ?? null,
       endTime: insertProject.endTime ?? null,
+      migratedAt: insertProject.migratedAt ?? null,
       createdAt: new Date()
     };
     this.trailcamProjectsData.push(project);
@@ -996,9 +1057,9 @@ export class MemStorage implements IStorage {
   }
 
   // Video Clips
-  async getVideoClipsByProjectId(projectId: string): Promise<VideoClip[]> {
+  async getVideoClipsByTripId(tripId: string): Promise<VideoClip[]> {
     return this.videoClipsData
-      .filter(clip => clip.projectId === projectId)
+      .filter(clip => clip.fieldNoteId === tripId)
       .sort((a, b) => a.startTime - b.startTime);
   }
 
@@ -1021,6 +1082,8 @@ export class MemStorage implements IStorage {
       color: insertClip.color ?? null,
       fileSize: insertClip.fileSize ?? null,
       videoFormat: insertClip.videoFormat ?? null,
+      projectId: insertClip.projectId ?? null,
+      fieldNoteId: insertClip.fieldNoteId ?? null,
       createdAt: new Date()
     };
     this.videoClipsData.push(clip);

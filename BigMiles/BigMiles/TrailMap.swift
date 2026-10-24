@@ -78,6 +78,8 @@ struct TrailMap: View {
     /// Height covered by something floating over the bottom of the map (a
     /// details panel): the controls sit above it and the route fits above it.
     var bottomInset: CGFloat = 0
+    /// Where the playing video was filmed; drawn as a pin that moves with it.
+    var playhead: CLLocationCoordinate2D? = nil
     var onSelectRoutes: (([String]) -> Void)? = nil
     var onSelectPhoto: ((Photo) -> Void)? = nil
 
@@ -88,7 +90,7 @@ struct TrailMap: View {
         let state = controls?.wrappedValue ?? ownControls
         TrailMapView(routes: routes, photos: photos, heat: heat, layer: layer, is3D: state.is3D,
                      locateRequest: state.locateRequest, startAtUserLocation: startAtUserLocation,
-                     bottomInset: bottomInset,
+                     bottomInset: bottomInset, playhead: playhead,
                      onSelectRoutes: onSelectRoutes, onSelectPhoto: onSelectPhoto)
             .overlay(alignment: .bottomTrailing) {
                 if controls == nil {
@@ -167,6 +169,7 @@ private struct TrailMapView: UIViewRepresentable {
     var locateRequest: Int
     var startAtUserLocation: Bool
     var bottomInset: CGFloat
+    var playhead: CLLocationCoordinate2D?
     var onSelectRoutes: (([String]) -> Void)?
     var onSelectPhoto: ((Photo) -> Void)?
 
@@ -187,6 +190,7 @@ private struct TrailMapView: UIViewRepresentable {
         c.parent = self
         c.bottomInset = bottomInset
         c.update(layer: layer, is3D: is3D, routes: routes, heat: heat, photos: photos)
+        c.movePlayhead(to: playhead)
         if c.locateRequest != locateRequest {
             c.locateRequest = locateRequest
             c.followUser()
@@ -212,6 +216,7 @@ private struct TrailMapView: UIViewRepresentable {
         private var heat = false
         private var photos: [Photo] = []
         private var pins: [ViewAnnotation] = []
+        private var playheadPin: ViewAnnotation?
         private var thumbnails: [String: UIImage] = [:]
 
         private let sourceId = "trail-routes"
@@ -495,6 +500,25 @@ private struct TrailMapView: UIViewRepresentable {
             }
         }
 
+        // MARK: Video playhead
+
+        func movePlayhead(to coordinate: CLLocationCoordinate2D?) {
+            guard let map else { return }
+            guard let coordinate else {
+                playheadPin?.remove()
+                playheadPin = nil
+                return
+            }
+            if let pin = playheadPin {
+                pin.annotatedFeature = .geometry(Point(coordinate))
+            } else {
+                let pin = ViewAnnotation(coordinate: coordinate, view: PlayheadView())
+                pin.allowOverlap = true
+                map.viewAnnotations.add(pin)
+                playheadPin = pin
+            }
+        }
+
         // MARK: Route taps
 
         private func tapped(at point: CGPoint) {
@@ -514,6 +538,24 @@ private struct TrailMapView: UIViewRepresentable {
             }
         }
     }
+}
+
+/// The video's spot on the route: a dot with a white ring, like the web pin.
+private final class PlayheadView: UIView {
+    init() {
+        super.init(frame: CGRect(x: 0, y: 0, width: 18, height: 18))
+        backgroundColor = UIColor(red: 220/255, green: 38/255, blue: 38/255, alpha: 1)
+        layer.cornerRadius = 9
+        layer.borderWidth = 3
+        layer.borderColor = UIColor.white.cgColor
+        layer.shadowColor = UIColor.black.cgColor
+        layer.shadowOpacity = 0.3
+        layer.shadowRadius = 3
+        layer.shadowOffset = CGSize(width: 0, height: 1)
+        isUserInteractionEnabled = false
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 }
 
 /// A round photo thumbnail pinned to the map.

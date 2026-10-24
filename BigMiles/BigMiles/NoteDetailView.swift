@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreLocation
 
 struct NoteDetailView: View {
     let note: FieldNote
@@ -16,6 +17,15 @@ struct NoteDetailView: View {
 
     @State private var panelExpanded = false
     @State private var mapControls = MapControls()
+    @StateObject private var playback = TripVideoPlayback()
+
+    private var videoClips: [VideoClip] { display.videoClips ?? [] }
+
+    /// Where the playing clip was filmed, using the sync offset calibrated on the web.
+    private var playhead: CLLocationCoordinate2D? {
+        playback.playhead(on: display.gpxData?.timedTrack,
+                          syncOffset: display.playback?.syncOffsetSeconds ?? 0)
+    }
 
     var body: some View {
         Group {
@@ -73,6 +83,7 @@ struct NoteDetailView: View {
                     layer: mapLayer,
                     controls: $mapControls,
                     bottomInset: collapsed,
+                    playhead: playhead,
                     onSelectPhoto: { lightbox = $0 }
                 )
                 .ignoresSafeArea()
@@ -110,6 +121,12 @@ struct NoteDetailView: View {
     private var details: some View {
         VStack(alignment: .leading, spacing: 16) {
 
+            // Trips with video (formerly Studio projects) lead with the
+            // player: playback only, calibration stays on the web.
+            if !videoClips.isEmpty {
+                TripVideoSection(clips: videoClips, playback: playback)
+            }
+
             // Type badges
             HStack(spacing: 5) {
                 ForEach(display.tripType, id: \.self) { type in
@@ -138,6 +155,9 @@ struct NoteDetailView: View {
                     }
                     if let count = display.photos?.count, count > 0 {
                         StatCell(value: "\(count)", label: "Photos")
+                    }
+                    if !videoClips.isEmpty {
+                        StatCell(value: "\(videoClips.count)", label: "Videos")
                     }
                 }
                 .padding(16)

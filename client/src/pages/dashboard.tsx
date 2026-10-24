@@ -1,6 +1,6 @@
-import { useState, forwardRef } from "react";
+import { useState, useEffect, forwardRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import { Loading } from "@carbon/react";
 import { ChevronDown, ChevronUp, CirclePlus, Upload } from "lucide-react";
 import FieldNoteCard from "@/components/field-note-card";
@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
 import { apiRequest } from "@/lib/queryClient";
-import type { FieldNote } from "@shared/schema";
+import type { TripListItem } from "@shared/schema";
 
 const availableTripTypes = [
   { id: "hiking", label: "Hiking" },
@@ -46,6 +46,20 @@ const elevationOptions = [
   { id: "1500-3000", label: "1,500–3,000 ft" },
   { id: "3000+", label: "3,000+ ft" },
 ];
+
+// Trips with video used to be TrailCam Studio projects; now any trip can have clips.
+const mediaOptions = [
+  { id: "all", label: "All trips" },
+  { id: "photos", label: "Has photos" },
+  { id: "videos", label: "Contains videos" },
+] as const;
+type MediaFilter = (typeof mediaOptions)[number]["id"];
+
+// /dashboard?media=videos (where old Studio links land) opens on that filter.
+const mediaFilterFrom = (search: string): MediaFilter => {
+  const wanted = new URLSearchParams(search).get("media");
+  return mediaOptions.some((o) => o.id === wanted) ? (wanted as MediaFilter) : "all";
+};
 
 const sortOptions = [
   { id: "recent", label: "Most recent" },
@@ -85,8 +99,13 @@ export default function Dashboard() {
   const [createOpen, setCreateOpen] = useState(false);
   const [distanceFilter, setDistanceFilter] = useState("any");
   const [elevationFilter, setElevationFilter] = useState("any");
+  const urlSearch = useSearch();
+  const [mediaFilter, setMediaFilter] = useState<MediaFilter>(() => mediaFilterFrom(urlSearch));
+  useEffect(() => {
+    if (new URLSearchParams(urlSearch).has("media")) setMediaFilter(mediaFilterFrom(urlSearch));
+  }, [urlSearch]);
 
-  const { data: allFieldNotes = [], isLoading } = useQuery<FieldNote[]>({
+  const { data: everyTrip = [], isLoading } = useQuery<TripListItem[]>({
     queryKey: ["/api/field-notes", { search, sortOrder }],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -96,6 +115,9 @@ export default function Dashboard() {
       return response.json();
     },
   });
+  const allFieldNotes = everyTrip.filter((note) =>
+    mediaFilter === "photos" ? note.photoCount > 0 : mediaFilter === "videos" ? note.videoCount > 0 : true,
+  );
   const tripTypeOptions = [
     ...availableTripTypes,
     ...Array.from(new Map(allFieldNotes.flatMap((note) => note.tripType)
@@ -134,10 +156,12 @@ export default function Dashboard() {
     setTripTypes([]);
     setDistanceFilter("any");
     setElevationFilter("any");
+    setMediaFilter("all");
     setSearch("");
   };
 
   const activeFilterCount =
+    (mediaFilter !== "all" ? 1 : 0) +
     tripTypes.length +
     (distanceFilter !== "any" ? 1 : 0) +
     (elevationFilter !== "any" ? 1 : 0);
@@ -161,6 +185,34 @@ export default function Dashboard() {
 
   const sortPillLabel = sortOptions.find((o) => o.id === sortOrder)?.label || "Sort";
 
+  const MediaPill = (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Pill
+          label={mediaFilter === "all" ? "Media" : mediaOptions.find((o) => o.id === mediaFilter)!.label}
+          active={mediaFilter !== "all"}
+          data-testid="pill-media"
+        />
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-48 p-2 bg-popover border border-border">
+        <div className="flex flex-col">
+          {mediaOptions.map((opt) => (
+            <button
+              key={opt.id}
+              onClick={() => setMediaFilter(opt.id)}
+              className={`text-left text-sm px-2 py-1.5 rounded hover:bg-muted ${
+                mediaFilter === opt.id ? "text-foreground" : "text-muted-foreground"
+              }`}
+              data-testid={`media-option-${opt.id}`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+
   const ModeSwitcher = <ViewModeSwitcher value={viewMode} onChange={setViewMode} />;
 
   if (viewMode === "heatmap") {
@@ -170,6 +222,7 @@ export default function Dashboard() {
           {ModeSwitcher}
         </div>
         <div className="px-5 sm:px-8 py-4 flex items-center justify-between border-b border-border gap-3 flex-wrap">
+          {MediaPill}
           <span className="meta-mono text-muted-foreground">
             {allFieldNotes.length} {allFieldNotes.length === 1 ? "trip" : "trips"} on the map
           </span>
@@ -199,6 +252,8 @@ export default function Dashboard() {
             className="meta-mono bg-transparent border-b border-border focus:border-foreground outline-none px-1 py-1.5 text-foreground placeholder:text-muted-foreground transition-colors min-w-0 w-44"
             data-testid="input-search"
           />
+
+          {MediaPill}
 
           {/* Trip type popover */}
           <Popover>
@@ -385,6 +440,11 @@ export default function Dashboard() {
                         >
                           {note.title}
                         </Link>
+                        {note.videoCount > 0 && (
+                          <span className="meta-mono text-muted-foreground ml-2 whitespace-nowrap">
+                            ▶ {note.videoCount}
+                          </span>
+                        )}
                       </td>
                       <td className="meta-mono text-muted-foreground py-2.5 pr-6 whitespace-nowrap">
                         {typeStr}

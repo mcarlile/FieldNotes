@@ -1,10 +1,10 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, lazy, Suspense } from "react";
 import { trackEvent } from "@/lib/analytics";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Modal } from "@carbon/react";
-import { Pencil, Trash2, ExternalLink, Download } from "lucide-react";
+import { Pencil, Trash2, ExternalLink, Download, Video } from "lucide-react";
 import PublishButton from "@/components/publish-button";
 import PhotoLightbox from "@/components/photo-lightbox";
 import MapboxMap from "@/components/mapbox-map";
@@ -17,7 +17,16 @@ import { useDesignPreview } from "@/hooks/use-design-preview";
 import { useAuth } from "@clerk/react";
 import { apiRequest } from "@/lib/queryClient";
 import { queryClient } from "@/lib/queryClient";
-import type { FieldNote, Photo } from "@shared/schema";
+import type { FieldNote, Photo, VideoClip } from "@shared/schema";
+
+// The synced video player is large; load it only for trips that use it.
+const TripVideoStudio = lazy(() => import("@/components/trip-video-studio"));
+
+/** Whether a trip's route has timestamps, which video clips need to be placed on it. */
+function hasTimedTrack(gpxData: unknown): boolean {
+  if (typeof gpxData === "string") return /<time>/.test(gpxData);
+  return !!(gpxData as { timedTrack?: unknown } | null)?.timedTrack;
+}
 
 export default function FieldNoteDetail() {
   const { id } = useParams();
@@ -25,6 +34,7 @@ export default function FieldNoteDetail() {
   const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [hoveredElevationPoint, setHoveredElevationPoint] = useState<any>(null);
+  const [addingVideo, setAddingVideo] = useState(false);
 
   const { toast } = useToast();
   const { isSignedIn } = useAuth();
@@ -43,6 +53,9 @@ export default function FieldNoteDetail() {
 
   const fieldNote = fieldNoteData;
   const photos: Photo[] = fieldNoteData?.photos || [];
+  const videoClips: VideoClip[] = fieldNoteData?.videoClips || [];
+  // A trip with video clips gets the synced player in place of the plain map.
+  const showVideo = videoClips.length > 0 || addingVideo;
 
   // Memoize so the marker effect doesn't rerun on every elevation hover
   const photoMarkers = useMemo(
@@ -190,16 +203,22 @@ export default function FieldNoteDetail() {
 
   return (
     <div className="min-h-screen bg-background overflow-x-hidden">
-      {/* Edge-to-edge hero map */}
-      <div className="w-full h-[55vh] sm:h-[65vh] bg-muted">
-        <MapboxMap
-          gpxData={fieldNote.gpxData}
-          hoveredElevationPoint={hoveredElevationPoint}
-          photoMarkers={photoMarkers}
-          onPhotoMarkerClick={handlePhotoMarkerClick}
-          className="w-full h-full"
-        />
-      </div>
+      {showVideo ? (
+        <Suspense fallback={<div className="w-full h-[calc(100vh-2.75rem)] bg-muted animate-pulse" />}>
+          <TripVideoStudio trip={fieldNote as FieldNote} />
+        </Suspense>
+      ) : (
+        /* Edge-to-edge hero map */
+        <div className="w-full h-[55vh] sm:h-[65vh] bg-muted">
+          <MapboxMap
+            gpxData={fieldNote.gpxData}
+            hoveredElevationPoint={hoveredElevationPoint}
+            photoMarkers={photoMarkers}
+            onPhotoMarkerClick={handlePhotoMarkerClick}
+            className="w-full h-full"
+          />
+        </div>
+      )}
 
       {/* Derived trip stats — single mono caption strip below the hero map */}
       {derivedStats && (
@@ -220,8 +239,12 @@ export default function FieldNoteDetail() {
       {/* Title block */}
       <section className="px-5 sm:px-8 pt-8 pb-6 max-w-5xl">
         <div className="meta-mono text-muted-foreground mb-3 flex flex-wrap gap-x-3 gap-y-1">
-          <span>{Array.isArray(fieldNote.tripType) ? fieldNote.tripType.join(', ') : fieldNote.tripType}</span>
-          <span>·</span>
+          {fieldNote.tripType?.length > 0 && (
+            <>
+              <span>{Array.isArray(fieldNote.tripType) ? fieldNote.tripType.join(', ') : fieldNote.tripType}</span>
+              <span>·</span>
+            </>
+          )}
           <span>{formatDate(fieldNote.date.toString())}</span>
           {fieldNote.distance != null && (
             <>
@@ -269,6 +292,16 @@ export default function FieldNoteDetail() {
             )}
             {isSignedIn && !readOnlyPreview && (
               <>
+              {!showVideo && hasTimedTrack(fieldNote.gpxData) && (
+                <button
+                  onClick={() => setAddingVideo(true)}
+                  className="meta-mono text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
+                  data-testid="button-add-video"
+                >
+                  <Video className="h-3 w-3" />
+                  Add video
+                </button>
+              )}
               <PublishButton
                 id={fieldNote.id}
                 isPublished={fieldNote.isPublished ?? false}

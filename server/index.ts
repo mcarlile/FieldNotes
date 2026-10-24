@@ -12,6 +12,7 @@ import {
 import { pool } from "./db";
 import { registerDesignPreview } from "./designPreview";
 import { recoverInterruptedVideoProcessing } from "./videoProcessor";
+import { migrateStudioProjectsToTrips } from "./tripMigration";
 
 const app = express();
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
@@ -183,6 +184,20 @@ async function runStartupMigrations() {
     log(`Startup migration warning: ${(err as Error).message}`);
   } finally {
     client.release();
+  }
+
+  // Studio projects become trips: a separate step so a failure here can't
+  // skip the migrations above.
+  const tripClient = await pool.connect();
+  try {
+    const moved = await migrateStudioProjectsToTrips(tripClient);
+    if (moved.trips || moved.clips) {
+      log(`Moved ${moved.trips} Studio projects and ${moved.clips} clips into trips`);
+    }
+  } catch (err) {
+    log(`Studio-to-trips migration warning: ${(err as Error).message}`);
+  } finally {
+    tripClient.release();
   }
 }
 

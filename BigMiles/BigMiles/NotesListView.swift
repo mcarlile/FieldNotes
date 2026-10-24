@@ -15,14 +15,21 @@ struct NotesListView: View {
     @AppStorage("mapLayer") private var mapLayer: MapLayer = .standard
     @State private var selectedRouteIds: [String] = []
     @State private var mapControls = MapControls()
+    @AppStorage("mediaFilter") private var mediaFilter: MediaFilter = .all
 
     private let sand   = Color(red: 245/255, green: 240/255, blue: 232/255)
     private let border = Color(red: 232/255, green: 226/255, blue: 214/255)
     private let muted  = Color(red: 138/255, green: 132/255, blue: 126/255)
 
     var filtered: [FieldNote] {
-        guard !searchText.isEmpty else { return notes }
-        return notes.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
+        notes.filter { note in
+            switch mediaFilter {
+            case .all: break
+            case .photos: if !note.hasPhotos { return false }
+            case .videos: if !note.hasVideos { return false }
+            }
+            return searchText.isEmpty || note.title.localizedCaseInsensitiveContains(searchText)
+        }
     }
 
     var body: some View {
@@ -36,11 +43,13 @@ struct NotesListView: View {
                     ContentUnavailableView(msg, systemImage: "exclamationmark.triangle")
                 } else if filtered.isEmpty {
                     ContentUnavailableView(
-                        searchText.isEmpty ? "No field notes yet" : "No results",
+                        notes.isEmpty ? "No field notes yet" : "No results",
                         systemImage: "map",
-                        description: Text(searchText.isEmpty
+                        description: Text(notes.isEmpty
                             ? "Tap + to add a trip from a GPX file or Strava."
-                            : "Try a different search term.")
+                            : mediaFilter == .all
+                                ? "Try a different search term."
+                                : "No trips match “\(mediaFilter.label)”. Change the filter to see more.")
                     )
                     .background(sand)
                 } else if showsMap {
@@ -76,6 +85,9 @@ struct NotesListView: View {
                 }
                 ToolbarItem(placement: .principal) {
                     ViewModeToggle(showsMap: $showsMap)
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    MediaFilterMenu(filter: $mediaFilter)
                 }
                 if !showsMap {
                     ToolbarItem(placement: .primaryAction) {
@@ -166,6 +178,47 @@ struct NotesListView: View {
     }
 }
 
+// MARK: - Media filter
+
+/// Same choices as the web dashboard's Media filter.
+enum MediaFilter: String, CaseIterable, Identifiable {
+    case all, photos, videos
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .all: return "All trips"
+        case .photos: return "Has photos"
+        case .videos: return "Contains videos"
+        }
+    }
+    var systemImage: String {
+        switch self {
+        case .all: return "square.stack"
+        case .photos: return "photo"
+        case .videos: return "video"
+        }
+    }
+}
+
+private struct MediaFilterMenu: View {
+    @Binding var filter: MediaFilter
+
+    var body: some View {
+        Menu {
+            Picker("Show", selection: $filter) {
+                ForEach(MediaFilter.allCases) { option in
+                    Label(option.label, systemImage: option.systemImage).tag(option)
+                }
+            }
+        } label: {
+            Image(systemName: filter == .all
+                  ? "line.3.horizontal.decrease.circle"
+                  : "line.3.horizontal.decrease.circle.fill")
+        }
+        .accessibilityLabel("Filter trips, \(filter.label)")
+    }
+}
+
 // MARK: - List / map toggle
 
 private struct ViewModeToggle: View {
@@ -247,6 +300,12 @@ struct NoteRow: View {
                 }
                 if let elev = note.elevationGain {
                     Text("·"); Text("\(Int(elev)) ft")
+                }
+                if note.hasVideos {
+                    Text("·")
+                    Label("\(note.videoCount ?? 0)", systemImage: "video.fill")
+                        .labelStyle(.titleAndIcon)
+                        .accessibilityLabel("\(note.videoCount ?? 0) videos")
                 }
             }
             .font(.system(size: 12))

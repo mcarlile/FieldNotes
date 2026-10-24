@@ -37,6 +37,14 @@ test("MCP notifications get no response and bad tool arguments are tool errors",
   assert.equal(unknown.error.code, -32601);
 });
 
+test("MCP trip tools need a signed-in user", async () => {
+  const response: any = await handleRpc({
+    jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "list_projects", arguments: {} },
+  });
+  assert.equal(response.result.isError, true);
+  assert.match(response.result.content[0].text, /Sign in/);
+});
+
 test("API tokens are random, prefixed, and stored only as a hash", () => {
   const a = generateApiToken();
   const b = generateApiToken();
