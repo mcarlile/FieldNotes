@@ -435,6 +435,9 @@ export default function MapboxMap({
     if (hoveredElevationPoint && hoveredElevationPoint.coordinates) {
       // Use the coordinates directly from the ElevationPoint
       const [longitude, latitude] = hoveredElevationPoint.coordinates;
+
+      // Ignore the missing-location sentinel rather than jumping to the Gulf of Guinea.
+      if (longitude === 0 && latitude === 0) return;
       
       // Immediate position update for responsive sync
       elevationMarker.current.setLngLat([longitude, latitude]);
