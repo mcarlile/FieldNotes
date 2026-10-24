@@ -87,21 +87,8 @@ struct NotesListView: View {
                 if showsMap {
                     ToolbarItemGroup(placement: .bottomBar) {
                         createMenu { Image(systemName: "plus") }
-                        // Layers and 3D share a menu: the Duo's sidebar fits
-                        // three buttons beside search.
-                        Menu {
-                            Picker("Map layer", selection: $mapLayer) {
-                                ForEach(MapLayer.allCases) { Text($0.name).tag($0) }
-                            }
-                            Toggle("3D terrain", systemImage: "mountain.2", isOn: $mapControls.is3D)
-                        } label: {
-                            Image(systemName: "square.3.layers.3d")
-                        }
-                        .accessibilityLabel("Map options")
-                        Button { mapControls.locateRequest += 1 } label: {
-                            Image(systemName: "location")
-                        }
-                        .accessibilityLabel("Show my location")
+                        MapOptionsMenu(layer: $mapLayer, controls: $mapControls)
+                        MapLocateToolbarButton(controls: $mapControls)
                     }
                     // With custom bottom-bar items, iOS only keeps search there
                     // when asked to.

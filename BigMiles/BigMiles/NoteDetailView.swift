@@ -15,6 +15,7 @@ struct NoteDetailView: View {
     private let border = Color(red: 232/255, green: 226/255, blue: 214/255)
 
     @State private var panelExpanded = false
+    @State private var mapControls = MapControls()
 
     var body: some View {
         Group {
@@ -32,6 +33,13 @@ struct NoteDetailView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Edit") { showEdit = true }
+            }
+            // Same map buttons, in the same place, as the home heat map.
+            if !display.mapCoordinates.isEmpty {
+                ToolbarItemGroup(placement: .bottomBar) {
+                    MapOptionsMenu(layer: $mapLayer, controls: $mapControls)
+                    MapLocateToolbarButton(controls: $mapControls)
+                }
             }
         }
         .sheet(isPresented: $showEdit) {
@@ -63,13 +71,11 @@ struct NoteDetailView: View {
                     routes: [TrailRoute(id: display.id, coordinates: display.mapCoordinates)],
                     photos: display.photos ?? [],
                     layer: mapLayer,
+                    controls: $mapControls,
                     bottomInset: collapsed,
                     onSelectPhoto: { lightbox = $0 }
                 )
                 .ignoresSafeArea()
-                .overlay(alignment: .topTrailing) {
-                    MapLayerMenu(layer: $mapLayer).padding(10)
-                }
 
                 VStack(spacing: 0) {
                     // Grabber: drag or tap to resize the panel.

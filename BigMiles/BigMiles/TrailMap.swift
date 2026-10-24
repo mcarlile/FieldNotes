@@ -16,26 +16,6 @@ enum MapLayer: String, CaseIterable, Identifiable {
     var name: String { self == .standard ? "Default" : "Satellite" }
 }
 
-/// The map layer dropdown, as on the web route map.
-struct MapLayerMenu: View {
-    @Binding var layer: MapLayer
-
-    var body: some View {
-        Menu {
-            Picker("Map layer", selection: $layer) {
-                ForEach(MapLayer.allCases) { Text($0.name).tag($0) }
-            }
-        } label: {
-            Image(systemName: "square.3.layers.3d")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundColor(.black)
-                .frame(width: 36, height: 36)
-                .background(.regularMaterial, in: Circle())
-        }
-        .accessibilityLabel("Map layer")
-    }
-}
-
 private struct MapControlButton: View {
     var systemImage: String? = nil
     var text: String? = nil
@@ -110,6 +90,38 @@ struct TrailMap: View {
         #else
         RouteMapView(coordinates: routes.first?.coordinates ?? [])
         #endif
+    }
+}
+
+/// Toolbar version of the map controls, shared by the home heat map and
+/// trip pages so both put the same buttons in the same place (the Duo's
+/// sidebar). Layers and 3D share a menu: the sidebar fits three buttons
+/// beside search.
+struct MapOptionsMenu: View {
+    @Binding var layer: MapLayer
+    @Binding var controls: MapControls
+
+    var body: some View {
+        Menu {
+            Picker("Map layer", selection: $layer) {
+                ForEach(MapLayer.allCases) { Text($0.name).tag($0) }
+            }
+            Toggle("3D terrain", systemImage: "mountain.2", isOn: $controls.is3D)
+        } label: {
+            Image(systemName: "square.3.layers.3d")
+        }
+        .accessibilityLabel("Map options")
+    }
+}
+
+struct MapLocateToolbarButton: View {
+    @Binding var controls: MapControls
+
+    var body: some View {
+        Button { controls.locateRequest += 1 } label: {
+            Image(systemName: "location")
+        }
+        .accessibilityLabel("Show my location")
     }
 }
 
