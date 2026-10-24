@@ -10,8 +10,18 @@ import { apiRequest } from "@/lib/queryClient";
 import type { FieldNote, Photo } from "@shared/schema";
 import BrandLogo from "@/components/brand-logo";
 
+interface PublicVideoClip {
+  id: string;
+  title: string;
+  url: string;
+  thumbnailUrl: string | null;
+  startTime: number;
+  duration: number;
+}
+
 interface PublicFieldNote extends FieldNote {
   photos: Photo[];
+  videoClips?: PublicVideoClip[];
 }
 
 function formatMiles(km: number | null): string {
@@ -59,6 +69,11 @@ export default function PublicFieldNotePage() {
     [note?.photos]
   );
 
+  const videoClips = useMemo(
+    () => [...(note?.videoClips ?? [])].sort((a, b) => a.startTime - b.startTime),
+    [note?.videoClips]
+  );
+
   const tripTypes = Array.isArray(note?.tripType) ? note!.tripType : [];
   const dateStr = note
     ? new Date(note.date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })
@@ -76,8 +91,8 @@ export default function PublicFieldNotePage() {
     return (
       <div className="min-h-screen bg-[#F5F0E8] flex flex-col items-center justify-center gap-4">
         <Mountain size={40} className="text-stone-300" />
-        <p className="font-serif text-xl text-stone-500">This field note isn't available</p>
-        <p className="text-sm text-stone-400">It may have been unpublished or the link is incorrect.</p>
+        <p className="font-serif text-xl text-stone-500">This trip isn't available</p>
+        <p className="text-sm text-stone-400">Sharing may have been turned off, or the link is incorrect.</p>
       </div>
     );
   }
@@ -143,6 +158,28 @@ export default function PublicFieldNotePage() {
         {/* Description */}
         {note.description && (
           <p className="text-stone-600 leading-relaxed text-base">{note.description}</p>
+        )}
+
+        {/* Videos */}
+        {videoClips.length > 0 && (
+          <div>
+            <p className="text-xs font-mono text-stone-400 uppercase tracking-wider mb-3">
+              Videos ({videoClips.length})
+            </p>
+            <div className="space-y-4">
+              {videoClips.map(clip => (
+                <video
+                  key={clip.id}
+                  src={clip.url}
+                  poster={clip.thumbnailUrl ?? undefined}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  className="w-full rounded-lg bg-black"
+                />
+              ))}
+            </div>
+          </div>
         )}
 
         {/* Photos */}

@@ -1829,8 +1829,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const note = await getOwnedFieldNote(req.params.id, req.dbUser.id);
       if (!note) return res.status(404).json({ message: "Field note not found" });
 
-      const baseSlug = slugify(note.title);
-      const slug = note.slug ?? await uniqueSlug(baseSlug, async (s) => !await storage.getPublishedFieldNoteBySlug(s));
+      // A shared trip is view-only for anyone with the link, so give it a
+      // random suffix that can't be guessed from the title.
+      const slug = note.slug ?? `${slugify(note.title) || "trip"}-${crypto.randomBytes(6).toString("base64url").replace(/[-_]/g, "").slice(0, 8).toLowerCase()}`;
       const updated = await storage.publishFieldNote(note.id, slug);
       res.json(updated);
     } catch (err) {
@@ -1961,8 +1962,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const note = await storage.getPublishedFieldNoteBySlug(req.params.slug);
       if (!note) return res.status(404).json({ message: "Not found" });
-      const photos = await storage.getPhotosByFieldNoteId(note.id);
-      res.json({ ...note, photos });
+      const [photos, clips] = await Promise.all([
+        storage.getPhotosByFieldNoteId(note.id),
+        storage.getVideoClipsByTripId(note.id),
+      ]);
+      const videoClips = clips
+        .filter((c) => c.processingStatus !== "error")
+        .map(({ id, title, url, transcodedUrl, thumbnailUrl, startTime, duration }) => ({
+          id, title, url: transcodedUrl || url, thumbnailUrl, startTime, duration,
+        }));
+      res.json({ ...note, photos, videoClips });
     } catch (err) {
       res.status(500).json({ message: "Failed to fetch field note" });
     }

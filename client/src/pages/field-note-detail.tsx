@@ -5,7 +5,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Modal } from "@carbon/react";
 import { Pencil, Trash2, ExternalLink, Download, Video } from "lucide-react";
-import PublishButton from "@/components/publish-button";
+import ShareButton from "@/components/share-button";
 import PhotoLightbox from "@/components/photo-lightbox";
 import MapboxMap from "@/components/mapbox-map";
 import ElevationProfile from "@/components/elevation-profile";
@@ -302,12 +302,11 @@ export default function FieldNoteDetail() {
                   Add video
                 </button>
               )}
-              <PublishButton
+              <ShareButton
                 id={fieldNote.id}
+                title={fieldNote.title}
                 isPublished={fieldNote.isPublished ?? false}
                 slug={fieldNote.slug ?? null}
-                publishPath="/notes"
-                apiPath="/api/field-notes"
                 queryKey={["/api/field-notes", id]}
               />
                 <Link
