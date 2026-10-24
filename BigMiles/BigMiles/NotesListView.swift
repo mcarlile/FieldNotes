@@ -42,16 +42,7 @@ struct NotesListView: View {
                     )
                     .background(sand)
                 } else if showsMap {
-                    TrailMap(
-                        routes: filtered.map { TrailRoute(id: $0.id, coordinates: $0.mapCoordinates) },
-                        heat: true,
-                        layer: mapLayer,
-                        onSelectRoutes: { selectedRouteIds = $0 }
-                    )
-                    .ignoresSafeArea(edges: .bottom)
-                    .overlay(alignment: .topTrailing) {
-                        MapLayerMenu(layer: $mapLayer).padding(12)
-                    }
+                    fullScreenMap
                 } else {
                     List(filtered) { note in
                         NavigationLink(value: note) {
@@ -66,7 +57,7 @@ struct NotesListView: View {
                 }
             }
             .navigationTitle("Field Notes")
-            .toolbarTitleDisplayMode(showsMap ? .inline : .automatic)
+            .toolbar(showsMap && !isLoading ? .hidden : .visible, for: .navigationBar)
             .navigationDestination(for: FieldNote.self) { note in
                 NoteDetailView(note: note)
             }
@@ -79,26 +70,10 @@ struct NotesListView: View {
                     .accessibilityLabel("Settings")
                 }
                 ToolbarItem(placement: .principal) {
-                    Picker("View", selection: $showsMap) {
-                        Image(systemName: "list.bullet").tag(false).accessibilityLabel("List")
-                        Image(systemName: "map").tag(true).accessibilityLabel("Map")
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 110)
+                    ViewModeToggle(showsMap: $showsMap)
                 }
-                // Same two entries as the web dashboard's Create dropdown.
                 ToolbarItem(placement: .primaryAction) {
-                    Menu {
-                        Button { showNewTrip = true } label: {
-                            Label("New trip", systemImage: "square.and.pencil")
-                        }
-                        Button { showStravaImport = true } label: {
-                            Label("Import from Strava", systemImage: "square.and.arrow.down")
-                        }
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    .accessibilityLabel("Create")
+                    createMenu { Image(systemName: "plus") }
                 }
             }
             .background(sand.ignoresSafeArea())
@@ -124,6 +99,64 @@ struct NotesListView: View {
         .onChange(of: health.importedCount) { Task { await loadNotes() } }
     }
 
+    // MARK: Map mode
+
+    /// Edge-to-edge heat map with the logo, view toggle and buttons floating on it.
+    private var fullScreenMap: some View {
+        TrailMap(
+            routes: filtered.map { TrailRoute(id: $0.id, coordinates: $0.mapCoordinates) },
+            heat: true,
+            layer: mapLayer,
+            controlsBottomPadding: 28,
+            onSelectRoutes: { selectedRouteIds = $0 }
+        )
+        .ignoresSafeArea()
+        .overlay(alignment: .top) {
+            ZStack {
+                ViewModeToggle(showsMap: $showsMap)
+                    .padding(4)
+                    .background(.regularMaterial, in: Capsule())
+                HStack(alignment: .top) {
+                    Text("Big Miles")
+                        .font(.system(size: 20, weight: .bold, design: .serif))
+                        .kerning(-0.5)
+                        .foregroundColor(.black)
+                        .padding(.horizontal, 12)
+                        .frame(height: 40)
+                        .background(.regularMaterial, in: Capsule())
+                    Spacer()
+                    VStack(spacing: 8) {
+                        createMenu {
+                            Image(systemName: "plus")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundColor(.black)
+                                .frame(width: 40, height: 40)
+                                .background(.regularMaterial, in: Circle())
+                        }
+                        MapLayerMenu(layer: $mapLayer)
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 4)
+        }
+    }
+
+    // Same two entries as the web dashboard's Create dropdown.
+    private func createMenu<Label: View>(@ViewBuilder label: () -> Label) -> some View {
+        Menu {
+            Button { showNewTrip = true } label: {
+                SwiftUI.Label("New trip", systemImage: "square.and.pencil")
+            }
+            Button { showStravaImport = true } label: {
+                SwiftUI.Label("Import from Strava", systemImage: "square.and.arrow.down")
+            }
+        } label: {
+            label()
+        }
+        .accessibilityLabel("Create")
+    }
+
     private func added(_ note: FieldNote) {
         notes.insert(note, at: 0)
         path = [note]
@@ -138,6 +171,21 @@ struct NotesListView: View {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+    }
+}
+
+// MARK: - List / map toggle
+
+private struct ViewModeToggle: View {
+    @Binding var showsMap: Bool
+
+    var body: some View {
+        Picker("View", selection: $showsMap) {
+            Image(systemName: "list.bullet").tag(false).accessibilityLabel("List")
+            Image(systemName: "map").tag(true).accessibilityLabel("Map")
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 110)
     }
 }
 

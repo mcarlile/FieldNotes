@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		0A1B2C3D4E5F607182930001 /* MapboxMaps in Frameworks */ = {isa = PBXBuildFile; platformFilters = (ios, ); productRef = 0A1B2C3D4E5F607182930002 /* MapboxMaps */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		045EA2272FF043F600B6B14A /* BigMiles.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BigMiles.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -14,7 +18,6 @@
 		047F42B6300B2B7200A8F802 /* Exceptions for "BigMiles" folder in "BigMiles" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				BigMiles.entitlements,
 				Info.plist,
 			);
 			target = 045EA2262FF043F600B6B14A /* BigMiles */;
@@ -37,6 +40,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0A1B2C3D4E5F607182930001 /* MapboxMaps in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -79,6 +83,7 @@
 			);
 			name = BigMiles;
 			packageProductDependencies = (
+				0A1B2C3D4E5F607182930002 /* MapboxMaps */,
 			);
 			productName = BigMiles;
 			productReference = 045EA2272FF043F600B6B14A /* BigMiles.app */;
@@ -108,6 +113,9 @@
 			);
 			mainGroup = 045EA21E2FF043F600B6B14A;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				0A1B2C3D4E5F607182930003 /* XCRemoteSwiftPackageReference "mapbox-maps-ios" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 045EA2282FF043F600B6B14A /* Products */;
 			projectDirPath = "";
@@ -365,6 +373,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		0A1B2C3D4E5F607182930003 /* XCRemoteSwiftPackageReference "mapbox-maps-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mapbox/mapbox-maps-ios.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 11.26.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		0A1B2C3D4E5F607182930002 /* MapboxMaps */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0A1B2C3D4E5F607182930003 /* XCRemoteSwiftPackageReference "mapbox-maps-ios" */;
+			productName = MapboxMaps;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 045EA21F2FF043F600B6B14A /* Project object */;
 }
