@@ -45,6 +45,15 @@ function stripBase(path: string): string {
     : path;
 }
 
+// Clerk hands its post-sign-in redirect to routerPush/routerReplace. Server
+// routes (the iOS app's /api/mobile-auth/callback, which redirects to
+// bigmiles://) and other origins need a real page load, not a SPA route change,
+// or the native sign-in sheet just lands on the dashboard.
+function needsFullPageLoad(to: string): boolean {
+  const url = new URL(to, window.location.origin);
+  return url.origin !== window.location.origin || stripBase(url.pathname).startsWith("/api/");
+}
+
 if (!clerkPubKey) {
   throw new Error("Missing VITE_CLERK_PUBLISHABLE_KEY in .env file");
 }
@@ -260,8 +269,12 @@ function ClerkProviderWithRoutes() {
           },
         },
       }}
-      routerPush={(to) => setLocation(stripBase(to))}
-      routerReplace={(to) => setLocation(stripBase(to), { replace: true })}
+      routerPush={(to) =>
+        needsFullPageLoad(to) ? window.location.assign(to) : setLocation(stripBase(to))
+      }
+      routerReplace={(to) =>
+        needsFullPageLoad(to) ? window.location.replace(to) : setLocation(stripBase(to), { replace: true })
+      }
     >
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
