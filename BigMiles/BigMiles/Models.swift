@@ -70,11 +70,16 @@ struct FieldNote: Codable, Identifiable, Hashable {
         }
     }
 
-    var formattedDate: String {
-        let s = String(date.prefix(10))
+    /// The calendar day of the trip, as local midnight.
+    var parsedDate: Date? {
         let parser = ISO8601DateFormatter()
         parser.formatOptions = [.withFullDate, .withDashSeparatorInDate]
-        guard let d = parser.date(from: s) else { return s }
+        parser.timeZone = .current
+        return parser.date(from: String(date.prefix(10)))
+    }
+
+    var formattedDate: String {
+        guard let d = parsedDate else { return String(date.prefix(10)) }
         let fmt = DateFormatter()
         fmt.dateStyle = .long
         return fmt.string(from: d)

@@ -1,0 +1,144 @@
+import Foundation
+
+/// Swift port of `parseGpxData` in shared/gpx-utils.ts, so trips created on
+/// iOS store the same `gpxData` shape (miles, feet, [lon, lat]) as the web app.
+struct GPXStats {
+    let distance: Double        // miles
+    let elevationGain: Double   // feet
+    let date: Date?
+    let coordinates: [[Double]] // [lon, lat]
+    let elevationProfile: [[String: Any]]
+
+    var asGpxData: [String: Any] {
+        var data: [String: Any] = [
+            "distance": distance,
+            "elevationGain": elevationGain,
+            "coordinates": coordinates,
+            "elevationProfile": elevationProfile,
+        ]
+        data["date"] = date.map { ISO8601DateFormatter().string(from: $0) } ?? NSNull()
+        return data
+    }
+}
+
+enum GPXParseError: LocalizedError {
+    case noTrackPoints
+    var errorDescription: String? { "No track points found in this GPX file." }
+}
+
+enum GPXParser {
+    static func parse(_ data: Data) throws -> GPXStats {
+        let collector = TrackCollector()
+        let parser = XMLParser(data: data)
+        parser.delegate = collector
+        parser.parse()
+        guard !collector.points.isEmpty else { throw GPXParseError.noTrackPoints }
+
+        var distance = 0.0
+        var gain = 0.0
+        var prev: TrackCollector.Point?
+        var prevEle: Double?
+        var coordinates: [[Double]] = []
+        var profile: [[String: Any]] = []
+
+        for p in collector.points {
+            coordinates.append([p.lon, p.lat])
+            if let prev { distance += haversineMiles(prev.lat, prev.lon, p.lat, p.lon) }
+
+            var elevationFeet = 0.0
+            var hasElevation = false
+            if let ele = p.ele, ele != 0 {
+                hasElevation = true
+                elevationFeet = ele * 3.28084
+                if let prevEle, ele > prevEle { gain += (ele - prevEle) * 3.28084 }
+                prevEle = ele
+            }
+            if hasElevation || profile.isEmpty {
+                profile.append([
+                    "distance": distance,
+                    "elevation": elevationFeet,
+                    "coordinates": [p.lon, p.lat],
+                ])
+            }
+            prev = p
+        }
+
+        // First track point is when the activity started; metadata time is
+        // often just the export time, so it is only a fallback.
+        let date = collector.points.first?.time ?? collector.metadataTime
+
+        return GPXStats(
+            distance: (distance * 100).rounded() / 100,
+            elevationGain: gain.rounded(),
+            date: date,
+            coordinates: coordinates,
+            elevationProfile: profile
+        )
+    }
+
+    private static func haversineMiles(_ lat1: Double, _ lon1: Double, _ lat2: Double, _ lon2: Double) -> Double {
+        let r = 3959.0
+        let dLat = (lat2 - lat1) * .pi / 180
+        let dLon = (lon2 - lon1) * .pi / 180
+        let a = sin(dLat / 2) * sin(dLat / 2)
+            + cos(lat1 * .pi / 180) * cos(lat2 * .pi / 180) * sin(dLon / 2) * sin(dLon / 2)
+        return r * 2 * atan2(sqrt(a), sqrt(1 - a))
+    }
+}
+
+private nonisolated final class TrackCollector: NSObject, XMLParserDelegate {
+    struct Point { let lat: Double; let lon: Double; var ele: Double?; var time: Date? }
+
+    var points: [Point] = []
+    var metadataTime: Date?
+
+    private var current: Point?
+    private var text = ""
+    private var inMetadata = false
+    private let iso = ISO8601DateFormatter()
+    private let isoFrac: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?,
+                qualifiedName: String?, attributes: [String: String] = [:]) {
+        text = ""
+        switch name {
+        case "trkpt":
+            if let lat = attributes["lat"].flatMap(Double.init),
+               let lon = attributes["lon"].flatMap(Double.init) {
+                current = Point(lat: lat, lon: lon)
+            }
+        case "metadata":
+            inMetadata = true
+        default:
+            break
+        }
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        text += string
+    }
+
+    func parser(_ parser: XMLParser, didEndElement name: String, namespaceURI: String?, qualifiedName: String?) {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch name {
+        case "ele":
+            current?.ele = Double(value)
+        case "time":
+            let date = iso.date(from: value) ?? isoFrac.date(from: value)
+            if current != nil { current?.time = date }
+            else if inMetadata && metadataTime == nil { metadataTime = date }
+        case "trkpt":
+            if let current { points.append(current) }
+            current = nil
+        case "metadata":
+            inMetadata = false
+        default:
+            break
+        }
+        text = ""
+    }
+}

@@ -4,6 +4,7 @@ struct NoteDetailView: View {
     let note: FieldNote
     @State private var full: FieldNote?
     @State private var lightbox: Photo?
+    @State private var showEdit = false
 
     private var display: FieldNote { full ?? note }
 
@@ -100,6 +101,16 @@ struct NoteDetailView: View {
         .navigationTitle(display.title)
         .toolbarTitleDisplayMode(.inline)
         .task { await loadFull() }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Edit") { showEdit = true }
+            }
+        }
+        .sheet(isPresented: $showEdit) {
+            TripFormView(existing: display) { _ in
+                Task { await loadFull() }
+            }
+        }
         .lightboxCover(item: $lightbox) { photo in
             LightboxView(
                 initial: photo,

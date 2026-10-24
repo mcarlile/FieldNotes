@@ -6,6 +6,9 @@ struct NotesListView: View {
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var searchText = ""
+    @State private var path: [FieldNote] = []
+    @State private var showNewTrip = false
+    @State private var showStravaImport = false
 
     private let sand   = Color(red: 245/255, green: 240/255, blue: 232/255)
     private let border = Color(red: 232/255, green: 226/255, blue: 214/255)
@@ -17,7 +20,7 @@ struct NotesListView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
                 if isLoading {
                     ProgressView()
@@ -30,7 +33,7 @@ struct NotesListView: View {
                         searchText.isEmpty ? "No field notes yet" : "No results",
                         systemImage: "map",
                         description: Text(searchText.isEmpty
-                            ? "Promote trips from the GPX Inbox at bigmiles.app."
+                            ? "Tap + to add a trip from a GPX file or Strava."
                             : "Try a different search term.")
                     )
                     .background(sand)
@@ -53,16 +56,41 @@ struct NotesListView: View {
             }
             .searchable(text: $searchText, prompt: "Search")
             .toolbar {
-                ToolbarItem(placement: .primaryAction) {
+                ToolbarItem(placement: .cancellationAction) {
                     Button("Sign out") { auth.logout() }
                         .foregroundColor(muted)
                         .font(.system(size: 14))
                 }
+                // Same two entries as the web dashboard's Create dropdown.
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Button { showNewTrip = true } label: {
+                            Label("New trip", systemImage: "square.and.pencil")
+                        }
+                        Button { showStravaImport = true } label: {
+                            Label("Import from Strava", systemImage: "square.and.arrow.down")
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .accessibilityLabel("Create")
+                }
             }
             .background(sand.ignoresSafeArea())
             .refreshable { await loadNotes() }
+            .sheet(isPresented: $showNewTrip) {
+                TripFormView(onSaved: added)
+            }
+            .sheet(isPresented: $showStravaImport) {
+                StravaImportView(onSaved: added)
+            }
         }
         .task { await loadNotes() }
+    }
+
+    private func added(_ note: FieldNote) {
+        notes.insert(note, at: 0)
+        path = [note]
     }
 
     private func loadNotes() async {
