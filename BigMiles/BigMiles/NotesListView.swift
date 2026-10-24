@@ -10,7 +10,8 @@ struct NotesListView: View {
     @State private var path: [FieldNote] = []
     @State private var showNewTrip = false
     @State private var showStravaImport = false
-    @AppStorage("homeShowsMap") private var showsMap = false
+    /// The app always opens on the map.
+    @State private var showsMap = true
     @AppStorage("mapLayer") private var mapLayer: MapLayer = .standard
     @State private var selectedRouteIds: [String] = []
     @State private var mapControls = MapControls()
@@ -58,7 +59,10 @@ struct NotesListView: View {
                 }
             }
             .navigationTitle("Field Notes")
-            .toolbar(showsMap && !isLoading ? .hidden : .visible, for: .navigationBar)
+            // In map mode the bar stays (so the toggle sits where it does on the
+            // list) but goes transparent over the edge-to-edge map.
+            .toolbarTitleDisplayMode(showsMap ? .inline : .automatic)
+            .toolbarBackground(showsMap ? .hidden : .automatic, for: .navigationBar)
             .navigationDestination(for: FieldNote.self) { note in
                 NoteDetailView(note: note)
             }
@@ -73,8 +77,10 @@ struct NotesListView: View {
                 ToolbarItem(placement: .principal) {
                     ViewModeToggle(showsMap: $showsMap)
                 }
-                ToolbarItem(placement: .primaryAction) {
-                    createMenu { Image(systemName: "plus") }
+                if !showsMap {
+                    ToolbarItem(placement: .primaryAction) {
+                        createMenu { Image(systemName: "plus") }
+                    }
                 }
                 // Map mode puts its buttons in the bottom toolbar beside search,
                 // which the iPhone Duo shows in its right-hand sidebar.
@@ -128,7 +134,7 @@ struct NotesListView: View {
 
     // MARK: Map mode
 
-    /// Edge-to-edge heat map with the view toggle floating on it.
+    /// Edge-to-edge heat map under a transparent navigation bar.
     private var fullScreenMap: some View {
         TrailMap(
             routes: filtered.map { TrailRoute(id: $0.id, coordinates: $0.mapCoordinates) },
@@ -139,12 +145,6 @@ struct NotesListView: View {
             onSelectRoutes: { selectedRouteIds = $0 }
         )
         .ignoresSafeArea()
-        .overlay(alignment: .top) {
-            ViewModeToggle(showsMap: $showsMap)
-                .padding(2)
-                .background(.regularMaterial, in: Capsule())
-                .padding(.top, 8)
-        }
     }
 
     // Same two entries as the web dashboard's Create dropdown.
@@ -186,8 +186,8 @@ private struct ViewModeToggle: View {
 
     var body: some View {
         Picker("View", selection: $showsMap) {
-            Image(systemName: "list.bullet").tag(false).accessibilityLabel("List")
             Image(systemName: "map").tag(true).accessibilityLabel("Map")
+            Image(systemName: "list.bullet").tag(false).accessibilityLabel("List")
         }
         .pickerStyle(.segmented)
         .frame(width: 110)
