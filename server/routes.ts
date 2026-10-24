@@ -199,8 +199,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (req.query.redirectTo !== "mobile") {
       return res.redirect("/sign-in");
     }
-    const callbackUrl = `${req.protocol}://${req.get("host")}/api/mobile-auth/callback`;
-    res.redirect(`/sign-in?redirect_url=${encodeURIComponent(callbackUrl)}`);
+    // Relative on purpose: behind Replit's proxy req.protocol is "http", and
+    // Clerk drops an http:// redirect_url on the https site as a foreign
+    // origin, sending the sign-in sheet to the dashboard instead.
+    res.redirect(`/sign-in?redirect_url=${encodeURIComponent("/api/mobile-auth/callback")}`);
   });
 
   app.get("/api/mobile-auth/callback", requireAuth, async (req: any, res) => {
