@@ -5,6 +5,7 @@ struct NoteDetailView: View {
     @State private var full: FieldNote?
     @State private var lightbox: Photo?
     @State private var showEdit = false
+    @AppStorage("mapLayer") private var mapLayer: MapLayer = .standard
 
     private var display: FieldNote { full ?? note }
 
@@ -19,8 +20,16 @@ struct NoteDetailView: View {
 
                 // Map
                 if !display.mapCoordinates.isEmpty {
-                    RouteMapView(coordinates: display.mapCoordinates)
-                        .frame(height: 260)
+                    TrailMap(
+                        routes: [TrailRoute(id: display.id, coordinates: display.mapCoordinates)],
+                        photos: display.photos ?? [],
+                        layer: mapLayer,
+                        onSelectPhoto: { lightbox = $0 }
+                    )
+                    .frame(height: 340)
+                    .overlay(alignment: .topTrailing) {
+                        MapLayerMenu(layer: $mapLayer).padding(10)
+                    }
                 }
 
                 VStack(alignment: .leading, spacing: 16) {
@@ -81,7 +90,7 @@ struct NoteDetailView: View {
                             spacing: 10
                         ) {
                             ForEach(photos) { photo in
-                                AsyncImage(url: URL(string: photo.url)) { img in
+                                AsyncImage(url: photo.imageURL) { img in
                                     img.resizable().scaledToFill()
                                 } placeholder: {
                                     Rectangle().fill(border)
@@ -170,7 +179,7 @@ struct LightboxView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            AsyncImage(url: URL(string: current.url)) { img in
+            AsyncImage(url: current.imageURL) { img in
                 img.resizable().scaledToFit()
             } placeholder: {
                 ProgressView().tint(.white)

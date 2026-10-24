@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import CoreLocation
+import PhotosUI
 
 /// Create a trip from a GPX file, or edit an existing one.
 /// Same fields and payload as the web form at /admin.
@@ -18,6 +19,13 @@ struct TripFormView: View {
     @State private var showImporter = false
     @State private var isSaving = false
     @State private var errorMessage: String?
+    @State private var keptPhotos: [Photo] = []
+    @State private var newPhotos: [PendingPhoto] = []
+    @State private var pickerItems: [PhotosPickerItem] = []
+    @State private var isLoadingPhotos = false
+    @State private var uploadProgress: String?
+
+    private static let maxPhotos = 100  // MAX_TRIP_PHOTOS in shared/photo-limit.ts
 
     private let sand   = Color(red: 245/255, green: 240/255, blue: 232/255)
     private let ink    = Color(red: 26/255,  green: 24/255,  blue: 21/255)
@@ -32,6 +40,7 @@ struct TripFormView: View {
             _date = State(initialValue: note.parsedDate ?? Date())
             _tripTypes = State(initialValue: Set(note.tripType))
             _description = State(initialValue: note.description ?? "")
+            _keptPhotos = State(initialValue: note.photos ?? [])
         }
     }
 
@@ -70,6 +79,8 @@ struct TripFormView: View {
                     TripTypePicker(selection: $tripTypes)
                 }
 
+                photosSection
+
                 Section("Notes") {
                     TextField("What happened out there?", text: $description, axis: .vertical)
                         .lineLimit(4...12)
@@ -91,17 +102,96 @@ struct TripFormView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if isSaving {
-                        ProgressView()
+                        HStack(spacing: 6) {
+                            if let uploadProgress { Text(uploadProgress).font(.system(size: 13)).foregroundColor(muted) }
+                            ProgressView()
+                        }
                     } else {
                         Button("Save") { Task { await save() } }
                             .disabled(!canSave)
                     }
                 }
             }
+            .onChange(of: pickerItems) { Task { await loadPicked() } }
             .fileImporter(isPresented: $showImporter, allowedContentTypes: [.gpx, .xml, .data]) { result in
                 loadGPX(result)
             }
         }
+    }
+
+    // MARK: Photos
+
+    private var photoCount: Int { keptPhotos.count + newPhotos.count }
+
+    private var photosSection: some View {
+        Section {
+            if photoCount > 0 {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 76), spacing: 8)], spacing: 8) {
+                    ForEach(keptPhotos) { photo in
+                        thumbnail { AsyncImage(url: photo.imageURL) { $0.resizable().scaledToFill() } placeholder: { border } }
+                            remove: { keptPhotos.removeAll { $0.id == photo.id } }
+                    }
+                    ForEach(newPhotos) { photo in
+                        thumbnail {
+                            #if canImport(UIKit)
+                            if let image = UIImage(data: photo.jpeg) { Image(uiImage: image).resizable().scaledToFill() }
+                            #endif
+                        } remove: { newPhotos.removeAll { $0.id == photo.id } }
+                        .overlay(alignment: .bottomLeading) {
+                            if photo.hasLocation {
+                                Image(systemName: "mappin.circle.fill")
+                                    .foregroundStyle(.white, .black.opacity(0.5))
+                                    .padding(4)
+                            }
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+            PhotosPicker(selection: $pickerItems,
+                         maxSelectionCount: max(Self.maxPhotos - photoCount, 1),
+                         matching: .images) {
+                HStack {
+                    Label("Add photos", systemImage: "photo.on.rectangle.angled")
+                    if isLoadingPhotos { Spacer(); ProgressView() }
+                }
+            }
+            .disabled(photoCount >= Self.maxPhotos || isLoadingPhotos)
+        } header: {
+            Text("Photos")
+        } footer: {
+            Text("Photos with a location show as pins on the route map.")
+        }
+    }
+
+    private func thumbnail<Content: View>(@ViewBuilder _ content: () -> Content,
+                                          remove: @escaping () -> Void) -> some View {
+        Color.clear
+            .aspectRatio(1, contentMode: .fit)
+            .overlay { content() }
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay(alignment: .topTrailing) {
+                Button(action: remove) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.white, .black.opacity(0.6))
+                        .padding(3)
+                }
+                .buttonStyle(.plain)
+            }
+    }
+
+    private func loadPicked() async {
+        guard !pickerItems.isEmpty else { return }
+        isLoadingPhotos = true
+        let items = pickerItems
+        pickerItems = []
+        for item in items {
+            guard let data = try? await item.loadTransferable(type: Data.self),
+                  let photo = PhotoUploader.prepare(data, index: photoCount)
+            else { continue }
+            newPhotos.append(photo)
+        }
+        isLoadingPhotos = false
     }
 
     private func loadGPX(_ result: Result<URL, Error>) {
@@ -140,6 +230,20 @@ struct TripFormView: View {
             body["gpxData"] = gpx.asGpxData
         }
         do {
+            var uploaded: [[String: Any]] = []
+            for (i, photo) in newPhotos.enumerated() {
+                uploadProgress = "Uploading \(i + 1) of \(newPhotos.count)"
+                uploaded.append(try await PhotoUploader.upload(photo))
+            }
+            uploadProgress = nil
+            // The server replaces a trip's photos with this list: existing ones
+            // are kept by id. Only sent when the set changed, and never when the
+            // trip was opened without its photos loaded.
+            let photosChanged = !uploaded.isEmpty || keptPhotos.count != (existing?.photos?.count ?? 0)
+            if photosChanged && (existing == nil || existing?.photos != nil) {
+                body["photos"] = keptPhotos.map { ["id": $0.id] as [String: Any] } + uploaded
+            }
+
             let saved: FieldNote
             if let existing {
                 saved = try await API.put("/api/field-notes/\(existing.id)", body: body)
@@ -151,6 +255,7 @@ struct TripFormView: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+        uploadProgress = nil
         isSaving = false
     }
 }

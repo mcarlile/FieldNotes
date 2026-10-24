@@ -35,13 +35,19 @@ struct FieldNote: Codable, Identifiable, Hashable {
         elevationGain = try c.decodeIfPresent(Double.self, forKey: .elevationGain)
         photos        = try c.decodeIfPresent([Photo].self, forKey: .photos)
 
-        // Try object first, then fall back to parsing a JSON string
+        // Try object first, then a JSON string, then raw GPX XML (what the web
+        // editor stores).
         if let gpx = try? c.decodeIfPresent(GpxData.self, forKey: .gpxData) {
             gpxData = gpx
         } else if let raw = try? c.decodeIfPresent(String.self, forKey: .gpxData),
-                  let data = raw.data(using: .utf8),
-                  let gpx = try? JSONDecoder().decode(GpxData.self, from: data) {
-            gpxData = gpx
+                  let data = raw.data(using: .utf8) {
+            if let gpx = try? JSONDecoder().decode(GpxData.self, from: data) {
+                gpxData = gpx
+            } else if let stats = try? GPXParser.parse(data) {
+                gpxData = GpxData(coordinates: stats.coordinates)
+            } else {
+                gpxData = nil
+            }
         } else {
             gpxData = nil
         }
@@ -98,6 +104,16 @@ struct Photo: Codable, Identifiable, Hashable {
     let elevation: Double?
     let timestamp: String?
     let camera: String?
+
+    /// Uploaded photos are stored as site-relative paths (/objects/uploads/…).
+    var imageURL: URL? {
+        url.hasPrefix("/") ? URL(string: API.base + url) : URL(string: url)
+    }
+
+    var coordinate: CLLocationCoordinate2D? {
+        guard let latitude, let longitude else { return nil }
+        return CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
 }
 
 // MARK: - User
