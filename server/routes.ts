@@ -48,7 +48,9 @@ const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
 
 // Concurrent uploads by IP
 const uploadsPerIP = new Map<string, Set<string>>();
-const stravaOAuthStates = new Map<string, { userId: string; createdAt: number }>();
+// `mobile` states were started by the iOS app, which has no Clerk cookie in
+// its browser sheet; the state nonce itself identifies the user there.
+const stravaOAuthStates = new Map<string, { userId: string; createdAt: number; mobile?: boolean }>();
 
 if (!fs.existsSync(CHUNK_UPLOAD_DIR)) {
   fs.mkdirSync(CHUNK_UPLOAD_DIR, { recursive: true });
@@ -1523,37 +1525,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ── Strava OAuth & Import ─────────────────────────────────────────────────
 
-  // Step 1: Redirect user to Strava consent page using app-level credentials
-  app.get("/api/strava/auth", requireAuth, async (req: any, res) => {
-    const clientId = process.env.STRAVA_CLIENT_ID;
-    if (!clientId) {
-      return res.redirect("/inbox?strava=error");
-    }
-
+  function stravaAuthorizeUrl(req: any, mobile: boolean): string {
     const stateNonce = crypto.randomBytes(24).toString("hex");
     stravaOAuthStates.set(stateNonce, {
       userId: req.dbUser.id,
       createdAt: Date.now(),
+      mobile,
     });
 
     const redirectUri = `https://${req.hostname}/api/strava/callback`;
     const params = new URLSearchParams({
-      client_id: clientId,
+      client_id: process.env.STRAVA_CLIENT_ID!,
       redirect_uri: redirectUri,
       response_type: "code",
       scope: "read,activity:read_all",
       approval_prompt: "auto",
       state: stateNonce,
     });
-    res.redirect(`https://www.strava.com/oauth/authorize?${params}`);
+    return `https://www.strava.com/oauth/authorize?${params}`;
+  }
+
+  // Step 1: Redirect user to Strava consent page using app-level credentials
+  app.get("/api/strava/auth", requireAuth, async (req: any, res) => {
+    if (!process.env.STRAVA_CLIENT_ID) {
+      return res.redirect("/inbox?strava=error");
+    }
+    res.redirect(stravaAuthorizeUrl(req, false));
   });
 
-  // Step 2: Handle OAuth callback using app-level credentials
-  app.get("/api/strava/callback", requireAuth, async (req: any, res) => {
+  // Step 1 for the iOS app: it authenticates with a bearer token, so it asks
+  // for the consent URL and opens it in its own browser sheet.
+  app.get("/api/strava/auth-url", requireAuth, async (req: any, res) => {
+    if (!process.env.STRAVA_CLIENT_ID) {
+      return res.status(503).json({ message: "Strava isn't configured on the server" });
+    }
+    res.json({ url: stravaAuthorizeUrl(req, true) });
+  });
+
+  // Step 2: Handle OAuth callback using app-level credentials. Web states need
+  // the Clerk session; mobile states carry the user in the nonce.
+  app.get("/api/strava/callback", (req: any, res, next) => {
+    const pending = stravaOAuthStates.get(String(req.query.state ?? ""));
+    if (pending?.mobile) {
+      req.dbUser = { id: pending.userId };
+      return next();
+    }
+    return requireAuth(req, res, next);
+  }, async (req: any, res) => {
     const { code, error, scope, state } = req.query as Record<string, string>;
+    const isMobile = !!(state && stravaOAuthStates.get(state)?.mobile);
+    const finish = (status: string) => res.redirect(
+      isMobile ? `bigmiles://strava?status=${status}` : `/inbox?strava=${status}`,
+    );
 
     if (error || !code) {
-      return res.redirect("/inbox?strava=denied");
+      if (state) stravaOAuthStates.delete(state);
+      return finish("denied");
     }
 
     const expectedState = state ? stravaOAuthStates.get(state) : undefined;
@@ -1564,13 +1591,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       Date.now() - expectedState.createdAt > 10 * 60 * 1000
     ) {
       console.warn("Strava OAuth state mismatch");
-      return res.redirect("/inbox?strava=error");
+      return finish("error");
     }
 
     const clientId = process.env.STRAVA_CLIENT_ID;
     const clientSecret = process.env.STRAVA_CLIENT_SECRET;
     if (!clientId || !clientSecret) {
-      return res.redirect("/inbox?strava=error");
+      return finish("error");
     }
 
     try {
@@ -1590,7 +1617,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (!tokenResp.ok) {
         console.error("Strava token exchange failed:", await tokenResp.text());
-        return res.redirect("/inbox?strava=error");
+        return finish("error");
       }
 
       const tokenData = await tokenResp.json() as {
@@ -1609,10 +1636,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         scope: scope ?? null,
       });
 
-      res.redirect("/inbox?strava=connected");
+      finish("connected");
     } catch (err) {
       console.error("Strava callback error:", err);
-      res.redirect("/inbox?strava=error");
+      finish("error");
     }
   });
 
