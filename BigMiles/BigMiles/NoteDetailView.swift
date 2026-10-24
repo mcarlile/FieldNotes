@@ -14,110 +14,20 @@ struct NoteDetailView: View {
     private let muted  = Color(red: 138/255, green: 132/255, blue: 126/255)
     private let border = Color(red: 232/255, green: 226/255, blue: 214/255)
 
+    @State private var panelExpanded = false
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-
-                // Map
-                if !display.mapCoordinates.isEmpty {
-                    TrailMap(
-                        routes: [TrailRoute(id: display.id, coordinates: display.mapCoordinates)],
-                        photos: display.photos ?? [],
-                        layer: mapLayer,
-                        onSelectPhoto: { lightbox = $0 }
-                    )
-                    .frame(height: 340)
-                    .overlay(alignment: .topTrailing) {
-                        MapLayerMenu(layer: $mapLayer).padding(10)
-                    }
-                }
-
-                VStack(alignment: .leading, spacing: 16) {
-
-                    // Type badges
-                    HStack(spacing: 5) {
-                        ForEach(display.tripType, id: \.self) { type in
-                            Text(type.capitalized)
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundColor(muted)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(border)
-                                .cornerRadius(4)
-                        }
-                    }
-
-                    Text(display.formattedDate)
-                        .font(.system(size: 13))
-                        .foregroundColor(muted)
-
-                    // Stats
-                    if display.distance != nil || display.elevationGain != nil {
-                        HStack(spacing: 0) {
-                            if let d = display.distance {
-                                StatCell(value: String(format: "%.1f", d), label: "Miles")
-                            }
-                            if let e = display.elevationGain {
-                                StatCell(value: "\(Int(e))", label: "ft gain")
-                            }
-                            if let count = display.photos?.count, count > 0 {
-                                StatCell(value: "\(count)", label: "Photos")
-                            }
-                        }
-                        .padding(16)
-                        .background(Color.white.opacity(0.6))
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(border))
-                    }
-
-                    // Description
-                    if let desc = display.description, !desc.isEmpty {
-                        Text(desc)
-                            .font(.system(size: 16))
-                            .foregroundColor(ink)
-                            .lineSpacing(6)
-                    }
-
-                    // Photo grid
-                    if let photos = display.photos, !photos.isEmpty {
-                        Text("PHOTOS · \(photos.count)")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(muted)
-                            .tracking(0.8)
-
-                        LazyVGrid(
-                            columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
-                            spacing: 10
-                        ) {
-                            ForEach(photos) { photo in
-                                Rectangle().fill(border)
-                                    .frame(height: 160)
-                                    .overlay {
-                                        AsyncImage(url: photo.imageURL) { phase in
-                                            switch phase {
-                                            case .success(let img):
-                                                img.resizable().scaledToFill()
-                                            case .failure:
-                                                Image(systemName: "photo.badge.exclamationmark")
-                                                    .foregroundColor(muted)
-                                            default:
-                                                ProgressView()
-                                            }
-                                        }
-                                    }
-                                    .clipped()
-                                .cornerRadius(8)
-                                .onTapGesture { lightbox = photo }
-                            }
-                        }
-                    }
-                }
-                .padding(20)
+        Group {
+            if display.mapCoordinates.isEmpty {
+                ScrollView { details.padding(20) }
+                    .background(sand.ignoresSafeArea())
+            } else {
+                mapWithPanel
             }
         }
-        .background(sand.ignoresSafeArea())
         .navigationTitle(display.title)
         .toolbarTitleDisplayMode(.inline)
+        .toolbarBackground(display.mapCoordinates.isEmpty ? .automatic : .hidden, for: .navigationBar)
         .task { await loadFull() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -135,6 +45,142 @@ struct NoteDetailView: View {
                 photos: display.photos ?? [],
                 onDismiss: { lightbox = nil }
             )
+        }
+    }
+
+    // MARK: Full-screen map
+
+    /// The map fills the screen under a see-through navigation bar; the trip
+    /// details sit in a panel over its bottom that drags up to read more.
+    private var mapWithPanel: some View {
+        GeometryReader { geo in
+            let collapsed = geo.size.height * 0.36
+            let expanded = geo.size.height * 0.82
+            let panelHeight = panelExpanded ? expanded : collapsed
+
+            ZStack(alignment: .bottom) {
+                TrailMap(
+                    routes: [TrailRoute(id: display.id, coordinates: display.mapCoordinates)],
+                    photos: display.photos ?? [],
+                    layer: mapLayer,
+                    bottomInset: collapsed,
+                    onSelectPhoto: { lightbox = $0 }
+                )
+                .ignoresSafeArea()
+                .overlay(alignment: .topTrailing) {
+                    MapLayerMenu(layer: $mapLayer).padding(10)
+                }
+
+                VStack(spacing: 0) {
+                    // Grabber: drag or tap to resize the panel.
+                    Capsule()
+                        .fill(muted.opacity(0.5))
+                        .frame(width: 40, height: 5)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .contentShape(Rectangle())
+                        .onTapGesture { withAnimation(.snappy) { panelExpanded.toggle() } }
+                        .gesture(DragGesture(minimumDistance: 8).onEnded { drag in
+                            withAnimation(.snappy) {
+                                if drag.translation.height < -30 { panelExpanded = true }
+                                if drag.translation.height > 30 { panelExpanded = false }
+                            }
+                        })
+                    ScrollView {
+                        details.padding(.horizontal, 20).padding(.bottom, 20)
+                    }
+                    .scrollDisabled(!panelExpanded)
+                }
+                .frame(height: panelHeight + geo.safeAreaInsets.bottom, alignment: .top)
+                .background(sand, in: UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20))
+                .shadow(color: .black.opacity(0.15), radius: 12, y: -2)
+                .offset(y: geo.safeAreaInsets.bottom)
+            }
+        }
+    }
+
+    // MARK: Details
+
+    private var details: some View {
+        VStack(alignment: .leading, spacing: 16) {
+
+            // Type badges
+            HStack(spacing: 5) {
+                ForEach(display.tripType, id: \.self) { type in
+                    Text(type.capitalized)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(muted)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(border)
+                        .cornerRadius(4)
+                }
+            }
+
+            Text(display.formattedDate)
+                .font(.system(size: 13))
+                .foregroundColor(muted)
+
+            // Stats
+            if display.distance != nil || display.elevationGain != nil {
+                HStack(spacing: 0) {
+                    if let d = display.distance {
+                        StatCell(value: String(format: "%.1f", d), label: "Miles")
+                    }
+                    if let e = display.elevationGain {
+                        StatCell(value: "\(Int(e))", label: "ft gain")
+                    }
+                    if let count = display.photos?.count, count > 0 {
+                        StatCell(value: "\(count)", label: "Photos")
+                    }
+                }
+                .padding(16)
+                .background(Color.white.opacity(0.6))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(border))
+            }
+
+            // Description
+            if let desc = display.description, !desc.isEmpty {
+                Text(desc)
+                    .font(.system(size: 16))
+                    .foregroundColor(ink)
+                    .lineSpacing(6)
+            }
+
+            // Photo grid
+            if let photos = display.photos, !photos.isEmpty {
+                Text("PHOTOS · \(photos.count)")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(muted)
+                    .tracking(0.8)
+
+                LazyVGrid(
+                    columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
+                    spacing: 10
+                ) {
+                    ForEach(photos) { photo in
+                        Rectangle().fill(border)
+                            .frame(height: 160)
+                            .overlay {
+                                AsyncImage(url: photo.imageURL) { phase in
+                                    switch phase {
+                                    case .success(let img):
+                                        img.resizable().scaledToFill()
+                                    case .failure:
+                                        Image(systemName: "photo.badge.exclamationmark")
+                                            .foregroundColor(muted)
+                                    default:
+                                        ProgressView()
+                                    }
+                                }
+                            }
+                            .clipped()
+                        .cornerRadius(8)
+                        .onTapGesture { lightbox = photo }
+                    }
+                }
+            }
         }
     }
 

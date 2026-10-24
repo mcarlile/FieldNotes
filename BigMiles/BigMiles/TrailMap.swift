@@ -82,6 +82,9 @@ struct TrailMap: View {
     var controls: Binding<MapControls>? = nil
     /// Open on the user's location (when they allow it) instead of the routes.
     var startAtUserLocation = false
+    /// Height covered by something floating over the bottom of the map (a
+    /// details panel): the controls sit above it and the route fits above it.
+    var bottomInset: CGFloat = 0
     var onSelectRoutes: (([String]) -> Void)? = nil
     var onSelectPhoto: ((Photo) -> Void)? = nil
 
@@ -92,6 +95,7 @@ struct TrailMap: View {
         let state = controls?.wrappedValue ?? ownControls
         TrailMapView(routes: routes, photos: photos, heat: heat, layer: layer, is3D: state.is3D,
                      locateRequest: state.locateRequest, startAtUserLocation: startAtUserLocation,
+                     bottomInset: bottomInset,
                      onSelectRoutes: onSelectRoutes, onSelectPhoto: onSelectPhoto)
             .overlay(alignment: .bottomTrailing) {
                 if controls == nil {
@@ -100,7 +104,7 @@ struct TrailMap: View {
                         Map3DButton(controls: $ownControls)
                     }
                     .padding(12)
-                    .padding(.bottom, 16)
+                    .padding(.bottom, 16 + bottomInset)
                 }
             }
         #else
@@ -137,6 +141,7 @@ private struct TrailMapView: UIViewRepresentable {
     var is3D: Bool
     var locateRequest: Int
     var startAtUserLocation: Bool
+    var bottomInset: CGFloat
     var onSelectRoutes: (([String]) -> Void)?
     var onSelectPhoto: ((Photo) -> Void)?
 
@@ -155,6 +160,7 @@ private struct TrailMapView: UIViewRepresentable {
     func updateUIView(_ map: MapView, context: Context) {
         let c = context.coordinator
         c.parent = self
+        c.bottomInset = bottomInset
         c.update(layer: layer, is3D: is3D, routes: routes, heat: heat, photos: photos)
         if c.locateRequest != locateRequest {
             c.locateRequest = locateRequest
@@ -167,6 +173,7 @@ private struct TrailMapView: UIViewRepresentable {
     final class Coordinator: NSObject {
         var parent: TrailMapView?
         var locateRequest = 0
+        var bottomInset: CGFloat = 0
 
         private weak var map: MapView?
         private var cancelables = Set<AnyCancelable>()
@@ -332,7 +339,7 @@ private struct TrailMapView: UIViewRepresentable {
             guard let map, !fitted, map.bounds.width > 0 else { return }
             let coords = routes.flatMap(\.coordinates)
             guard coords.count >= 2 else { return }
-            let padding = UIEdgeInsets(top: 60, left: 40, bottom: 60, right: 40)
+            let padding = UIEdgeInsets(top: 100, left: 40, bottom: 60 + bottomInset, right: 40)
             if let camera = try? map.mapboxMap.camera(
                 for: coords, camera: CameraOptions(pitch: is3D ? 60 : 0),
                 coordinatesPadding: padding, maxZoom: 15, offset: nil
