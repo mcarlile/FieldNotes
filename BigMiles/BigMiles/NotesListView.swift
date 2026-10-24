@@ -2,6 +2,7 @@ import SwiftUI
 
 struct NotesListView: View {
     @EnvironmentObject var auth: AuthManager
+    @ObservedObject private var health = HealthSync.shared
     @State private var notes: [FieldNote] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
@@ -57,9 +58,10 @@ struct NotesListView: View {
             .searchable(text: $searchText, prompt: "Search")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Sign out") { auth.logout() }
-                        .foregroundColor(muted)
-                        .font(.system(size: 14))
+                    NavigationLink { SettingsView() } label: {
+                        Image(systemName: "gearshape")
+                    }
+                    .accessibilityLabel("Settings")
                 }
                 // Same two entries as the web dashboard's Create dropdown.
                 ToolbarItem(placement: .primaryAction) {
@@ -86,6 +88,7 @@ struct NotesListView: View {
             }
         }
         .task { await loadNotes() }
+        .onChange(of: health.importedCount) { Task { await loadNotes() } }
     }
 
     private func added(_ note: FieldNote) {

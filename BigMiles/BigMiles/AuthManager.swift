@@ -16,8 +16,6 @@ class AuthManager: ObservableObject {
     @Published var isAuthenticated = false
     @Published var currentUser: User?
 
-    private var _session: ASWebAuthenticationSession?
-
     private init() {
         isAuthenticated = storedToken != nil
     }
@@ -30,19 +28,7 @@ class AuthManager: ObservableObject {
     func login() async {
         guard let url = URL(string: "https://bigmiles.app/api/login?redirectTo=mobile") else { return }
 
-        let token: String? = await withCheckedContinuation { continuation in
-            let session = ASWebAuthenticationSession(url: url, callbackURLScheme: "bigmiles") { callbackURL, _ in
-                let components = callbackURL.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }
-                continuation.resume(returning: components?.queryItems?.first(where: { $0.name == "token" })?.value)
-            }
-            session.presentationContextProvider = WindowProvider.shared
-            session.prefersEphemeralWebBrowserSession = false
-            _session = session
-            session.start()
-        }
-        _session = nil
-
-        guard let token else { return }
+        guard let token = await WebAuth.start(url)?.queryValue("token") else { return }
         Keychain.save(AuthManager.tokenKey, value: token)
         do {
             currentUser = try await API.get("/api/me")
@@ -56,6 +42,35 @@ class AuthManager: ObservableObject {
         Keychain.delete(AuthManager.tokenKey)
         currentUser = nil
         isAuthenticated = false
+    }
+}
+
+// MARK: - Browser sheet for sign-in and connecting services
+
+enum WebAuth {
+    private static var session: ASWebAuthenticationSession?
+
+    /// Opens `url` in the system browser sheet and returns the bigmiles:// URL
+    /// the server finally redirects to, or nil if the user closed the sheet.
+    static func start(_ url: URL) async -> URL? {
+        let result: URL? = await withCheckedContinuation { continuation in
+            let session = ASWebAuthenticationSession(url: url, callbackURLScheme: "bigmiles") { callbackURL, _ in
+                continuation.resume(returning: callbackURL)
+            }
+            session.presentationContextProvider = WindowProvider.shared
+            session.prefersEphemeralWebBrowserSession = false
+            self.session = session
+            session.start()
+        }
+        session = nil
+        return result
+    }
+}
+
+extension URL {
+    func queryValue(_ name: String) -> String? {
+        URLComponents(url: self, resolvingAgainstBaseURL: false)?
+            .queryItems?.first { $0.name == name }?.value
     }
 }
 

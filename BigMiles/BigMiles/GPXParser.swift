@@ -33,15 +33,22 @@ enum GPXParser {
         parser.delegate = collector
         parser.parse()
         guard !collector.points.isEmpty else { throw GPXParseError.noTrackPoints }
+        // First track point is when the activity started; metadata time is
+        // often just the export time, so it is only a fallback.
+        return stats(from: collector.points, fallbackDate: collector.metadataTime)
+    }
+
+    /// Distance, gain and profile for a track, from a GPX file or an Apple Health route.
+    static func stats(from points: [GPXPoint], fallbackDate: Date? = nil) -> GPXStats {
 
         var distance = 0.0
         var gain = 0.0
-        var prev: TrackCollector.Point?
+        var prev: GPXPoint?
         var prevEle: Double?
         var coordinates: [[Double]] = []
         var profile: [[String: Any]] = []
 
-        for p in collector.points {
+        for p in points {
             coordinates.append([p.lon, p.lat])
             if let prev { distance += haversineMiles(prev.lat, prev.lon, p.lat, p.lon) }
 
@@ -63,9 +70,7 @@ enum GPXParser {
             prev = p
         }
 
-        // First track point is when the activity started; metadata time is
-        // often just the export time, so it is only a fallback.
-        let date = collector.points.first?.time ?? collector.metadataTime
+        let date = points.first?.time ?? fallbackDate
 
         return GPXStats(
             distance: (distance * 100).rounded() / 100,
@@ -86,13 +91,18 @@ enum GPXParser {
     }
 }
 
-private nonisolated final class TrackCollector: NSObject, XMLParserDelegate {
-    struct Point { let lat: Double; let lon: Double; var ele: Double?; var time: Date? }
+nonisolated struct GPXPoint {
+    let lat: Double
+    let lon: Double
+    var ele: Double?    // meters
+    var time: Date?
+}
 
-    var points: [Point] = []
+private nonisolated final class TrackCollector: NSObject, XMLParserDelegate {
+    var points: [GPXPoint] = []
     var metadataTime: Date?
 
-    private var current: Point?
+    private var current: GPXPoint?
     private var text = ""
     private var inMetadata = false
     private let iso = ISO8601DateFormatter()
@@ -109,7 +119,7 @@ private nonisolated final class TrackCollector: NSObject, XMLParserDelegate {
         case "trkpt":
             if let lat = attributes["lat"].flatMap(Double.init),
                let lon = attributes["lon"].flatMap(Double.init) {
-                current = Point(lat: lat, lon: lon)
+                current = GPXPoint(lat: lat, lon: lon)
             }
         case "metadata":
             inMetadata = true

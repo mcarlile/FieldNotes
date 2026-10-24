@@ -15,5 +15,7 @@
 			</array>
 		</dict>
 	</array>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Big Miles reads your workouts and their GPS routes to add them as trips.</string>
 </dict>
 </plist>
