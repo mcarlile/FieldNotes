@@ -13,7 +13,12 @@ final class TripVideoPlayback: ObservableObject {
     let player = AVPlayer()
     @Published private(set) var clip: VideoClip?
     @Published private(set) var seconds: Double = 0
+    @Published private(set) var isPlaying = false
+    /// Bumped each time a clip starts playing; the map zooms in behind the
+    /// pin and starts following it, as on the web.
+    @Published private(set) var focusRequest = 0
     private var timeObserver: Any?
+    private var statusObserver: AnyCancellable?
 
     init() {
         timeObserver = player.addPeriodicTimeObserver(
@@ -21,6 +26,15 @@ final class TripVideoPlayback: ObservableObject {
         ) { [weak self] time in
             MainActor.assumeIsolated { self?.seconds = time.seconds.isFinite ? time.seconds : 0 }
         }
+        statusObserver = player.publisher(for: \.timeControlStatus)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] status in
+                guard let self else { return }
+                // Buffering counts as playing, so a stall doesn't re-zoom the map.
+                let playing = status != .paused
+                if playing && !isPlaying { focusRequest += 1 }
+                isPlaying = playing
+            }
     }
 
     deinit {
@@ -45,6 +59,18 @@ final class TripVideoPlayback: ObservableObject {
     func playhead(on track: TimedTrack?, syncOffset: Double) -> CLLocationCoordinate2D? {
         guard let clip, let track else { return nil }
         return track.coordinate(at: clip.startTime + syncOffset + seconds)
+    }
+
+    /// The direction of travel at the frame on screen; the chase-cam faces it.
+    func bearing(on track: TimedTrack?, syncOffset: Double) -> Double? {
+        guard let clip, let track else { return nil }
+        return track.bearing(at: clip.startTime + syncOffset + seconds)
+    }
+
+    /// The stretch of route the selected clip covers.
+    func clipSegment(on track: TimedTrack?, syncOffset: Double) -> [CLLocationCoordinate2D] {
+        guard let clip, let track else { return [] }
+        return track.segment(from: clip.startTime + syncOffset, to: clip.endTime + syncOffset)
     }
 }
 

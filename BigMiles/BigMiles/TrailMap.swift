@@ -63,6 +63,22 @@ struct MapControls {
     var locateRequest = 0
 }
 
+/// What the map needs to follow a playing clip like the web player: zoom in
+/// behind the pin when a clip starts, then keep it in view as it moves.
+struct VideoFollow {
+    /// Direction of travel at the pin; the 3D chase-cam faces it.
+    var bearing: Double?
+    var isPlaying: Bool
+    /// Changes each time a clip starts playing.
+    var focusRequest: Int
+    /// The follow-cam angle calibrated on the web, if any.
+    var angle: FieldNote.CameraAngle?
+    /// The selected clip's stretch of route, drawn over the trip line.
+    var clipId: String?
+    var clipIndex: Int = 0
+    var segment: [CLLocationCoordinate2D] = []
+}
+
 /// A Mapbox map with routes and photo pins, plus location and 3D terrain
 /// controls. In heat mode routes are colored by how many trips overlap, like
 /// the web heat map.
@@ -78,20 +94,46 @@ struct TrailMap: View {
     /// Height covered by something floating over the bottom of the map (a
     /// details panel): the controls sit above it and the route fits above it.
     var bottomInset: CGFloat = 0
+    /// Width covered by something floating over the left of the map (a
+    /// details card): the followed pin stays centered in the rest.
+    var leadingInset: CGFloat = 0
     /// Where the playing video was filmed; drawn as a pin that moves with it.
     var playhead: CLLocationCoordinate2D? = nil
+    var video: VideoFollow? = nil
     var onSelectRoutes: (([String]) -> Void)? = nil
     var onSelectPhoto: ((Photo) -> Void)? = nil
 
     @State private var ownControls = MapControls()
+    /// True once the user pans away from the pin while a clip plays.
+    @State private var followPaused = false
+    @State private var resumeRequest = 0
 
     var body: some View {
         #if os(iOS)
         let state = controls?.wrappedValue ?? ownControls
         TrailMapView(routes: routes, photos: photos, heat: heat, layer: layer, is3D: state.is3D,
                      locateRequest: state.locateRequest, startAtUserLocation: startAtUserLocation,
-                     bottomInset: bottomInset, playhead: playhead,
+                     bottomInset: bottomInset, leadingInset: leadingInset, playhead: playhead,
+                     video: video, resumeRequest: resumeRequest,
+                     onFollowPausedChange: { followPaused = $0 },
                      onSelectRoutes: onSelectRoutes, onSelectPhoto: onSelectPhoto)
+            .overlay(alignment: .bottom) {
+                // Like the web's "Follow" button: back to the pin after panning away.
+                if followPaused, video?.isPlaying == true {
+                    Button {
+                        resumeRequest += 1
+                    } label: {
+                        Label("Follow", systemImage: "location.north.line.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 9)
+                            .background(.regularMaterial, in: Capsule())
+                    }
+                    .padding(.leading, leadingInset)
+                    .padding(.bottom, 16 + bottomInset)
+                }
+            }
             .overlay(alignment: .bottomTrailing) {
                 if controls == nil {
                     VStack(spacing: 8) {
@@ -169,7 +211,11 @@ private struct TrailMapView: UIViewRepresentable {
     var locateRequest: Int
     var startAtUserLocation: Bool
     var bottomInset: CGFloat
+    var leadingInset: CGFloat
     var playhead: CLLocationCoordinate2D?
+    var video: VideoFollow?
+    var resumeRequest: Int
+    var onFollowPausedChange: (Bool) -> Void
     var onSelectRoutes: (([String]) -> Void)?
     var onSelectPhoto: ((Photo) -> Void)?
 
@@ -189,8 +235,12 @@ private struct TrailMapView: UIViewRepresentable {
         let c = context.coordinator
         c.parent = self
         c.bottomInset = bottomInset
+        c.leadingInset = leadingInset
+        c.playhead = playhead
+        c.video = video
         c.update(layer: layer, is3D: is3D, routes: routes, heat: heat, photos: photos)
         c.movePlayhead(to: playhead)
+        c.followVideo(resumeRequest: resumeRequest)
         if c.locateRequest != locateRequest {
             c.locateRequest = locateRequest
             c.followUser()
@@ -199,10 +249,13 @@ private struct TrailMapView: UIViewRepresentable {
 
     // MARK: Coordinator
 
-    final class Coordinator: NSObject {
+    final class Coordinator: NSObject, GestureManagerDelegate {
         var parent: TrailMapView?
         var locateRequest = 0
         var bottomInset: CGFloat = 0
+        var leadingInset: CGFloat = 0
+        var playhead: CLLocationCoordinate2D?
+        var video: VideoFollow?
 
         private weak var map: MapView?
         private var cancelables = Set<AnyCancelable>()
@@ -222,6 +275,19 @@ private struct TrailMapView: UIViewRepresentable {
         private let sourceId = "trail-routes"
         private let layerId = "trail-routes-line"
         private let demId = "mapbox-dem"
+        private let clipSourceId = "clip-segment"
+        private let clipLayerId = "clip-segment-line"
+
+        // Follow-cam, as on the web: keep the pin in view until the user pans
+        // away. Zooming or tilting keeps tracking; turning the map stops the
+        // camera swinging to face the direction of travel until the next play.
+        private var following = true
+        private var autoBearing = true
+        private var userGesture = false
+        private var focusAnimatingUntil = Date.distantPast
+        private var focusRequest = 0
+        private var resumeRequest = 0
+        private var clipKey = ""
 
         private static let ink = UIColor(red: 26/255, green: 24/255, blue: 21/255, alpha: 1)
         // The web heat map's blue / orange / red for 1, 2–3 and 4+ overlapping trips.
@@ -240,6 +306,7 @@ private struct TrailMapView: UIViewRepresentable {
                 self?.styleReady = true
                 self?.installTopoLayers()
                 self?.installRouteLayer()
+                self?.installClipSegment()
                 self?.applyTerrain()
             }.store(in: &cancelables)
             map.mapboxMap.onMapLoaded.observeNext { [weak self] _ in
@@ -248,6 +315,7 @@ private struct TrailMapView: UIViewRepresentable {
             map.gestures.onMapTap.observe { [weak self] context in
                 self?.tapped(at: context.point)
             }.store(in: &cancelables)
+            map.gestures.delegate = self
         }
 
         func update(layer: MapLayer, is3D: Bool, routes: [TrailRoute], heat: Bool, photos: [Photo]) {
@@ -260,7 +328,12 @@ private struct TrailMapView: UIViewRepresentable {
             if self.is3D != is3D {
                 self.is3D = is3D
                 applyTerrain()
-                map.camera.ease(to: CameraOptions(pitch: is3D ? 60 : 0), duration: 0.6)
+                // Playing a clip turns 3D on; that goes straight to the chase view.
+                if is3D, following, video?.isPlaying == true {
+                    focus(duration: 1.4)
+                } else {
+                    map.camera.ease(to: CameraOptions(pitch: is3D ? 60 : 0), duration: 0.6)
+                }
             }
             let key = routes.map { "\($0.id):\($0.coordinates.count)" }.joined(separator: ",") + "|\(heat)"
             if key != routeKey {
@@ -517,6 +590,132 @@ private struct TrailMapView: UIViewRepresentable {
                 map.viewAnnotations.add(pin)
                 playheadPin = pin
             }
+        }
+
+        // MARK: Follow-cam
+
+        /// The selected clip's stretch, zoom-in on play, and following the pin.
+        func followVideo(resumeRequest: Int) {
+            guard let map, let video else { return }
+            let key = "\(video.clipId ?? ""):\(video.segment.count)"
+            if key != clipKey {
+                clipKey = key
+                installClipSegment()
+            }
+            if video.focusRequest != focusRequest {
+                focusRequest = video.focusRequest
+                focus(duration: 1.4)
+                return
+            }
+            if resumeRequest != self.resumeRequest {
+                self.resumeRequest = resumeRequest
+                focus(duration: 1.0)
+                return
+            }
+            guard video.isPlaying, following, !userGesture, Date() > focusAnimatingUntil,
+                  let pin = playhead else { return }
+            var camera = CameraOptions(center: pin, padding: followPadding)
+            if is3D, autoBearing, let target = followBearing() {
+                // Turn a little each tick, the short way, so switchbacks swing
+                // the camera round smoothly instead of snapping it.
+                let current = map.mapboxMap.cameraState.bearing
+                let diff = (target - current + 540).truncatingRemainder(dividingBy: 360) - 180
+                camera.bearing = current + diff * 0.35
+            }
+            // The pin moves every quarter second; easing across each step keeps it smooth.
+            map.camera.ease(to: camera, duration: 0.25, curve: .linear)
+        }
+
+        /// Zoom in on the pin and start following it: in 3D, the calibrated
+        /// angle or close behind the pin facing the way the ride goes; in 2D,
+        /// zoomed in and north-up.
+        private func focus(duration: TimeInterval) {
+            guard let map, let video, let center = playhead ?? video.segment.first else { return }
+            setFollowing(true)
+            autoBearing = true
+            var camera = CameraOptions(center: center, padding: followPadding)
+            if is3D {
+                camera.zoom = video.angle?.zoom ?? 16.5
+                camera.pitch = video.angle?.pitch ?? 65
+                if let bearing = followBearing() { camera.bearing = bearing }
+            } else {
+                camera.zoom = 16
+                camera.pitch = 0
+                camera.bearing = 0
+            }
+            map.camera.cancelAnimations()
+            focusAnimatingUntil = Date().addingTimeInterval(duration)
+            map.camera.ease(to: camera, duration: duration)
+        }
+
+        private func followBearing() -> Double? {
+            guard let travel = video?.bearing else { return nil }
+            return travel + (video?.angle?.bearingOffset ?? 0)
+        }
+
+        private var followPadding: UIEdgeInsets {
+            UIEdgeInsets(top: 0, left: leadingInset, bottom: bottomInset, right: 0)
+        }
+
+        private func setFollowing(_ value: Bool) {
+            guard following != value else { return }
+            following = value
+            let report = parent?.onFollowPausedChange
+            DispatchQueue.main.async { report?(!value) }
+        }
+
+        // The web clip palette, so a clip's stretch matches its color there.
+        private static let clipColors: [UIColor] = [
+            0x3b82f6, 0x8b5cf6, 0xf59e0b, 0x10b981, 0xef4444, 0xf97316, 0x6366f1, 0x84cc16,
+        ].map { UIColor(red: CGFloat($0 >> 16 & 0xff) / 255, green: CGFloat($0 >> 8 & 0xff) / 255,
+                        blue: CGFloat($0 & 0xff) / 255, alpha: 1) }
+
+        private func installClipSegment() {
+            guard let map, styleReady else { return }
+            let style: MapboxMap = map.mapboxMap
+            let coords = video?.segment ?? []
+            let data: GeoJSONSourceData = coords.count >= 2
+                ? .feature(Feature(geometry: .lineString(LineString(coords))))
+                : .featureCollection(FeatureCollection(features: []))
+            if style.sourceExists(withId: clipSourceId) {
+                style.updateGeoJSONSource(withId: clipSourceId, data: data)
+            } else {
+                var source = GeoJSONSource(id: clipSourceId)
+                source.data = data
+                try? style.addSource(source)
+            }
+            let color = Self.clipColors[(video?.clipIndex ?? 0) % Self.clipColors.count]
+            if style.layerExists(withId: clipLayerId) {
+                try? style.setLayerProperty(for: clipLayerId, property: "line-color",
+                                            value: StyleColor(color).rawValue)
+            } else {
+                var line = LineLayer(id: clipLayerId, source: clipSourceId)
+                line.lineCap = .constant(.round)
+                line.lineJoin = .constant(.round)
+                line.lineColor = .constant(StyleColor(color))
+                line.lineWidth = .constant(6)
+                try? style.addLayer(line)
+            }
+        }
+
+        // Only the user's own gestures come through here. Panning hands the
+        // camera to the user; the follow-cam waits for any gesture to finish.
+        func gestureManager(_ gestureManager: GestureManager, didBegin gestureType: GestureType) {
+            switch gestureType {
+            case .singleTap: return
+            case .pan: setFollowing(false)
+            case .rotation: autoBearing = false
+            default: break
+            }
+            userGesture = true
+        }
+
+        func gestureManager(_ gestureManager: GestureManager, didEnd gestureType: GestureType, willAnimate: Bool) {
+            if !willAnimate { userGesture = false }
+        }
+
+        func gestureManager(_ gestureManager: GestureManager, didEndAnimatingFor gestureType: GestureType) {
+            userGesture = false
         }
 
         // MARK: Route taps
