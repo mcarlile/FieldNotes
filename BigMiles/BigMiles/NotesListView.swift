@@ -98,6 +98,10 @@ struct NotesListView: View {
                         }
                         .accessibilityLabel(mapControls.is3D ? "Flat map" : "3D map")
                     }
+                    // With custom bottom-bar items, iOS only keeps search there
+                    // when asked to.
+                    ToolbarSpacer(.fixed, placement: .bottomBar)
+                    DefaultToolbarItem(kind: .search, placement: .bottomBar)
                 }
             }
             .background(sand.ignoresSafeArea())
@@ -125,7 +129,7 @@ struct NotesListView: View {
 
     // MARK: Map mode
 
-    /// Edge-to-edge heat map with the logo and view toggle floating on it.
+    /// Edge-to-edge heat map with the view toggle floating on it.
     private var fullScreenMap: some View {
         TrailMap(
             routes: filtered.map { TrailRoute(id: $0.id, coordinates: $0.mapCoordinates) },
@@ -136,16 +140,10 @@ struct NotesListView: View {
         )
         .ignoresSafeArea()
         .overlay(alignment: .top) {
-            ZStack(alignment: .topLeading) {
-                ViewModeToggle(showsMap: $showsMap)
-                    .padding(2)
-                    .background(.regularMaterial, in: Capsule())
-                    .frame(maxWidth: .infinity)
-                Image("BigMilesLogo")
-                    .accessibilityLabel("Big Miles")
-            }
-            .padding([.leading, .top], 8)
-            .padding(.trailing, 8)
+            ViewModeToggle(showsMap: $showsMap)
+                .padding(2)
+                .background(.regularMaterial, in: Capsule())
+                .padding(.top, 8)
         }
     }
 
