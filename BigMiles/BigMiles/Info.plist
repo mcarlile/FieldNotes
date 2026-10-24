@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.bigmiles.BigMiles</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>bigmiles</string>
+			</array>
+		</dict>
+	</array>
+	<key>MapboxAccessToken</key>
+	<string>pk.eyJ1IjoibWNhcmxpbGUiLCJhIjoiOGdHNmxVMCJ9.7S_5i-9rrcECzYYGVddZyQ</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Big Miles shows where you are on the map.</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Big Miles reads your workouts and their GPS routes to add them as trips.</string>
+</dict>
+</plist>

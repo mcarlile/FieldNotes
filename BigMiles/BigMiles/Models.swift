@@ -35,13 +35,19 @@ struct FieldNote: Codable, Identifiable, Hashable {
         elevationGain = try c.decodeIfPresent(Double.self, forKey: .elevationGain)
         photos        = try c.decodeIfPresent([Photo].self, forKey: .photos)
 
-        // Try object first, then fall back to parsing a JSON string
+        // Try object first, then a JSON string, then raw GPX XML (what the web
+        // editor stores).
         if let gpx = try? c.decodeIfPresent(GpxData.self, forKey: .gpxData) {
             gpxData = gpx
         } else if let raw = try? c.decodeIfPresent(String.self, forKey: .gpxData),
-                  let data = raw.data(using: .utf8),
-                  let gpx = try? JSONDecoder().decode(GpxData.self, from: data) {
-            gpxData = gpx
+                  let data = raw.data(using: .utf8) {
+            if let gpx = try? JSONDecoder().decode(GpxData.self, from: data) {
+                gpxData = gpx
+            } else if let stats = try? GPXParser.parse(data) {
+                gpxData = GpxData(coordinates: stats.coordinates)
+            } else {
+                gpxData = nil
+            }
         } else {
             gpxData = nil
         }
@@ -70,11 +76,16 @@ struct FieldNote: Codable, Identifiable, Hashable {
         }
     }
 
-    var formattedDate: String {
-        let s = String(date.prefix(10))
+    /// The calendar day of the trip, as local midnight.
+    var parsedDate: Date? {
         let parser = ISO8601DateFormatter()
         parser.formatOptions = [.withFullDate, .withDashSeparatorInDate]
-        guard let d = parser.date(from: s) else { return s }
+        parser.timeZone = .current
+        return parser.date(from: String(date.prefix(10)))
+    }
+
+    var formattedDate: String {
+        guard let d = parsedDate else { return String(date.prefix(10)) }
         let fmt = DateFormatter()
         fmt.dateStyle = .long
         return fmt.string(from: d)
@@ -93,6 +104,27 @@ struct Photo: Codable, Identifiable, Hashable {
     let elevation: Double?
     let timestamp: String?
     let camera: String?
+
+    /// Uploaded photos are usually stored as site-relative paths
+    /// (/objects/uploads/…); resolve those the way the web map does.
+    var imageURL: URL? {
+        let raw = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        let full: String
+        if raw.hasPrefix("http://") || raw.hasPrefix("https://") {
+            full = raw
+        } else if raw.hasPrefix("//") {
+            full = "https:" + raw
+        } else {
+            full = API.base + (raw.hasPrefix("/") ? "" : "/") + raw
+        }
+        return URL(string: full)
+            ?? full.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed).flatMap(URL.init(string:))
+    }
+
+    var coordinate: CLLocationCoordinate2D? {
+        guard let latitude, let longitude else { return nil }
+        return CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
 }
 
 // MARK: - User

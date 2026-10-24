@@ -2,13 +2,15 @@ import Foundation
 
 enum APIError: LocalizedError {
     case unauthorized
-    case httpError(Int)
+    case stravaNotConnected
+    case httpError(Int, message: String?, body: Data)
     case badURL
 
     var errorDescription: String? {
         switch self {
         case .unauthorized:       return "Session expired – please sign in again."
-        case .httpError(let c):   return "Server error \(c)."
+        case .stravaNotConnected: return "Strava isn't connected. Connect it from the Inbox at bigmiles.app."
+        case .httpError(let c, let msg, _): return msg ?? "Server error \(c)."
         case .badURL:             return "Invalid URL."
         }
     }
@@ -21,9 +23,14 @@ enum API {
         try await request(path: path, method: "GET", body: nil)
     }
 
-    static func post<T: Decodable>(_ path: String, body: [String: Any]) async throws -> T {
+    static func post<T: Decodable>(_ path: String, body: [String: Any] = [:]) async throws -> T {
         let data = try JSONSerialization.data(withJSONObject: body)
         return try await request(path: path, method: "POST", body: data)
+    }
+
+    static func put<T: Decodable>(_ path: String, body: [String: Any]) async throws -> T {
+        let data = try JSONSerialization.data(withJSONObject: body)
+        return try await request(path: path, method: "PUT", body: data)
     }
 
     static func delete(_ path: String) async throws {
@@ -43,12 +50,18 @@ enum API {
         let (data, response) = try await URLSession.shared.data(for: req)
 
         if let http = response as? HTTPURLResponse {
+            // Strava endpoints answer 401 when Strava (not BigMiles) isn't linked,
+            // so that must not sign the user out.
+            if http.statusCode == 401 && path.hasPrefix("/api/strava") {
+                throw APIError.stravaNotConnected
+            }
             if http.statusCode == 401 {
-                await AuthManager.shared.logout()
+                AuthManager.shared.logout()
                 throw APIError.unauthorized
             }
             if http.statusCode >= 400 {
-                throw APIError.httpError(http.statusCode)
+                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                throw APIError.httpError(http.statusCode, message: json?["message"] as? String, body: data)
             }
         }
 

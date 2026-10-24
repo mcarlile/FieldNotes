@@ -1,17 +1,20 @@
 import Foundation
+import Combine
 import AuthenticationServices
 import Security
+#if canImport(UIKit)
 import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 @MainActor
 class AuthManager: ObservableObject {
     static let shared = AuthManager()
-    private static let tokenKey = "com.bigmiles.authToken"
+    nonisolated private static let tokenKey = "com.bigmiles.authToken"
 
     @Published var isAuthenticated = false
     @Published var currentUser: User?
-
-    private var _session: ASWebAuthenticationSession?
 
     private init() {
         isAuthenticated = storedToken != nil
@@ -25,19 +28,7 @@ class AuthManager: ObservableObject {
     func login() async {
         guard let url = URL(string: "https://bigmiles.app/api/login?redirectTo=mobile") else { return }
 
-        let token: String? = await withCheckedContinuation { continuation in
-            let session = ASWebAuthenticationSession(url: url, callbackURLScheme: "bigmiles") { callbackURL, _ in
-                let components = callbackURL.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }
-                continuation.resume(returning: components?.queryItems?.first(where: { $0.name == "token" })?.value)
-            }
-            session.presentationContextProvider = WindowProvider.shared
-            session.prefersEphemeralWebBrowserSession = false
-            _session = session
-            session.start()
-        }
-        _session = nil
-
-        guard let token else { return }
+        guard let token = await WebAuth.start(url)?.queryValue("token") else { return }
         Keychain.save(AuthManager.tokenKey, value: token)
         do {
             currentUser = try await API.get("/api/me")
@@ -54,6 +45,35 @@ class AuthManager: ObservableObject {
     }
 }
 
+// MARK: - Browser sheet for sign-in and connecting services
+
+enum WebAuth {
+    private static var session: ASWebAuthenticationSession?
+
+    /// Opens `url` in the system browser sheet and returns the bigmiles:// URL
+    /// the server finally redirects to, or nil if the user closed the sheet.
+    static func start(_ url: URL) async -> URL? {
+        let result: URL? = await withCheckedContinuation { continuation in
+            let session = ASWebAuthenticationSession(url: url, callbackURLScheme: "bigmiles") { callbackURL, _ in
+                continuation.resume(returning: callbackURL)
+            }
+            session.presentationContextProvider = WindowProvider.shared
+            session.prefersEphemeralWebBrowserSession = false
+            self.session = session
+            session.start()
+        }
+        session = nil
+        return result
+    }
+}
+
+extension URL {
+    func queryValue(_ name: String) -> String? {
+        URLComponents(url: self, resolvingAgainstBaseURL: false)?
+            .queryItems?.first { $0.name == name }?.value
+    }
+}
+
 // MARK: - Window provider for OAuth sheet presentation
 
 final class WindowProvider: NSObject, ASWebAuthenticationPresentationContextProviding {
@@ -61,17 +81,26 @@ final class WindowProvider: NSObject, ASWebAuthenticationPresentationContextProv
     private override init() {}
 
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap { $0.windows }
-            .first { $0.isKeyWindow } ?? UIWindow()
+        #if canImport(UIKit)
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        if let key = scenes.flatMap(\.windows).first(where: \.isKeyWindow) {
+            return key
+        }
+        // The sign-in button lives in a window, so a scene always exists here.
+        guard let scene = scenes.first else { fatalError("Sign-in started without a window scene") }
+        return UIWindow(windowScene: scene)
+        #elseif canImport(AppKit)
+        return NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first ?? NSWindow()
+        #else
+        return ASPresentationAnchor()
+        #endif
     }
 }
 
 // MARK: - Keychain helpers
 
 enum Keychain {
-    static func read(_ key: String) -> String? {
+    nonisolated static func read(_ key: String) -> String? {
         let q: [CFString: Any] = [
             kSecClass:       kSecClassGenericPassword,
             kSecAttrAccount: key,
@@ -85,7 +114,7 @@ enum Keychain {
         return String(data: data, encoding: .utf8)
     }
 
-    static func save(_ key: String, value: String) {
+    nonisolated static func save(_ key: String, value: String) {
         delete(key)
         let attrs: [CFString: Any] = [
             kSecClass:       kSecClassGenericPassword,
@@ -95,7 +124,7 @@ enum Keychain {
         SecItemAdd(attrs as CFDictionary, nil)
     }
 
-    static func delete(_ key: String) {
+    nonisolated static func delete(_ key: String) {
         let q: [CFString: Any] = [kSecClass: kSecClassGenericPassword, kSecAttrAccount: key]
         SecItemDelete(q as CFDictionary)
     }

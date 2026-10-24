@@ -4,6 +4,8 @@ struct NoteDetailView: View {
     let note: FieldNote
     @State private var full: FieldNote?
     @State private var lightbox: Photo?
+    @State private var showEdit = false
+    @AppStorage("mapLayer") private var mapLayer: MapLayer = .standard
 
     private var display: FieldNote { full ?? note }
 
@@ -18,8 +20,16 @@ struct NoteDetailView: View {
 
                 // Map
                 if !display.mapCoordinates.isEmpty {
-                    RouteMapView(coordinates: display.mapCoordinates)
-                        .frame(height: 260)
+                    TrailMap(
+                        routes: [TrailRoute(id: display.id, coordinates: display.mapCoordinates)],
+                        photos: display.photos ?? [],
+                        layer: mapLayer,
+                        onSelectPhoto: { lightbox = $0 }
+                    )
+                    .frame(height: 340)
+                    .overlay(alignment: .topTrailing) {
+                        MapLayerMenu(layer: $mapLayer).padding(10)
+                    }
                 }
 
                 VStack(alignment: .leading, spacing: 16) {
@@ -80,13 +90,22 @@ struct NoteDetailView: View {
                             spacing: 10
                         ) {
                             ForEach(photos) { photo in
-                                AsyncImage(url: URL(string: photo.url)) { img in
-                                    img.resizable().scaledToFill()
-                                } placeholder: {
-                                    Rectangle().fill(border)
-                                }
-                                .frame(height: 160)
-                                .clipped()
+                                Rectangle().fill(border)
+                                    .frame(height: 160)
+                                    .overlay {
+                                        AsyncImage(url: photo.imageURL) { phase in
+                                            switch phase {
+                                            case .success(let img):
+                                                img.resizable().scaledToFill()
+                                            case .failure:
+                                                Image(systemName: "photo.badge.exclamationmark")
+                                                    .foregroundColor(muted)
+                                            default:
+                                                ProgressView()
+                                            }
+                                        }
+                                    }
+                                    .clipped()
                                 .cornerRadius(8)
                                 .onTapGesture { lightbox = photo }
                             }
@@ -98,9 +117,19 @@ struct NoteDetailView: View {
         }
         .background(sand.ignoresSafeArea())
         .navigationTitle(display.title)
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbarTitleDisplayMode(.inline)
         .task { await loadFull() }
-        .fullScreenCover(item: $lightbox) { photo in
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Edit") { showEdit = true }
+            }
+        }
+        .sheet(isPresented: $showEdit) {
+            TripFormView(existing: display) { _ in
+                Task { await loadFull() }
+            }
+        }
+        .lightboxCover(item: $lightbox) { photo in
             LightboxView(
                 initial: photo,
                 photos: display.photos ?? [],
@@ -159,7 +188,7 @@ struct LightboxView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            AsyncImage(url: URL(string: current.url)) { img in
+            AsyncImage(url: current.imageURL) { img in
                 img.resizable().scaledToFit()
             } placeholder: {
                 ProgressView().tint(.white)
@@ -194,3 +223,20 @@ struct LightboxView: View {
         }
     }
 }
+
+// MARK: - Cross-platform lightbox presentation
+
+private extension View {
+    @ViewBuilder
+    func lightboxCover<Item: Identifiable, Content: View>(
+        item: Binding<Item?>,
+        @ViewBuilder content: @escaping (Item) -> Content
+    ) -> some View {
+        #if os(iOS) || os(visionOS) || os(tvOS)
+        self.fullScreenCover(item: item, content: content)
+        #else
+        self.sheet(item: item, content: content)
+        #endif
+    }
+}
+

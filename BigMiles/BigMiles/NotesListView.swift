@@ -2,10 +2,17 @@ import SwiftUI
 
 struct NotesListView: View {
     @EnvironmentObject var auth: AuthManager
+    @ObservedObject private var health = HealthSync.shared
     @State private var notes: [FieldNote] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var searchText = ""
+    @State private var path: [FieldNote] = []
+    @State private var showNewTrip = false
+    @State private var showStravaImport = false
+    @AppStorage("homeShowsMap") private var showsMap = false
+    @AppStorage("mapLayer") private var mapLayer: MapLayer = .standard
+    @State private var selectedRouteIds: [String] = []
 
     private let sand   = Color(red: 245/255, green: 240/255, blue: 232/255)
     private let border = Color(red: 232/255, green: 226/255, blue: 214/255)
@@ -17,7 +24,7 @@ struct NotesListView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
                 if isLoading {
                     ProgressView()
@@ -30,10 +37,21 @@ struct NotesListView: View {
                         searchText.isEmpty ? "No field notes yet" : "No results",
                         systemImage: "map",
                         description: Text(searchText.isEmpty
-                            ? "Promote trips from the GPX Inbox at bigmiles.app."
+                            ? "Tap + to add a trip from a GPX file or Strava."
                             : "Try a different search term.")
                     )
                     .background(sand)
+                } else if showsMap {
+                    TrailMap(
+                        routes: filtered.map { TrailRoute(id: $0.id, coordinates: $0.mapCoordinates) },
+                        heat: true,
+                        layer: mapLayer,
+                        onSelectRoutes: { selectedRouteIds = $0 }
+                    )
+                    .ignoresSafeArea(edges: .bottom)
+                    .overlay(alignment: .topTrailing) {
+                        MapLayerMenu(layer: $mapLayer).padding(12)
+                    }
                 } else {
                     List(filtered) { note in
                         NavigationLink(value: note) {
@@ -48,21 +66,67 @@ struct NotesListView: View {
                 }
             }
             .navigationTitle("Field Notes")
+            .toolbarTitleDisplayMode(showsMap ? .inline : .automatic)
             .navigationDestination(for: FieldNote.self) { note in
                 NoteDetailView(note: note)
             }
             .searchable(text: $searchText, prompt: "Search")
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Sign out") { auth.logout() }
-                        .foregroundColor(muted)
-                        .font(.system(size: 14))
+                ToolbarItem(placement: .cancellationAction) {
+                    NavigationLink { SettingsView() } label: {
+                        Image(systemName: "gearshape")
+                    }
+                    .accessibilityLabel("Settings")
+                }
+                ToolbarItem(placement: .principal) {
+                    Picker("View", selection: $showsMap) {
+                        Image(systemName: "list.bullet").tag(false).accessibilityLabel("List")
+                        Image(systemName: "map").tag(true).accessibilityLabel("Map")
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 110)
+                }
+                // Same two entries as the web dashboard's Create dropdown.
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Button { showNewTrip = true } label: {
+                            Label("New trip", systemImage: "square.and.pencil")
+                        }
+                        Button { showStravaImport = true } label: {
+                            Label("Import from Strava", systemImage: "square.and.arrow.down")
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .accessibilityLabel("Create")
                 }
             }
             .background(sand.ignoresSafeArea())
             .refreshable { await loadNotes() }
+            .sheet(isPresented: $showNewTrip) {
+                TripFormView(onSaved: added)
+            }
+            .sheet(isPresented: $showStravaImport) {
+                StravaImportView(onSaved: added)
+            }
+            // Like the web heat map popup: every trip under the tap.
+            .sheet(isPresented: Binding(
+                get: { !selectedRouteIds.isEmpty },
+                set: { if !$0 { selectedRouteIds = [] } }
+            )) {
+                RoutePickerSheet(notes: notes.filter { selectedRouteIds.contains($0.id) }) { note in
+                    selectedRouteIds = []
+                    path = [note]
+                }
+            }
         }
         .task { await loadNotes() }
+        .onChange(of: health.importedCount) { Task { await loadNotes() } }
+    }
+
+    private func added(_ note: FieldNote) {
+        notes.insert(note, at: 0)
+        path = [note]
     }
 
     private func loadNotes() async {
@@ -74,6 +138,37 @@ struct NotesListView: View {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+    }
+}
+
+// MARK: - Map selection
+
+private struct RoutePickerSheet: View {
+    let notes: [FieldNote]
+    var onOpen: (FieldNote) -> Void
+
+    private let sand = Color(red: 245/255, green: 240/255, blue: 232/255)
+
+    var body: some View {
+        NavigationStack {
+            List(notes) { note in
+                Button { onOpen(note) } label: {
+                    HStack {
+                        NoteRow(note: note)
+                        Spacer()
+                        Image(systemName: "chevron.right").foregroundColor(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .listRowBackground(sand)
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(sand)
+            .navigationTitle(notes.count == 1 ? "1 trip" : "\(notes.count) trips here")
+            .toolbarTitleDisplayMode(.inline)
+        }
+        .presentationDetents(notes.count > 2 ? [.medium, .large] : [.height(200), .medium])
     }
 }
 
