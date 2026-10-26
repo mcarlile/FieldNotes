@@ -5,7 +5,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Modal } from "@carbon/react";
 import { Pencil, Trash2, ExternalLink, Download } from "lucide-react";
-import PublishButton from "@/components/publish-button";
+import ShareButton from "@/components/share-button";
 import PhotoLightbox from "@/components/photo-lightbox";
 import ElevationProfile from "@/components/elevation-profile";
 import { parseGpxData, parseGpxWithTimestamps } from "@shared/gpx-utils";
@@ -250,12 +250,11 @@ export default function FieldNoteDetail() {
         {canEdit && (
           <>
             <div className="pt-2">
-              <PublishButton
+              <ShareButton
                 id={fieldNote.id}
+                title={fieldNote.title}
                 isPublished={fieldNote.isPublished ?? false}
                 slug={fieldNote.slug ?? null}
-                publishPath="/notes"
-                apiPath="/api/field-notes"
                 queryKey={["/api/field-notes", id]}
               />
             </div>
