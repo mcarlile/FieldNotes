@@ -15,6 +15,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { createClipWithCoordinates, tripDurationSeconds } from "./trailcam";
 import { inboxTripGpxData, timedTripFields } from "./tripTimestamps";
+import { listGpxData } from "./tripListGpx";
 import { generateApiToken } from "./apiTokens";
 import { registerMcpRoutes } from "./mcp";
 import { getValidStravaToken, stravaFetch, buildGpxFromActivity, importGpxToInbox } from "./strava";
@@ -237,7 +238,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // ?media=videos keeps only the trips that have some.
       const counts = await storage.getTripMediaCounts(fieldNotes.map((note) => note.id));
       const fieldNotesWithCounts = fieldNotes
-        .map((note) => ({ ...note, ...(counts.get(note.id) ?? { photoCount: 0, videoCount: 0 }) }))
+        .map((note) => ({
+          ...note,
+          gpxData: listGpxData(note.gpxData),
+          ...(counts.get(note.id) ?? { photoCount: 0, videoCount: 0 }),
+        }))
         .filter((note) =>
           media === "photos" ? note.photoCount > 0 : media === "videos" ? note.videoCount > 0 : true,
         );
