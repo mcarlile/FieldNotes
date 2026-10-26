@@ -14,7 +14,7 @@ import {
   Loader2,
   X,
 } from "lucide-react";
-import { ChunkedVideoUploader } from "@/components/chunked-video-uploader";
+import { ChunkedVideoUploader, type UploadedClip } from "@/components/chunked-video-uploader";
 import { AutoPhotoUploader } from "@/components/auto-photo-uploader";
 import { ClipEditPopover } from "@/components/clip-edit-popover";
 import MapboxMap, { CameraAngle, ClipMarker, ClipSegment } from "@/components/mapbox-map";
@@ -274,21 +274,6 @@ export default function TripView({
     }
   };
 
-  const createClipMutation = useMutation({
-    mutationFn: async (clipData: InsertVideoClip) => {
-      const response = await apiRequest("/api/video-clips", "POST", clipData);
-      return response.json();
-    },
-    onSuccess: (clip: VideoClip) => {
-      toast({ title: "Clip added", description: `"${clip.title}"` });
-      queryClient.invalidateQueries({ queryKey: ["/api/video-clips", selectedProject?.id] });
-      // The trip's video count changed, for the dashboard and its filter.
-      queryClient.invalidateQueries({ queryKey: ["/api/field-notes"] });
-    },
-    onError: (error: Error) =>
-      toast({ title: "Error", description: error.message || "Failed to add video clip", variant: "destructive" }),
-  });
-
   const updateClipMutation = useMutation({
     mutationFn: async ({ id, updates }: { id: string; updates: Partial<InsertVideoClip> }) => {
       const response = await apiRequest(`/api/video-clips/${id}`, "PUT", updates);
@@ -302,30 +287,36 @@ export default function TripView({
       toast({ title: "Error", description: error.message || "Failed to update clip", variant: "destructive" }),
   });
 
-  const handleClipUpload = (clipData: {
-    title: string;
-    filename: string;
-    url: string;
-    startTime: number;
-    endTime: number;
-    duration: number;
-    color: string;
-    fileSize: string;
-    videoFormat: string;
-  }) => {
-    if (!selectedProject?.id) return;
-    createClipMutation.mutate({
-      fieldNoteId: selectedProject.id,
-      title: clipData.title,
-      filename: clipData.filename,
-      url: clipData.url,
-      startTime: clipData.startTime,
-      endTime: clipData.endTime,
-      duration: clipData.duration,
-      color: clipData.color,
-      fileSize: clipData.fileSize,
-      videoFormat: clipData.videoFormat,
-    });
+  // Saves clips one after another, so they keep the order they were picked in,
+  // with one notice for the batch.
+  const handleClipsUpload = async (clips: UploadedClip[]) => {
+    const fieldNoteId = selectedProject?.id;
+    if (!fieldNoteId) return;
+    let saved = 0;
+    for (const clip of clips) {
+      try {
+        await apiRequest("/api/video-clips", "POST", { fieldNoteId, ...clip });
+        saved++;
+      } catch {
+        // Counted below.
+      }
+    }
+    queryClient.invalidateQueries({ queryKey: ["/api/video-clips", fieldNoteId] });
+    // The trip's video count changed, for the dashboard and its filter.
+    queryClient.invalidateQueries({ queryKey: ["/api/field-notes"] });
+    if (saved > 0) {
+      toast({
+        title: saved === 1 ? "Clip added" : `${saved} clips added`,
+        description: clips.length === 1 ? `"${clips[0].title}"` : "They'll play once processing finishes.",
+      });
+    }
+    if (saved < clips.length) {
+      toast({
+        title: "Error",
+        description: `${clips.length - saved} clip${clips.length - saved === 1 ? "" : "s"} couldn't be added.`,
+        variant: "destructive",
+      });
+    }
   };
 
   // The first timed GPX point is the route's real start; older projects only
@@ -631,7 +622,7 @@ export default function TripView({
           </button>
           <div className="ml-auto">
             {tab === "videos" && canAddVideo && (
-              <ChunkedVideoUploader onComplete={handleClipUpload} routeStartTime={routeStartTime} buttonClassName={addButtonClass}>
+              <ChunkedVideoUploader onComplete={handleClipsUpload} routeStartTime={routeStartTime} buttonClassName={addButtonClass}>
                 + Add
               </ChunkedVideoUploader>
             )}

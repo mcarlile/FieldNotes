@@ -1,68 +1,104 @@
 import { createPortal } from "react-dom";
-import { useState, useRef, useCallback } from "react";
-import { 
+import { useState, useRef, useEffect, useCallback } from "react";
+import {
   Button as CarbonButton,
   Modal,
   FileUploaderDropContainer,
-  FileUploaderItem,
   ProgressBar,
   InlineNotification,
   TextInput,
   NumberInput,
-  Form,
   FormGroup,
-  Stack,
 } from "@carbon/react";
-import { Upload, Pause, Play, Close } from "@carbon/icons-react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
+import { Close, Renew } from "@carbon/icons-react";
 import { apiRequest } from "@/lib/queryClient";
 import { clipOffsetSeconds, parseCameraFilenameTime, readMp4CreationTime } from "@shared/clip-timing";
 
 const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB chunks
-const MAX_FILE_SIZE = 1.5 * 1024 * 1024 * 1024; // 1.5GB
+// The server takes at most 200 chunks (MAX_CHUNKS in server/routes.ts).
+const MAX_FILE_SIZE = 200 * CHUNK_SIZE;
+// Uploads that run at once. The server allows 6 per connection, and two keep
+// a home connection busy without tripping its rate limit.
+const PARALLEL_UPLOADS = 2;
+// Waits between attempts at a chunk; long enough to outlast the server's
+// one-minute rate-limit window.
+const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 16000, 30000];
+// Clips saved with the old single-file dialog's default color are given a
+// palette color by the trip page.
+const DEFAULT_CLIP_COLOR = "#3b82f6";
 
-interface ChunkUploadState {
+type UploadStatus = "reading" | "queued" | "uploading" | "complete" | "error";
+
+interface UploadItem {
+  id: string;
   file: File;
-  status: 'preparing' | 'uploading' | 'paused' | 'complete' | 'error';
+  status: UploadStatus;
   progress: number;
   uploadedBytes: number;
-  totalBytes: number;
   errorMessage?: string;
   url?: string;
   uploadKey?: string;
   uploadToken?: string;
-  currentChunk?: number;
-  totalChunks?: number;
+  title: string;
+  duration: number | null;
+  startTime: number;
+  endTime: number;
+  startTimeSource: string | null;
 }
 
-const clipFormSchema = z.object({
-  title: z.string().min(1, "Clip title is required"),
-  startTime: z.number().min(0, "Start time must be 0 or greater"),
-  endTime: z.number().min(0, "End time must be 0 or greater"),
-  color: z.string().default("#3b82f6"),
-});
-
-type ClipFormData = z.infer<typeof clipFormSchema>;
+export interface UploadedClip {
+  title: string;
+  filename: string;
+  url: string;
+  startTime: number;
+  endTime: number;
+  duration: number;
+  color: string;
+  fileSize: string;
+  videoFormat: string;
+}
 
 interface ChunkedVideoUploaderProps {
-  onComplete?: (clipData: {
-    title: string;
-    filename: string;
-    url: string;
-    startTime: number;
-    endTime: number;
-    duration: number;
-    color: string;
-    fileSize: string;
-    videoFormat: string;
-  }) => void;
+  onComplete?: (clips: UploadedClip[]) => void;
   buttonClassName?: string;
   children: React.ReactNode;
   // When the project's route started; used to place the clip on the timeline
   // from the video's recording time.
   routeStartTime?: Date | string | null;
+}
+
+function getVideoDuration(videoFile: File): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    const url = URL.createObjectURL(videoFile);
+    video.onloadedmetadata = () => {
+      URL.revokeObjectURL(url);
+      resolve(video.duration);
+    };
+    video.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Failed to load video metadata"));
+    };
+    video.src = url;
+  });
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes >= 1024 * 1024 * 1024) {
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function formatTime(seconds: number) {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+}
+
+function videoFormatOf(file: File) {
+  return file.type.split("/")[1]?.toUpperCase() || "MP4";
 }
 
 export function ChunkedVideoUploader({
@@ -72,54 +108,12 @@ export function ChunkedVideoUploader({
   routeStartTime,
 }: ChunkedVideoUploaderProps) {
   const [showModal, setShowModal] = useState(false);
-  const [uploadState, setUploadState] = useState<ChunkUploadState | null>(null);
-  const [videoDuration, setVideoDuration] = useState<number | null>(null);
-  const [startTimeSource, setStartTimeSource] = useState<string | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const isPausedRef = useRef(false);
+  const [items, setItems] = useState<UploadItem[]>([]);
+  const abortControllers = useRef(new Map<string, AbortController>());
+  const nextId = useRef(0);
 
-  const {
-    register,
-    handleSubmit,
-    watch,
-    setValue,
-    reset,
-    formState: { errors },
-  } = useForm<ClipFormData>({
-    resolver: zodResolver(clipFormSchema),
-    defaultValues: {
-      startTime: 0,
-      endTime: 0,
-      color: "#3b82f6",
-    },
-  });
-
-  const watchedStartTime = watch("startTime");
-  const watchedEndTime = watch("endTime");
-
-  const getVideoMetadata = useCallback((videoFile: File): Promise<{
-    duration: number;
-    format: string;
-  }> => {
-    return new Promise((resolve, reject) => {
-      const video = document.createElement('video');
-      video.preload = 'metadata';
-      const url = URL.createObjectURL(videoFile);
-      
-      video.onloadedmetadata = () => {
-        const duration = video.duration;
-        const format = videoFile.type.split('/')[1]?.toUpperCase() || 'MP4';
-        URL.revokeObjectURL(url);
-        resolve({ duration, format });
-      };
-      
-      video.onerror = () => {
-        URL.revokeObjectURL(url);
-        reject(new Error('Failed to load video metadata'));
-      };
-      
-      video.src = url;
-    });
+  const updateItem = useCallback((id: string, updates: Partial<UploadItem>) => {
+    setItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...updates } : item)));
   }, []);
 
   // Recording start from the camera filename, falling back to the MP4's own
@@ -141,365 +135,218 @@ export function ChunkedVideoUploader({
     return null;
   };
 
-  const setStartTime = (start: number) => {
-    setValue('startTime', start);
-    if (videoDuration) {
-      setValue('endTime', start + Math.round(videoDuration));
+  const readDetails = async (item: UploadItem) => {
+    try {
+      const duration = await getVideoDuration(item.file);
+      const detected = await detectStartOffset(item.file);
+      const start = detected?.offset ?? 0;
+      updateItem(item.id, {
+        status: "queued",
+        duration,
+        startTime: start,
+        endTime: start + Math.round(duration),
+        startTimeSource: detected?.source ?? null,
+      });
+    } catch (error) {
+      updateItem(item.id, {
+        status: "error",
+        errorMessage: error instanceof Error ? error.message : "Failed to read video",
+      });
     }
   };
 
-  const initUpload = async (): Promise<{ uploadKey: string; token: string }> => {
-    const response = await apiRequest("/api/video/init-upload", "POST");
-    return response.json();
-  };
-
   const uploadChunk = async (
-    chunk: Blob, 
-    chunkIndex: number, 
+    chunk: Blob,
+    chunkIndex: number,
     uploadKey: string,
     token: string,
     totalChunks: number,
     signal: AbortSignal,
-    retries: number = 3
   ): Promise<void> => {
     const formData = new FormData();
-    formData.append('chunk', chunk);
-    formData.append('chunkIndex', String(chunkIndex));
-    formData.append('totalChunks', String(totalChunks));
-    formData.append('uploadKey', uploadKey);
-    formData.append('token', token);
+    formData.append("chunk", chunk);
+    formData.append("chunkIndex", String(chunkIndex));
+    formData.append("totalChunks", String(totalChunks));
+    formData.append("uploadKey", uploadKey);
+    formData.append("token", token);
 
     let lastError: Error | null = null;
-    
-    for (let attempt = 0; attempt < retries; attempt++) {
+    for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
       try {
         await apiRequest("/api/video/upload-chunk", "POST", formData, { signal });
-        
-        return; // Success
+        return;
       } catch (error) {
-        if (error instanceof Error && error.name === 'AbortError') {
+        if (error instanceof Error && error.name === "AbortError") {
           throw error; // Don't retry aborted requests
         }
-        
         lastError = error as Error;
-        
-        if (attempt < retries - 1) {
-          // Exponential backoff: 1s, 2s, 4s
-          const delay = Math.pow(2, attempt) * 1000;
-          await new Promise(resolve => setTimeout(resolve, delay));
+        if (attempt < RETRY_DELAYS_MS.length) {
+          await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
         }
       }
     }
-    
-    throw lastError || new Error('Failed to upload chunk after retries');
+    throw lastError || new Error("Failed to upload chunk after retries");
   };
 
-  const completeUpload = async (uploadKey: string, token: string, filename: string, contentType: string): Promise<string> => {
-    const response = await apiRequest(
-      "/api/video/complete-upload",
-      "POST",
-      { uploadKey, token, filename, contentType },
-    );
-
-    const result = await response.json();
-    return result.url;
-  };
-
-  const uploadFile = async (file: File) => {
-    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-    
-    abortControllerRef.current = new AbortController();
-    isPausedRef.current = false;
-
-    setUploadState({
-      file,
-      status: 'preparing',
-      progress: 0,
-      uploadedBytes: 0,
-      totalBytes: file.size,
-      currentChunk: 0,
-      totalChunks,
-    });
-
-    try {
-      // Initialize upload and get token
-      const { uploadKey, token } = await initUpload();
-      
-      setUploadState(prev => prev ? {
-        ...prev,
-        status: 'uploading',
-        uploadKey,
-        uploadToken: token,
-      } : null);
-
-      for (let i = 0; i < totalChunks; i++) {
-        if (isPausedRef.current) {
-          setUploadState(prev => prev ? { ...prev, status: 'paused', currentChunk: i } : null);
-          return;
-        }
-
-        const start = i * CHUNK_SIZE;
-        const end = Math.min(start + CHUNK_SIZE, file.size);
-        const chunk = file.slice(start, end);
-
-        await uploadChunk(chunk, i, uploadKey, token, totalChunks, abortControllerRef.current.signal);
-
-        const uploadedBytes = end;
-        const progress = Math.round((uploadedBytes / file.size) * 100);
-        
-        setUploadState(prev => prev ? {
-          ...prev,
-          progress,
-          uploadedBytes,
-          currentChunk: i + 1,
-        } : null);
-      }
-
-      const url = await completeUpload(uploadKey, token, file.name, file.type);
-
-      setUploadState(prev => prev ? {
-        ...prev,
-        status: 'complete',
-        progress: 100,
-        url,
-      } : null);
-
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        return;
-      }
-      
-      setUploadState(prev => prev ? {
-        ...prev,
-        status: 'error',
-        errorMessage: error instanceof Error ? error.message : 'Upload failed',
-      } : null);
-    }
-  };
-
-  const handleFileAdd = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (!files || files.length === 0) return;
-
-    const videoFile = files[0];
-    
-    if (!videoFile.type.startsWith('video/')) {
-      setUploadState({
-        file: videoFile,
-        status: 'error',
-        progress: 0,
-        uploadedBytes: 0,
-        totalBytes: videoFile.size,
-        errorMessage: 'Please select a video file',
-      });
-      return;
-    }
-
-    if (videoFile.size > MAX_FILE_SIZE) {
-      setUploadState({
-        file: videoFile,
-        status: 'error',
-        progress: 0,
-        uploadedBytes: 0,
-        totalBytes: videoFile.size,
-        errorMessage: `File size exceeds 1.5GB limit`,
-      });
-      return;
-    }
-
-    setUploadState({
-      file: videoFile,
-      status: 'preparing',
-      progress: 0,
-      uploadedBytes: 0,
-      totalBytes: videoFile.size,
-    });
-
-    try {
-      const { duration } = await getVideoMetadata(videoFile);
-      setVideoDuration(duration);
-      const detected = await detectStartOffset(videoFile);
-      const start = detected?.offset ?? 0;
-      setStartTimeSource(detected?.source ?? null);
-      setValue('startTime', start);
-      setValue('endTime', start + Math.round(duration));
-      setValue('title', videoFile.name.replace(/\.[^/.]+$/, ""));
-
-      await uploadFile(videoFile);
-    } catch (error) {
-      setUploadState(prev => prev ? {
-        ...prev,
-        status: 'error',
-        errorMessage: error instanceof Error ? error.message : 'Failed to process video',
-      } : null);
-    }
-  };
-
-  const handlePauseResume = () => {
-    if (!uploadState) return;
-
-    if (uploadState.status === 'uploading') {
-      isPausedRef.current = true;
-      abortControllerRef.current?.abort();
-    } else if (uploadState.status === 'paused' && uploadState.currentChunk !== undefined) {
-      resumeUpload();
-    }
-  };
-
-  const getUploadStatus = async (uploadKey: string, token: string): Promise<{ receivedChunks: number[] } | null> => {
+  // Chunks the server already has, so a retried upload picks up where it
+  // stopped. Null when the server no longer knows the upload.
+  const getReceivedChunks = async (uploadKey: string, token: string): Promise<Set<number> | null> => {
     try {
       const response = await apiRequest(`/api/video/upload/${uploadKey}/status`, "POST", { token });
-      return response.json();
+      const status = await response.json();
+      return new Set<number>(status.receivedChunks ?? []);
     } catch {
       return null;
     }
   };
 
-  const resumeUpload = async () => {
-    if (!uploadState || !uploadState.uploadKey || !uploadState.uploadToken) return;
-
-    const file = uploadState.file;
-    const token = uploadState.uploadToken;
-    const totalChunks = uploadState.totalChunks || Math.ceil(file.size / CHUNK_SIZE);
-    
-    // Get which chunks have already been uploaded
-    const status = await getUploadStatus(uploadState.uploadKey, token);
-    const uploadedChunks = new Set(status?.receivedChunks || []);
-    
-    abortControllerRef.current = new AbortController();
-    isPausedRef.current = false;
-
-    setUploadState(prev => prev ? { ...prev, status: 'uploading' } : null);
+  const uploadItem = async (item: UploadItem) => {
+    const { file } = item;
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+    const controller = new AbortController();
+    abortControllers.current.set(item.id, controller);
 
     try {
+      let uploadKey = item.uploadKey;
+      let token = item.uploadToken;
+      let received = uploadKey && token ? await getReceivedChunks(uploadKey, token) : null;
+      if (!uploadKey || !token || !received) {
+        const response = await apiRequest("/api/video/init-upload", "POST", undefined, { signal: controller.signal });
+        ({ uploadKey, token } = await response.json());
+        received = new Set<number>();
+      }
+      updateItem(item.id, { uploadKey, uploadToken: token });
+
       for (let i = 0; i < totalChunks; i++) {
-        if (isPausedRef.current) {
-          setUploadState(prev => prev ? { ...prev, status: 'paused', currentChunk: i } : null);
-          return;
-        }
-
-        // Skip already uploaded chunks
-        if (uploadedChunks.has(i)) {
-          continue;
-        }
-
+        if (received.has(i)) continue;
         const start = i * CHUNK_SIZE;
         const end = Math.min(start + CHUNK_SIZE, file.size);
-        const chunk = file.slice(start, end);
-
-        await uploadChunk(chunk, i, uploadState.uploadKey!, token, totalChunks, abortControllerRef.current.signal);
-        uploadedChunks.add(i);
-
-        const uploadedBytes = Math.min((uploadedChunks.size / totalChunks) * file.size, file.size);
-        const progress = Math.round((uploadedChunks.size / totalChunks) * 100);
-        
-        setUploadState(prev => prev ? {
-          ...prev,
-          progress,
-          uploadedBytes,
-          currentChunk: uploadedChunks.size,
-        } : null);
+        await uploadChunk(file.slice(start, end), i, uploadKey!, token!, totalChunks, controller.signal);
+        received.add(i);
+        const uploadedBytes = Math.min(received.size * CHUNK_SIZE, file.size);
+        updateItem(item.id, { uploadedBytes, progress: Math.round((uploadedBytes / file.size) * 100) });
       }
 
-      const url = await completeUpload(uploadState.uploadKey, token, file.name, file.type);
-
-      setUploadState(prev => prev ? {
-        ...prev,
-        status: 'complete',
-        progress: 100,
-        url,
-      } : null);
-
+      const response = await apiRequest(
+        "/api/video/complete-upload",
+        "POST",
+        { uploadKey, token, filename: file.name, contentType: file.type },
+        { signal: controller.signal },
+      );
+      const result = await response.json();
+      updateItem(item.id, { status: "complete", progress: 100, uploadedBytes: file.size, url: result.url });
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        return;
-      }
-      
-      setUploadState(prev => prev ? {
-        ...prev,
-        status: 'error',
-        errorMessage: error instanceof Error ? error.message : 'Upload failed',
-      } : null);
-    }
-  };
-
-  const handleFileRemove = () => {
-    abortControllerRef.current?.abort();
-    setUploadState(null);
-    setVideoDuration(null);
-    setStartTimeSource(null);
-    reset();
-  };
-
-  const onSubmit = (data: ClipFormData) => {
-    if (!uploadState || uploadState.status !== 'complete' || !uploadState.url) {
-      return;
-    }
-
-    if (data.endTime <= data.startTime) {
-      return;
-    }
-
-    const duration = data.endTime - data.startTime;
-    const fileSize = formatFileSize(uploadState.totalBytes);
-    const videoFormat = uploadState.file.type.split('/')[1]?.toUpperCase() || 'MP4';
-
-    if (onComplete) {
-      onComplete({
-        title: data.title,
-        filename: uploadState.file.name,
-        url: uploadState.url,
-        startTime: data.startTime,
-        endTime: data.endTime,
-        duration,
-        color: data.color,
-        fileSize,
-        videoFormat,
+      if (error instanceof Error && error.name === "AbortError") return;
+      updateItem(item.id, {
+        status: "error",
+        errorMessage: error instanceof Error ? error.message : "Upload failed",
       });
+    } finally {
+      abortControllers.current.delete(item.id);
     }
+  };
 
-    resetAndClose();
+  // Start queued uploads, a few at a time, in the order they were added.
+  useEffect(() => {
+    const running = items.filter((item) => item.status === "uploading").length;
+    const next = items.filter((item) => item.status === "queued").slice(0, Math.max(0, PARALLEL_UPLOADS - running));
+    if (next.length === 0) return;
+    setItems((prev) =>
+      prev.map((item) => (next.some((n) => n.id === item.id) ? { ...item, status: "uploading" } : item)),
+    );
+    next.forEach((item) => uploadItem(item));
+    // uploadItem only reads the item it's given.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items]);
+
+  const handleFilesAdded = (files: File[]) => {
+    const added: UploadItem[] = files.map((file) => {
+      const base: UploadItem = {
+        id: `upload-${nextId.current++}`,
+        file,
+        status: "reading",
+        progress: 0,
+        uploadedBytes: 0,
+        title: file.name.replace(/\.[^/.]+$/, ""),
+        duration: null,
+        startTime: 0,
+        endTime: 0,
+        startTimeSource: null,
+      };
+      if (!file.type.startsWith("video/")) {
+        return { ...base, status: "error", errorMessage: "Not a video file" };
+      }
+      if (file.size > MAX_FILE_SIZE) {
+        return { ...base, status: "error", errorMessage: `Larger than the ${formatFileSize(MAX_FILE_SIZE)} limit` };
+      }
+      return base;
+    });
+    setItems((prev) => [...prev, ...added]);
+    added.filter((item) => item.status === "reading").forEach((item) => readDetails(item));
+  };
+
+  const removeItem = (id: string) => {
+    abortControllers.current.get(id)?.abort();
+    setItems((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const retryItem = (item: UploadItem) => {
+    // Files that couldn't be read or are too big can't be retried.
+    if (item.duration === null) return;
+    updateItem(item.id, { status: "queued", errorMessage: undefined });
   };
 
   const resetAndClose = () => {
-    abortControllerRef.current?.abort();
-    setUploadState(null);
-    setVideoDuration(null);
-    reset();
+    abortControllers.current.forEach((controller) => controller.abort());
+    abortControllers.current.clear();
+    setItems([]);
     setShowModal(false);
   };
 
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  const completed = items.filter((item) => item.status === "complete");
+  const inProgress = items.some((item) => ["reading", "queued", "uploading"].includes(item.status));
+  const timesValid = completed.every((item) => item.endTime > item.startTime && item.startTime >= 0);
+  const titlesValid = completed.every((item) => item.title.trim().length > 0);
+  const canAdd = completed.length > 0 && !inProgress && timesValid && titlesValid;
+
+  const handleSubmit = () => {
+    if (!canAdd) return;
+    onComplete?.(
+      completed.map((item) => ({
+        title: item.title.trim(),
+        filename: item.file.name,
+        url: item.url!,
+        startTime: item.startTime,
+        endTime: item.endTime,
+        duration: item.endTime - item.startTime,
+        color: DEFAULT_CLIP_COLOR,
+        fileSize: formatFileSize(item.file.size),
+        videoFormat: videoFormatOf(item.file),
+      })),
+    );
+    resetAndClose();
   };
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes >= 1024 * 1024 * 1024) {
-      return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  const statusText = (item: UploadItem) => {
+    switch (item.status) {
+      case "reading":
+        return "Reading video...";
+      case "queued":
+        return "Waiting to upload";
+      case "uploading":
+        return `Uploading ${formatFileSize(item.uploadedBytes)} / ${formatFileSize(item.file.size)}`;
+      case "complete":
+        return `Uploaded, ${formatFileSize(item.file.size)}`;
+      case "error":
+        return item.errorMessage || "Upload failed";
     }
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   };
 
-  const getStatusText = () => {
-    if (!uploadState) return '';
-    
-    switch (uploadState.status) {
-      case 'preparing':
-        return 'Preparing video...';
-      case 'uploading':
-        return `Uploading... ${formatFileSize(uploadState.uploadedBytes)} / ${formatFileSize(uploadState.totalBytes)}`;
-      case 'paused':
-        return `Paused - ${formatFileSize(uploadState.uploadedBytes)} / ${formatFileSize(uploadState.totalBytes)}`;
-      case 'complete':
-        return 'Upload complete!';
-      case 'error':
-        return uploadState.errorMessage || 'Upload failed';
-      default:
-        return '';
-    }
-  };
+  const primaryText = inProgress
+    ? `Uploading ${items.filter((item) => item.status !== "complete" && item.status !== "error").length} of ${items.length}...`
+    : completed.length === 1
+      ? "Add clip"
+      : `Add ${completed.length} clips`;
 
   return (
     <div>
@@ -514,168 +361,125 @@ export function ChunkedVideoUploader({
 
       {/* On the body, so a card or panel the button sits in can't clip or trap it. */}
       {createPortal(
-      <Modal
-        open={showModal}
-        onRequestClose={resetAndClose}
-        modalHeading="Upload Video Clip"
-        primaryButtonText={uploadState?.status === 'complete' ? "Add Clip" : "Cancel"}
-        secondaryButtonText={uploadState?.status === 'complete' ? "Upload Another" : undefined}
-        onRequestSubmit={uploadState?.status === 'complete' ? handleSubmit(onSubmit) : resetAndClose}
-        onSecondarySubmit={uploadState?.status === 'complete' ? handleFileRemove : undefined}
-        primaryButtonDisabled={uploadState?.status !== 'complete'}
-        size="lg"
-        data-testid="modal-video-upload"
-      >
-        <div className="space-y-6">
-          {!uploadState && (
-            <FormGroup legendText="Video File">
+        <Modal
+          open={showModal}
+          onRequestClose={resetAndClose}
+          modalHeading="Upload video clips"
+          primaryButtonText={primaryText}
+          secondaryButtonText="Cancel"
+          onRequestSubmit={handleSubmit}
+          onSecondarySubmit={resetAndClose}
+          primaryButtonDisabled={!canAdd}
+          size="lg"
+          data-testid="modal-video-upload"
+        >
+          <div className="space-y-6">
+            <FormGroup legendText="Video files">
               <FileUploaderDropContainer
-                accept={['video/*']}
-                labelText="Drag and drop your video file here or click to browse"
+                accept={["video/*"]}
+                multiple
+                labelText="Drag and drop video files here or click to browse"
                 onAddFiles={(_, { addedFiles }) => {
-                  if (addedFiles.length > 0) {
-                    const mockEvent = {
-                      target: { files: addedFiles } as unknown
-                    } as React.ChangeEvent<HTMLInputElement>;
-                    handleFileAdd(mockEvent);
-                  }
+                  if (addedFiles.length > 0) handleFilesAdded(Array.from(addedFiles as File[]));
                 }}
                 data-testid="drop-container-video"
               />
               <div className="text-sm text-muted-foreground mt-2">
-                <p>Supported formats: MP4, WebM, MOV, AVI</p>
-                <p>Maximum file size: 1.5GB</p>
-                <p className="mt-1 text-xs">Large files are uploaded in chunks with resume capability</p>
+                <p>MP4, WebM, MOV or AVI, up to 4K, each up to {formatFileSize(MAX_FILE_SIZE)}.</p>
+                <p className="mt-1 text-xs">Pick several at once; they upload {PARALLEL_UPLOADS} at a time.</p>
               </div>
             </FormGroup>
-          )}
 
-          {uploadState && (
-            <div className="space-y-4">
-              <FileUploaderItem
-                name={uploadState.file.name}
-                status={uploadState.status === 'error' ? 'edit' : 'complete'}
-                onDelete={uploadState.status !== 'uploading' ? handleFileRemove : undefined}
-                data-testid={`file-item-${uploadState.file.name}`}
-              />
+            {items.length > 0 && (
+              <div className="space-y-4">
+                {items.map((item) => (
+                  <div key={item.id} className="border border-border rounded p-3 space-y-2" data-testid={`upload-item-${item.file.name}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium truncate" title={item.file.name}>{item.file.name}</span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {item.status === "error" && item.duration !== null && (
+                          <CarbonButton kind="ghost" size="sm" renderIcon={Renew} onClick={() => retryItem(item)} data-testid="button-retry-upload">
+                            Retry
+                          </CarbonButton>
+                        )}
+                        <CarbonButton
+                          kind="ghost"
+                          size="sm"
+                          hasIconOnly
+                          renderIcon={Close}
+                          iconDescription="Remove"
+                          onClick={() => removeItem(item.id)}
+                          data-testid="button-remove-upload"
+                        />
+                      </div>
+                    </div>
 
-              {(uploadState.status === 'preparing' || uploadState.status === 'uploading' || uploadState.status === 'paused') && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">{getStatusText()}</span>
-                    {(uploadState.status === 'uploading' || uploadState.status === 'paused') && (
-                      <CarbonButton
-                        kind="ghost"
-                        size="sm"
-                        renderIcon={uploadState.status === 'uploading' ? Pause : Play}
-                        onClick={handlePauseResume}
-                        data-testid="button-pause-resume"
-                      >
-                        {uploadState.status === 'uploading' ? 'Pause' : 'Resume'}
-                      </CarbonButton>
+                    {item.status === "error" ? (
+                      <InlineNotification kind="error" title="Upload error" subtitle={statusText(item)} hideCloseButton lowContrast />
+                    ) : (
+                      <ProgressBar
+                        value={item.status === "complete" ? 100 : item.progress}
+                        max={100}
+                        size="small"
+                        label={statusText(item)}
+                        hideLabel={false}
+                      />
+                    )}
+
+                    {item.duration !== null && item.status !== "error" && (
+                      <div className="grid grid-cols-1 sm:grid-cols-[2fr_1fr_1fr] gap-3">
+                        <TextInput
+                          id={`${item.id}-title`}
+                          labelText="Clip title"
+                          size="sm"
+                          value={item.title}
+                          invalid={!item.title.trim()}
+                          invalidText="Required"
+                          onChange={(e) => updateItem(item.id, { title: e.target.value })}
+                          data-testid="input-clip-title"
+                        />
+                        <NumberInput
+                          id={`${item.id}-start`}
+                          label="Start (s after route start)"
+                          size="sm"
+                          hideSteppers
+                          min={0}
+                          value={item.startTime}
+                          onChange={(e) => {
+                            const start = Number((e.target as HTMLInputElement).value);
+                            updateItem(item.id, { startTime: start, endTime: start + Math.round(item.duration ?? 0) });
+                          }}
+                          data-testid="input-start-time"
+                        />
+                        <NumberInput
+                          id={`${item.id}-end`}
+                          label="End (s after route start)"
+                          size="sm"
+                          hideSteppers
+                          min={0}
+                          value={item.endTime}
+                          invalid={item.endTime <= item.startTime}
+                          invalidText="Must be after start"
+                          onChange={(e) => updateItem(item.id, { endTime: Number((e.target as HTMLInputElement).value) })}
+                          data-testid="input-end-time"
+                        />
+                      </div>
+                    )}
+
+                    {item.duration !== null && item.status !== "error" && (
+                      <div className="text-xs text-muted-foreground">
+                        Length {formatTime(item.duration)}
+                        {item.startTimeSource
+                          ? ` · start from ${item.startTimeSource}`
+                          : " · start time not found, enter it by hand"}
+                      </div>
                     )}
                   </div>
-                  <ProgressBar 
-                    value={uploadState.progress} 
-                    max={100}
-                    label={`Uploading: ${uploadState.progress}%`}
-                    data-testid="progress-video-upload"
-                  />
-                  {uploadState.currentChunk !== undefined && uploadState.totalChunks && (
-                    <div className="text-xs text-muted-foreground">
-                      Chunk {uploadState.currentChunk} of {uploadState.totalChunks}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {uploadState.status === 'error' && uploadState.errorMessage && (
-                <InlineNotification
-                  kind="error"
-                  title="Upload Error"
-                  subtitle={uploadState.errorMessage}
-                  hideCloseButton
-                  data-testid="notification-video-error"
-                />
-              )}
-
-              {uploadState.status === 'complete' && videoDuration && (
-                <InlineNotification
-                  kind="success"
-                  title="Video Uploaded Successfully"
-                  subtitle={`Duration: ${formatTime(videoDuration)}, Size: ${formatFileSize(uploadState.totalBytes)}`}
-                  hideCloseButton
-                  data-testid="notification-video-success"
-                />
-              )}
-            </div>
-          )}
-
-          {uploadState?.status === 'complete' && (
-            <Form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-              <FormGroup legendText="Clip Details">
-                <Stack gap={4}>
-                  <TextInput
-                    id="title"
-                    labelText="Clip Title *"
-                    placeholder="Enter a name for this video clip"
-                    invalid={!!errors.title}
-                    invalidText={errors.title?.message}
-                    data-testid="input-clip-title"
-                    {...register("title")}
-                  />
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <NumberInput
-                      id="startTime"
-                      label="Start (seconds after route start)"
-                      min={0}
-                      step={1}
-                      value={watchedStartTime}
-                      onChange={(e) => setStartTime(Number((e.target as HTMLInputElement).value))}
-                      invalid={!!errors.startTime}
-                      invalidText={errors.startTime?.message}
-                      data-testid="input-start-time"
-                    />
-
-                    <NumberInput
-                      id="endTime"
-                      label="End (seconds after route start)"
-                      min={0}
-                      step={1}
-                      value={watchedEndTime}
-                      onChange={(e) => setValue('endTime', Number((e.target as HTMLInputElement).value))}
-                      invalid={!!errors.endTime || watchedEndTime <= watchedStartTime}
-                      invalidText={errors.endTime?.message || (watchedEndTime <= watchedStartTime ? "End time must be after start time" : "")}
-                      data-testid="input-end-time"
-                    />
-                  </div>
-
-                  {videoDuration && (
-                    <div className="text-sm text-muted-foreground">
-                      Video Duration: {formatTime(videoDuration)} | 
-                      Clip Duration: {formatTime(Math.max(0, watchedEndTime - watchedStartTime))}
-                      {startTimeSource && ` | Start detected from ${startTimeSource}`}
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-2">
-                      Timeline Color
-                    </label>
-                    <input
-                      type="color"
-                      className="w-16 h-8 rounded border border-border"
-                      data-testid="input-clip-color"
-                      {...register("color")}
-                    />
-                  </div>
-                </Stack>
-              </FormGroup>
-            </Form>
-          )}
-        </div>
-      </Modal>,
+                ))}
+              </div>
+            )}
+          </div>
+        </Modal>,
         document.body,
       )}
     </div>
