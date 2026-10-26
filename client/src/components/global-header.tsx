@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useClerk, useUser } from "@clerk/react";
 import { useTheme } from "@/contexts/theme-context";
-import AppSwitcher from "@/components/app-switcher";
+import BrandWordmark from "@/components/brand-wordmark";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Menu, X, Sun, Moon, LogIn, LogOut, User, Import } from "lucide-react";
+import { Menu, X, Sun, Moon, LogIn, LogOut, User, Import, NotebookText } from "lucide-react";
 
 export default function GlobalHeader() {
   const { user } = useUser();
@@ -42,35 +42,13 @@ export default function GlobalHeader() {
   );
 
   return (
-    <header data-global-header className="bg-background sticky top-0 z-50 backdrop-blur-sm bg-opacity-90">
+    <header data-global-header className="bg-background sticky top-0 z-50 backdrop-blur-sm">
       <div className="px-5 sm:px-8 h-11 flex items-center justify-between">
         {/* Brand wordmark */}
-        <AppSwitcher onNavigate={() => setMobileOpen(false)} />
+        <BrandWordmark onNavigate={() => setMobileOpen(false)} />
 
         {/* Desktop nav */}
         <nav className="hidden sm:flex items-center gap-6">
-          {user && (
-            <>
-              <Link
-                href="/dashboard"
-                className={`text-sm transition-colors hover:text-foreground hover:underline underline-offset-4 ${
-                  location === "/dashboard" ? "text-foreground" : "text-muted-foreground"
-                }`}
-              >
-                Field notes
-              </Link>
-              <Link
-                href="/inbox"
-                className={`relative text-sm transition-colors hover:text-foreground hover:underline underline-offset-4 flex items-center gap-1.5 ${
-                  location === "/inbox" ? "text-foreground" : "text-muted-foreground"
-                }`}
-              >
-                <Import className="h-3.5 w-3.5" aria-hidden="true" />
-                Import field note
-              </Link>
-            </>
-          )}
-
           <button
             onClick={toggleTheme}
             className="text-muted-foreground hover:text-foreground transition-colors"
@@ -94,6 +72,19 @@ export default function GlobalHeader() {
               <DropdownMenuContent align="end">
                 <DropdownMenuItem disabled className="text-xs text-muted-foreground">
                   Signed in as {displayName}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild className="gap-2">
+                  <Link href="/dashboard">
+                    <NotebookText className="h-4 w-4" />
+                    Field notes
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild className="gap-2">
+                  <Link href="/inbox">
+                    <Import className="h-4 w-4" />
+                    Import field note
+                  </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
