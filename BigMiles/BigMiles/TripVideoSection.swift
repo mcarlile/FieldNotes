@@ -13,7 +13,14 @@ final class TripVideoPlayback: ObservableObject {
     let player = AVPlayer()
     @Published private(set) var clip: VideoClip?
     @Published private(set) var seconds: Double = 0
+    @Published private(set) var isPlaying = false
+    /// Bumped each time a clip starts playing; the map zooms in behind the
+    /// pin and starts following it, as on the web.
+    @Published private(set) var focusRequest = 0
+    /// The video fills the screen; the same player keeps going.
+    @Published var fullScreen = false
     private var timeObserver: Any?
+    private var statusObserver: AnyCancellable?
 
     init() {
         timeObserver = player.addPeriodicTimeObserver(
@@ -21,6 +28,15 @@ final class TripVideoPlayback: ObservableObject {
         ) { [weak self] time in
             MainActor.assumeIsolated { self?.seconds = time.seconds.isFinite ? time.seconds : 0 }
         }
+        statusObserver = player.publisher(for: \.timeControlStatus)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] status in
+                guard let self else { return }
+                // Buffering counts as playing, so a stall doesn't re-zoom the map.
+                let playing = status != .paused
+                if playing && !isPlaying { focusRequest += 1 }
+                isPlaying = playing
+            }
     }
 
     deinit {
@@ -46,6 +62,18 @@ final class TripVideoPlayback: ObservableObject {
         guard let clip, let track else { return nil }
         return track.coordinate(at: clip.startTime + syncOffset + seconds)
     }
+
+    /// The direction of travel at the frame on screen; the chase-cam faces it.
+    func bearing(on track: TimedTrack?, syncOffset: Double) -> Double? {
+        guard let clip, let track else { return nil }
+        return track.bearing(at: clip.startTime + syncOffset + seconds)
+    }
+
+    /// The stretch of route the selected clip covers.
+    func clipSegment(on track: TimedTrack?, syncOffset: Double) -> [CLLocationCoordinate2D] {
+        guard let clip, let track else { return [] }
+        return track.segment(from: clip.startTime + syncOffset, to: clip.endTime + syncOffset)
+    }
 }
 
 /// The trip page's video section: the player, then the clips to choose from.
@@ -66,9 +94,23 @@ struct TripVideoSection: View {
 
             ZStack {
                 Color.black
-                if playback.clip != nil {
+                // One player can only show in one place, so the inline view
+                // steps aside while the video is full screen.
+                if playback.clip != nil && !playback.fullScreen {
                     VideoPlayer(player: playback.player)
-                } else {
+                        .overlay(alignment: .topTrailing) {
+                            Button { playback.fullScreen = true } label: {
+                                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .padding(8)
+                                    .background(.black.opacity(0.45), in: Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .padding(8)
+                            .accessibilityLabel("Full screen")
+                        }
+                } else if playback.clip == nil {
                     VStack(spacing: 6) {
                         Image(systemName: "play.rectangle")
                             .font(.system(size: 28))
@@ -91,7 +133,11 @@ struct TripVideoSection: View {
                 }
             }
         }
-        .onDisappear { playback.stop() }
+        // Going full screen covers this view; only leaving the trip stops it.
+        .onDisappear { if !playback.fullScreen { playback.stop() } }
+        .fullScreenVideo(isPresented: $playback.fullScreen) {
+            FullScreenVideo(playback: playback)
+        }
     }
 
     private func card(_ clip: VideoClip) -> some View {
@@ -125,5 +171,42 @@ struct TripVideoSection: View {
         }
         .frame(width: 140, alignment: .leading)
         .contentShape(Rectangle())
+    }
+}
+
+/// The playing clip filling the screen, with a button back to the trip.
+private struct FullScreenVideo: View {
+    @ObservedObject var playback: TripVideoPlayback
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black.ignoresSafeArea()
+            VideoPlayer(player: playback.player)
+                .ignoresSafeArea()
+            Button { playback.fullScreen = false } label: {
+                Image(systemName: "arrow.down.right.and.arrow.up.left")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(10)
+                    .background(.black.opacity(0.45), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .padding(16)
+            .accessibilityLabel("Exit full screen")
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func fullScreenVideo<Content: View>(
+        isPresented: Binding<Bool>,
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+        #if os(iOS) || os(visionOS) || os(tvOS)
+        self.fullScreenCover(isPresented: isPresented, content: content)
+        #else
+        self.sheet(isPresented: isPresented, content: content)
+        #endif
     }
 }
