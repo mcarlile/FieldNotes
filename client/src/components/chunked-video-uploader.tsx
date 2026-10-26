@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { useState, useRef, useCallback } from "react";
 import { 
   Button as CarbonButton,
@@ -511,6 +512,8 @@ export function ChunkedVideoUploader({
         {children}
       </button>
 
+      {/* On the body, so a card or panel the button sits in can't clip or trap it. */}
+      {createPortal(
       <Modal
         open={showModal}
         onRequestClose={resetAndClose}
@@ -672,7 +675,9 @@ export function ChunkedVideoUploader({
             </Form>
           )}
         </div>
-      </Modal>
+      </Modal>,
+        document.body,
+      )}
     </div>
   );
 }

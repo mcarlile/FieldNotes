@@ -582,7 +582,7 @@ export default function TripView({
 
       {/* Trip card: back, name and details; folds down to its header. */}
       <aside
-        className="absolute z-20 top-3 left-3 right-3 md:right-auto flex flex-col max-h-[50%] md:max-h-[calc(100%-1.5rem)] rounded-lg border border-border bg-card/95 backdrop-blur shadow-lg"
+        className="absolute z-20 top-3 left-3 right-3 md:right-auto flex flex-col max-h-[50%] md:max-h-[calc(100%-1.5rem)] rounded-lg border border-border bg-card shadow-lg"
         style={isMobile ? undefined : { width: CARD_WIDTH }}
         data-testid="trip-card"
       >
@@ -618,7 +618,7 @@ export default function TripView({
       <section
         className={`absolute z-20 inset-x-3 bottom-3 max-h-[45%] md:inset-x-auto md:right-3 md:top-3 md:max-h-[calc(100%-1.5rem)] ${
           playerOpen ? "md:bottom-3" : "md:bottom-auto"
-        } flex flex-col rounded-lg border border-border bg-card/95 backdrop-blur shadow-lg md:transition-[width] md:duration-300`}
+        } flex flex-col rounded-lg border border-border bg-card shadow-lg md:transition-[width] md:duration-300`}
         style={isMobile ? undefined : { width: mediaWidth }}
         data-testid="media-card"
       >
