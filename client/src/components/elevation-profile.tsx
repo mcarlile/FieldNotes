@@ -5,9 +5,11 @@ interface ElevationProfileProps {
   elevationProfile: ElevationPoint[];
   onHoverPoint?: (point: ElevationPoint | null) => void;
   className?: string;
+  /** The chart's height classes. */
+  chartClassName?: string;
 }
 
-export default function ElevationProfile({ elevationProfile, onHoverPoint, className }: ElevationProfileProps) {
+export default function ElevationProfile({ elevationProfile, onHoverPoint, className, chartClassName = "h-56 sm:h-64" }: ElevationProfileProps) {
   if (!elevationProfile || elevationProfile.length === 0) {
     return (
       <div className={`${className} flex items-center justify-center bg-gray-50 rounded`}>
@@ -64,7 +66,7 @@ export default function ElevationProfile({ elevationProfile, onHoverPoint, class
 
   return (
     <div className={className}>
-      <div className="h-56 sm:h-64 w-full">
+      <div className={`${chartClassName} w-full`}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={chartData}

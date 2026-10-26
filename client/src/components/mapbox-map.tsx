@@ -70,6 +70,12 @@ interface MapboxMapProps {
   onCameraAngleChange?: (angle: CameraAngle) => void;
   /** A note shown across the top of the map, e.g. calibrate mode's instructions. */
   banner?: string | null;
+  /** Space covered by cards floating over the map; the camera centers in what's left. */
+  padding?: { top: number; right: number; bottom: number; left: number };
+  /** The zoom and compass buttons; off where floating cards would cover them. */
+  showNavigationControl?: boolean;
+  /** Where the 3D and map layer widgets sit; defaults to the top-left corner. */
+  widgetsClassName?: string;
   className?: string;
 }
 
@@ -102,6 +108,9 @@ export default function MapboxMap({
   cameraAngle,
   onCameraAngleChange,
   banner,
+  padding,
+  showNavigationControl = true,
+  widgetsClassName = "top-3 left-3 flex-col items-start",
   className 
 }: MapboxMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -288,7 +297,7 @@ export default function MapboxMap({
       return;
     }
 
-    map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+    if (showNavigationControl) map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
     // Every style load, the first one included, gets its config and snow.
     const styledMap = map.current;
     // The Studio viewer changes its bounded map row as mobile browser chrome
@@ -597,6 +606,16 @@ export default function MapboxMap({
     // Only a change of hovered clip should move the camera.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapReady, previewSegmentId]);
+
+  // Keep the camera centred in the part of the map that floating cards leave free.
+  const paddingKey = padding ? [padding.top, padding.right, padding.bottom, padding.left].join(",") : "";
+  useEffect(() => {
+    const m = loadedMap();
+    if (!m || !padding) return;
+    m.setPadding(padding);
+    // Only a change in the covered space should move the camera.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapReady, paddingKey]);
 
   // Zoom in on the pin and start following it when asked (when a clip starts playing).
   useEffect(() => {
@@ -956,13 +975,22 @@ export default function MapboxMap({
     );
   }
 
+  // Overlays that sit centred on the map centre in the space the cards leave.
+  const freeCenter = padding
+    ? {
+        left: `calc(${padding.left}px + (100% - ${padding.left + padding.right}px) / 2)`,
+        maxWidth: `calc(100% - ${padding.left + padding.right + 24}px)`,
+      }
+    : undefined;
+
   return (
     <div className={`relative ${className}`}>
       {/* Inline position: mapbox's own .mapboxgl-map class sets position: relative. */}
       <div ref={mapContainer} className="bg-gray-100" style={{ position: 'absolute', inset: 0 }} data-testid="mapbox-map" />
       {banner && (
         <div
-          className="absolute top-3 left-1/2 -translate-x-1/2 z-10 max-w-[60%] text-center meta-mono bg-foreground text-background rounded px-3 py-1.5 shadow-lg pointer-events-none"
+          className="absolute top-16 left-1/2 -translate-x-1/2 z-10 max-w-[60%] text-center meta-mono bg-foreground text-background rounded px-3 py-1.5 shadow-lg pointer-events-none"
+          style={freeCenter}
           data-testid="map-banner"
         >
           {banner}
@@ -973,12 +1001,13 @@ export default function MapboxMap({
           type="button"
           onClick={resumeFollowing}
           className="absolute bottom-8 left-1/2 -translate-x-1/2 meta-mono bg-background/95 text-foreground border border-border rounded px-3 py-1.5 shadow hover:bg-background"
+          style={padding ? { ...freeCenter, bottom: padding.bottom + 72 } : undefined}
           data-testid="button-recenter-pin"
         >
           ⌖ Recenter on pin
         </button>
       )}
-      <div data-map-widgets className="absolute top-3 left-3 z-10 flex flex-col items-start gap-2">
+      <div data-map-widgets className={`absolute z-10 flex gap-2 ${widgetsClassName}`} style={padding ? freeCenter : undefined}>
         {showTerrainControls && (
           <MapTerrainControls
             is3D={is3D}
