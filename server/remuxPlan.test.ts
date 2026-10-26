@@ -19,9 +19,16 @@ test("1080p H.264 is repackaged as is, in either color range", () => {
   }
 });
 
-test("4K, 10-bit and other codecs are re-encoded", () => {
+test("4K H.264 and H.265 from Insta360 Studio are repackaged, not re-encoded", () => {
+  const h264 = planRemux([{ codec_type: "video", codec_name: "h264", profile: "High", pix_fmt: "yuvj420p", height: 2160 }, aac]);
+  assert.deepEqual(h264, { video: true, audio: true, videoArgs: [] });
+  const hevc = planRemux([{ codec_type: "video", codec_name: "hevc", profile: "Main", pix_fmt: "yuv420p", height: 2160 }, aac]);
+  assert.deepEqual(hevc, { video: true, audio: true, videoArgs: ["-tag:v", "hvc1"] });
+});
+
+test("above 4K, 10-bit and other codecs are re-encoded", () => {
   const cases = [
-    { codec_type: "video", codec_name: "hevc", profile: "Main", pix_fmt: "yuv420p", height: 2160 },
+    { codec_type: "video", codec_name: "h264", pix_fmt: "yuv420p", height: 2880 },
     { codec_type: "video", codec_name: "hevc", profile: "Main 10", pix_fmt: "yuv420p10le", height: 1080 },
     { codec_type: "video", codec_name: "prores", pix_fmt: "yuv422p10le", height: 1080 },
   ];

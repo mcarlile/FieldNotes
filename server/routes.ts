@@ -14,6 +14,7 @@ import * as path from 'path';
 
 import * as crypto from 'crypto';
 import { createClipWithCoordinates, tripDurationSeconds } from "./trailcam";
+import { inboxTripGpxData, timedTripFields } from "./tripTimestamps";
 import { generateApiToken } from "./apiTokens";
 import { registerMcpRoutes } from "./mcp";
 import { getValidStravaToken, stravaFetch, buildGpxFromActivity, importGpxToInbox } from "./strava";
@@ -22,18 +23,21 @@ const CHUNK_UPLOAD_DIR = '/tmp/video-chunks';
 const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_VIDEO_SIZE = 1.5 * 1024 * 1024 * 1024; // 1.5GB
 const MAX_CHUNKS = 200; // 200 chunks * 10MB = 2GB max
-const UPLOAD_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
-const UPLOAD_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour token validity
+// An upload is dropped after this long without a chunk, so a large file on a
+// slow connection isn't cut off while it's still arriving.
+const UPLOAD_IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+const UPLOAD_TOKEN_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours token validity
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
 const RATE_LIMIT_MAX_REQUESTS = 100; // 100 requests per minute per IP
-const MAX_CONCURRENT_UPLOADS_PER_IP = 3;
+const MAX_CONCURRENT_UPLOADS_PER_IP = 6;
 
 // Secret for signing upload tokens (in production, use env variable)
 const UPLOAD_TOKEN_SECRET = process.env.UPLOAD_TOKEN_SECRET || crypto.randomBytes(32).toString('hex');
 
 // Cleanup old uploads periodically
 const activeUploads = new Map<string, {
-  startTime: number;
+  lastActivity: number;
+  // 0 until the first chunk says how many there are.
   totalChunks: number;
   receivedChunks: Set<number>;
   token: string;
@@ -107,7 +111,7 @@ function cleanupStaleUploads() {
   const now = Date.now();
   const uploadEntries = Array.from(activeUploads.entries());
   for (const [key, data] of uploadEntries) {
-    if (now - data.startTime > UPLOAD_TIMEOUT_MS) {
+    if (now - data.lastActivity > UPLOAD_IDLE_TIMEOUT_MS) {
       const chunkDir = path.join(CHUNK_UPLOAD_DIR, key);
       if (fs.existsSync(chunkDir)) {
         fs.rmSync(chunkDir, { recursive: true, force: true });
@@ -1016,6 +1020,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       uploadsPerIP.get(ip)!.add(uploadKey);
 
+      // Tracked from the start, so an upload abandoned before its first chunk
+      // still gets cleaned up and gives its slot back.
+      activeUploads.set(uploadKey, {
+        lastActivity: Date.now(),
+        totalChunks: 0,
+        receivedChunks: new Set(),
+        token,
+        ip,
+      });
+
       console.log(`Initialized upload ${uploadKey} for IP ${ip}`);
 
       res.json({ uploadKey, token });
@@ -1071,18 +1085,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid chunk parameters" });
       }
 
-      // Track upload state
-      if (!activeUploads.has(uploadKey)) {
-        activeUploads.set(uploadKey, {
-          startTime: Date.now(),
-          totalChunks: totalChunksNum,
-          receivedChunks: new Set(),
-          token,
-          ip,
-        });
+      const uploadState = activeUploads.get(uploadKey);
+      if (!uploadState) {
+        return res.status(404).json({ message: "Upload expired, please start it again" });
       }
-
-      const uploadState = activeUploads.get(uploadKey)!;
+      uploadState.lastActivity = Date.now();
+      if (uploadState.totalChunks === 0) {
+        uploadState.totalChunks = totalChunksNum;
+      }
 
       // Verify token matches the one used to initialize
       if (uploadState.token && uploadState.token !== token) {
@@ -1152,6 +1162,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const uploadState = activeUploads.get(uploadKey);
       const chunkDir = path.join(CHUNK_UPLOAD_DIR, uploadKey);
+      if (uploadState) {
+        uploadState.lastActivity = Date.now();
+      }
 
       if (!fs.existsSync(chunkDir)) {
         return res.status(404).json({ message: "Upload not found" });
@@ -1166,7 +1179,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Validate all chunks are present
-      if (uploadState && chunks.length !== uploadState.totalChunks) {
+      if (uploadState && (uploadState.totalChunks === 0 || chunks.length !== uploadState.totalChunks)) {
         return res.status(400).json({
           message: `Missing chunks: expected ${uploadState.totalChunks}, got ${chunks.length}`
         });
@@ -1176,37 +1189,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const uploadURL = await objectStorageService.getObjectEntityUploadURL();
 
-      // Assemble file by streaming chunks
-      const assembledFilePath = path.join(chunkDir, 'assembled');
-      const writeStream = fs.createWriteStream(assembledFilePath);
+      // Stream the chunks to object storage one after another. Joining them
+      // into one file first doubled the disk use, and writing them without
+      // waiting on the stream held the whole video in memory, which a 4K
+      // clip of a gigabyte or more could run the server out of.
+      const chunkPaths = chunks.map((chunkFile) => path.join(chunkDir, chunkFile));
+      const totalSize = chunkPaths.reduce((sum, chunkPath) => sum + fs.statSync(chunkPath).size, 0);
+      console.log(`Uploading ${totalSize} bytes from ${chunks.length} chunks`);
 
-      for (const chunkFile of chunks) {
-        const chunkPath = path.join(chunkDir, chunkFile);
-        const chunkData = fs.readFileSync(chunkPath);
-        writeStream.write(chunkData);
-      }
-
-      await new Promise<void>((resolve, reject) => {
-        writeStream.end((err: Error | null) => {
-          if (err) reject(err);
-          else resolve();
-        });
-      });
-
-      // Get file size without loading entire file
-      const stats = fs.statSync(assembledFilePath);
-      console.log(`Assembled file size: ${stats.size} bytes`);
-
-      // Stream file to object storage using fetch with file stream
-      const fileStream = fs.createReadStream(assembledFilePath);
       const { Readable } = await import('stream');
+      const readChunks = async function* () {
+        for (const chunkPath of chunkPaths) {
+          yield* fs.createReadStream(chunkPath);
+        }
+      };
 
       const uploadResponse = await fetch(uploadURL, {
         method: 'PUT',
-        body: Readable.toWeb(fileStream) as ReadableStream,
+        body: Readable.toWeb(Readable.from(readChunks())) as ReadableStream,
         headers: {
           'Content-Type': videoContentType,
-          'Content-Length': String(stats.size),
+          'Content-Length': String(totalSize),
         },
         // @ts-ignore - duplex is required for streaming body
         duplex: 'half',
@@ -1242,7 +1245,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({
         success: true,
         url: normalizedUrl,
-        size: stats.size
+        size: totalSize
       });
     } catch (error) {
       console.error("Error completing video upload:", error);
@@ -1391,6 +1394,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Item not found" });
       }
       const stats = item.gpxStats as any;
+      // Keep the GPX's times so the trip can take video clips.
+      const { timedTrack, startTime, endTime } = timedTripFields(item.rawGpx);
       const fieldNote = await storage.createFieldNote({
         userId: req.dbUser.id,
         title: req.body.title || item.filename.replace(/\.gpx$/i, ''),
@@ -1399,7 +1404,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         date: stats?.date ? new Date(stats.date) : new Date(item.receivedAt),
         distance: stats?.distance ?? null,
         elevationGain: stats?.elevationGain ?? null,
-        gpxData: stats?.coordinates ? { coordinates: stats.coordinates } : null,
+        gpxData: inboxTripGpxData(stats, timedTrack),
+        startTime,
+        endTime,
         stravaId: item.stravaId ?? null,
         stravaSource: item.source ?? null,
       });

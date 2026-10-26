@@ -1,13 +1,12 @@
-import { useState, useMemo, useCallback, lazy, Suspense } from "react";
+import { useState, useMemo, lazy, Suspense, type ReactNode } from "react";
 import { trackEvent } from "@/lib/analytics";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Modal } from "@carbon/react";
-import { Pencil, Trash2, ExternalLink, Download, Video } from "lucide-react";
+import { Pencil, Trash2, ExternalLink, Download } from "lucide-react";
 import ShareButton from "@/components/share-button";
 import PhotoLightbox from "@/components/photo-lightbox";
-import MapboxMap from "@/components/mapbox-map";
 import ElevationProfile from "@/components/elevation-profile";
 import { parseGpxData, parseGpxWithTimestamps } from "@shared/gpx-utils";
 import { buildGpxExport, downloadGpx, gpxFilename } from "@/lib/gpx-export";
@@ -19,13 +18,16 @@ import { apiRequest } from "@/lib/queryClient";
 import { queryClient } from "@/lib/queryClient";
 import type { FieldNote, Photo, VideoClip } from "@shared/schema";
 
-// The synced video player is large; load it only for trips that use it.
-const TripVideoStudio = lazy(() => import("@/components/trip-video-studio"));
+// The trip view carries the map and video player, so it loads on its own.
+const TripView = lazy(() => import("@/components/trip-view"));
 
-/** Whether a trip's route has timestamps, which video clips need to be placed on it. */
-function hasTimedTrack(gpxData: unknown): boolean {
-  if (typeof gpxData === "string") return /<time>/.test(gpxData);
-  return !!(gpxData as { timedTrack?: unknown } | null)?.timedTrack;
+function Stat({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dd className="text-foreground font-medium leading-tight">{value}</dd>
+      <dt className="meta-mono text-muted-foreground">{label}</dt>
+    </div>
+  );
 }
 
 export default function FieldNoteDetail() {
@@ -34,7 +36,6 @@ export default function FieldNoteDetail() {
   const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [hoveredElevationPoint, setHoveredElevationPoint] = useState<any>(null);
-  const [addingVideo, setAddingVideo] = useState(false);
 
   const { toast } = useToast();
   const { isSignedIn } = useAuth();
@@ -54,24 +55,7 @@ export default function FieldNoteDetail() {
   const fieldNote = fieldNoteData;
   const photos: Photo[] = fieldNoteData?.photos || [];
   const videoClips: VideoClip[] = fieldNoteData?.videoClips || [];
-  // A trip with video clips gets the synced player in place of the plain map.
-  const showVideo = videoClips.length > 0 || addingVideo;
-
-  // Memoize so the marker effect doesn't rerun on every elevation hover
-  const photoMarkers = useMemo(
-    () => photos
-      .filter((p) => p.latitude != null && p.longitude != null)
-      .map((p) => ({
-        id: p.id,
-        latitude: p.latitude as number,
-        longitude: p.longitude as number,
-        thumbnailUrl: p.url,
-      })),
-    [photos],
-  );
-  const handlePhotoMarkerClick = useCallback((photoId: string) => {
-    setSelectedPhotoId(photoId);
-  }, []);
+  const canEdit = !!isSignedIn && !readOnlyPreview;
 
   const handleDownloadGpx = () => {
     if (!fieldNote) return;
@@ -201,107 +185,71 @@ export default function FieldNoteDetail() {
       day: "numeric",
     });
 
-  return (
-    <div className="min-h-screen bg-background overflow-x-hidden">
-      {showVideo ? (
-        <Suspense fallback={<div className="w-full h-[calc(100vh-2.75rem)] bg-muted animate-pulse" />}>
-          <TripVideoStudio trip={fieldNote as FieldNote} />
-        </Suspense>
-      ) : (
-        /* Edge-to-edge hero map */
-        <div className="w-full h-[55vh] sm:h-[65vh] bg-muted">
-          <MapboxMap
-            gpxData={fieldNote.gpxData}
-            hoveredElevationPoint={hoveredElevationPoint}
-            photoMarkers={photoMarkers}
-            onPhotoMarkerClick={handlePhotoMarkerClick}
-            className="w-full h-full"
+  // The trip card's body; the card itself (back button, name, folding) is TripView's.
+  const info = (
+    <div className="space-y-4">
+      <div className="meta-mono text-muted-foreground flex flex-wrap gap-x-2 gap-y-1">
+        {fieldNote.tripType?.length > 0 && (
+          <>
+            <span>{Array.isArray(fieldNote.tripType) ? fieldNote.tripType.join(', ') : fieldNote.tripType}</span>
+            <span>·</span>
+          </>
+        )}
+        <span>{formatDate(fieldNote.date.toString())}</span>
+      </div>
+
+      {(fieldNote.distance != null || fieldNote.elevationGain != null || derivedStats) && (
+        <dl className="grid grid-cols-3 gap-x-3 gap-y-3" data-testid="trip-stats">
+          {fieldNote.distance != null && <Stat label="Miles" value={fieldNote.distance} />}
+          {fieldNote.elevationGain != null && <Stat label="Ft gain" value={fieldNote.elevationGain.toLocaleString()} />}
+          {derivedStats && <Stat label="Ft max" value={derivedStats.maxEle.toLocaleString()} />}
+          {derivedStats && <Stat label="Ft min" value={derivedStats.minEle.toLocaleString()} />}
+          {derivedStats && derivedStats.peakGrade > 0 && <Stat label="Peak grade" value={`${derivedStats.peakGrade}%`} />}
+          {derivedStats?.elapsedTime && <Stat label="Elapsed" value={derivedStats.elapsedTime} />}
+        </dl>
+      )}
+
+      {parsedGpxData && parsedGpxData.elevationProfile && parsedGpxData.elevationProfile.length > 0 && (
+        <div>
+          <div className="meta-mono text-muted-foreground mb-1">Elevation</div>
+          <ElevationProfile
+            elevationProfile={parsedGpxData.elevationProfile}
+            onHoverPoint={setHoveredElevationPoint}
+            chartClassName="h-36"
+            className="w-full -ml-2"
           />
         </div>
       )}
 
-      {/* Derived trip stats — single mono caption strip below the hero map */}
-      {derivedStats && (
-        <div className="px-5 sm:px-8 pt-4 pb-1 border-b border-border">
-          <div className="meta-mono text-muted-foreground flex flex-wrap gap-x-5 gap-y-1">
-            <span><span className="text-foreground">{derivedStats.maxEle.toLocaleString()}</span> ft max</span>
-            <span><span className="text-foreground">{derivedStats.minEle.toLocaleString()}</span> ft min</span>
-            {derivedStats.peakGrade > 0 && (
-              <span><span className="text-foreground">{derivedStats.peakGrade}%</span> peak grade</span>
-            )}
-            {derivedStats.elapsedTime && (
-              <span><span className="text-foreground">{derivedStats.elapsedTime}</span> elapsed</span>
-            )}
-          </div>
-        </div>
+      {fieldNote.description && (
+        <p className="font-serif text-foreground leading-relaxed whitespace-pre-line">{fieldNote.description}</p>
       )}
 
-      {/* Title block */}
-      <section className="px-5 sm:px-8 pt-8 pb-6 max-w-5xl">
-        <div className="meta-mono text-muted-foreground mb-3 flex flex-wrap gap-x-3 gap-y-1">
-          {fieldNote.tripType?.length > 0 && (
-            <>
-              <span>{Array.isArray(fieldNote.tripType) ? fieldNote.tripType.join(', ') : fieldNote.tripType}</span>
-              <span>·</span>
-            </>
-          )}
-          <span>{formatDate(fieldNote.date.toString())}</span>
-          {fieldNote.distance != null && (
-            <>
-              <span>·</span>
-              <span>{fieldNote.distance} mi</span>
-            </>
-          )}
-          {fieldNote.elevationGain != null && (
-            <>
-              <span>·</span>
-              <span>{fieldNote.elevationGain} ft</span>
-            </>
-          )}
-        </div>
-
-        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
-          <h1
-            className="font-serif text-foreground break-words"
-            style={{ fontSize: "clamp(2.25rem, 5vw, 3.75rem)", lineHeight: 1.05, letterSpacing: "-0.015em" }}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-1 border-t border-border">
+        {fieldNote.stravaId && (
+          <a
+            href={`https://www.strava.com/${fieldNote.stravaSource === "strava-route" ? "routes" : "activities"}/${fieldNote.stravaId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="meta-mono text-orange-500 hover:text-orange-600 transition-colors flex items-center gap-1.5 pt-2"
           >
-            {fieldNote.title}
-          </h1>
-
-          <div className="flex items-center gap-4 flex-shrink-0">
-            {fieldNote.stravaId && (
-              <a
-                href={`https://www.strava.com/${fieldNote.stravaSource === "strava-route" ? "routes" : "activities"}/${fieldNote.stravaId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="meta-mono text-orange-500 hover:text-orange-600 transition-colors flex items-center gap-1.5"
-              >
-                <ExternalLink className="h-3 w-3" />
-                Open in Strava
-              </a>
-            )}
-            {fieldNote.gpxData && (
-              <button
-                onClick={handleDownloadGpx}
-                className="meta-mono text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
-                data-testid="button-download-gpx"
-              >
-                <Download className="h-3 w-3" />
-                Download GPX
-              </button>
-            )}
-            {isSignedIn && !readOnlyPreview && (
-              <>
-              {!showVideo && hasTimedTrack(fieldNote.gpxData) && (
-                <button
-                  onClick={() => setAddingVideo(true)}
-                  className="meta-mono text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
-                  data-testid="button-add-video"
-                >
-                  <Video className="h-3 w-3" />
-                  Add video
-                </button>
-              )}
+            <ExternalLink className="h-3 w-3" />
+            Strava
+          </a>
+        )}
+        {fieldNote.gpxData && (
+          <button
+            onClick={handleDownloadGpx}
+            className="meta-mono text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5 pt-2"
+            data-testid="button-download-gpx"
+          >
+            <Download className="h-3 w-3" />
+            GPX
+          </button>
+        )}
+        {canEdit && (
+          <>
+            <div className="pt-2">
               <ShareButton
                 id={fieldNote.id}
                 title={fieldNote.title}
@@ -309,91 +257,41 @@ export default function FieldNoteDetail() {
                 slug={fieldNote.slug ?? null}
                 queryKey={["/api/field-notes", id]}
               />
-                <Link
-                  href={`/field-notes/${fieldNote.id}/edit`}
-                  className="meta-mono text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
-                >
-                  <Pencil className="h-3 w-3" />
-                  Edit
-                </Link>
-                <button
-                  onClick={() => setShowDeleteModal(true)}
-                  className="meta-mono text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1.5"
-                  data-testid="button-delete"
-                >
-                  <Trash2 className="h-3 w-3" />
-                  Delete
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-
-        {fieldNote.description && (
-          <p className="font-serif text-foreground mt-6 max-w-2xl text-lg leading-relaxed">
-            {fieldNote.description}
-          </p>
+            </div>
+            <Link
+              href={`/field-notes/${fieldNote.id}/edit`}
+              className="meta-mono text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5 pt-2"
+            >
+              <Pencil className="h-3 w-3" />
+              Edit
+            </Link>
+            <button
+              onClick={() => setShowDeleteModal(true)}
+              className="meta-mono text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1.5 pt-2"
+              data-testid="button-delete"
+            >
+              <Trash2 className="h-3 w-3" />
+              Delete
+            </button>
+          </>
         )}
-      </section>
+      </div>
+    </div>
+  );
 
-      {/* Elevation profile */}
-      {parsedGpxData && parsedGpxData.elevationProfile && parsedGpxData.elevationProfile.length > 0 && (
-        <section className="px-5 sm:px-8 pb-10">
-          <div className="meta-mono text-muted-foreground mb-3">Elevation</div>
-          <div className="border-t border-border pt-4">
-            <ElevationProfile
-              elevationProfile={parsedGpxData.elevationProfile}
-              onHoverPoint={setHoveredElevationPoint}
-              className="w-full"
-            />
-          </div>
-        </section>
-      )}
-
-      {/* Photos masonry */}
-      {photos.length > 0 && (
-        <section className="px-5 sm:px-8 pb-16">
-          <div className="meta-mono text-muted-foreground mb-3">
-            Photos · {photos.length}
-          </div>
-          <div className="columns-2 md:columns-3 lg:columns-4 gap-3 sm:gap-4">
-            {photos.map((photo, index) => {
-              const captureDate = photo.timestamp
-                ? new Date(photo.timestamp).toLocaleDateString("en-US", {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                  })
-                : null;
-              return (
-                <button
-                  key={photo.id}
-                  onClick={() => setSelectedPhotoId(photo.id)}
-                  className="group/photo block w-full mb-3 sm:mb-4 break-inside-avoid overflow-hidden bg-muted text-left"
-                  data-testid={`photo-thumbnail-${photo.id}`}
-                >
-                  <div className="relative overflow-hidden">
-                    <img
-                      src={photo.url}
-                      alt={`Field note photo ${index + 1}`}
-                      className="w-full h-auto block transition-opacity group-hover/photo:opacity-90"
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        target.style.display = "none";
-                      }}
-                    />
-                  </div>
-                  {captureDate && (
-                    <div className="meta-mono text-muted-foreground pt-1.5 transition-opacity duration-200 [@media(hover:hover)]:opacity-0 group-hover/photo:opacity-100 group-focus-within/photo:opacity-100">
-                      {captureDate}
-                    </div>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      )}
+  return (
+    <div className="bg-background">
+      <Suspense fallback={<div className="w-full h-[calc(100vh-2.75rem)] bg-muted animate-pulse" />}>
+        <TripView
+          trip={fieldNote as FieldNote}
+          photos={photos}
+          onOpenPhoto={setSelectedPhotoId}
+          info={info}
+          hoveredElevationPoint={hoveredElevationPoint}
+          canEdit={canEdit}
+          initialTab={videoClips.length > 0 ? "videos" : "photos"}
+        />
+      </Suspense>
 
       <Modal
         open={showDeleteModal}

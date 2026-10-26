@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { useState, useRef } from "react";
 import { 
   Button as CarbonButton,
@@ -251,6 +252,8 @@ export function AutoPhotoUploader({
         {children}
       </CarbonButton>
 
+      {/* On the body, so a card or panel the button sits in can't clip or trap it. */}
+      {createPortal(
       <Modal
         open={showModal}
         onRequestClose={() => setShowModal(false)}
@@ -340,7 +343,9 @@ export function AutoPhotoUploader({
             </div>
           )}
         </div>
-      </Modal>
+      </Modal>,
+        document.body,
+      )}
     </>
   );
 }

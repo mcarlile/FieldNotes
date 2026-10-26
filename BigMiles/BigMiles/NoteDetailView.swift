@@ -20,26 +20,48 @@ struct NoteDetailView: View {
     @StateObject private var playback = TripVideoPlayback()
 
     @State private var videoPanelOpen = true
+    @State private var detailsCardOpen = true
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
     #endif
 
     private var videoClips: [VideoClip] { display.videoClips ?? [] }
 
-    /// The Duo (and other wide screens) shows videos in their own
-    /// collapsible panel on the right, with the map still in view beside it.
-    private var videosInSidebar: Bool {
+    /// The Duo (and other wide screens): the map fills the left, the details
+    /// float over it in a card that hides completely, and videos get their
+    /// own collapsible panel on the right.
+    private var isWide: Bool {
         #if os(iOS)
-        return sizeClass == .regular && !videoClips.isEmpty && !display.mapCoordinates.isEmpty
+        return sizeClass == .regular && !display.mapCoordinates.isEmpty
         #else
         return false
         #endif
     }
 
+    private var videosInSidebar: Bool { isWide && !videoClips.isEmpty }
+
+    private let detailsCardWidth: CGFloat = 340
+
+    private var track: TimedTrack? { display.gpxData?.timedTrack }
+    private var syncOffset: Double { display.playback?.syncOffsetSeconds ?? 0 }
+
     /// Where the playing clip was filmed, using the sync offset calibrated on the web.
     private var playhead: CLLocationCoordinate2D? {
-        playback.playhead(on: display.gpxData?.timedTrack,
-                          syncOffset: display.playback?.syncOffsetSeconds ?? 0)
+        playback.playhead(on: track, syncOffset: syncOffset)
+    }
+
+    /// Zoom-in and follow-along for the playing clip, as on the web.
+    private var videoFollow: VideoFollow? {
+        guard !videoClips.isEmpty else { return nil }
+        return VideoFollow(
+            bearing: playback.bearing(on: track, syncOffset: syncOffset),
+            isPlaying: playback.isPlaying,
+            focusRequest: playback.focusRequest,
+            angle: display.playback?.cameraAngle,
+            clipId: playback.clip?.id,
+            clipIndex: videoClips.firstIndex { $0.id == playback.clip?.id } ?? 0,
+            segment: playback.clipSegment(on: track, syncOffset: syncOffset)
+        )
     }
 
     var body: some View {
@@ -47,10 +69,10 @@ struct NoteDetailView: View {
             if display.mapCoordinates.isEmpty {
                 ScrollView { details.padding(20) }
                     .background(sand.ignoresSafeArea())
-            } else if videosInSidebar {
+            } else if isWide {
                 HStack(spacing: 0) {
-                    mapWithPanel
-                    if videoPanelOpen {
+                    mapWithCard
+                    if videosInSidebar && videoPanelOpen {
                         videoSidebar
                             .transition(.move(edge: .trailing))
                     }
@@ -59,11 +81,22 @@ struct NoteDetailView: View {
                 mapWithPanel
             }
         }
-        .navigationTitle(display.title)
+        // On wide screens the trip's name heads the details card instead.
+        .navigationTitle(isWide ? "" : display.title)
         .toolbarTitleDisplayMode(.inline)
         .toolbarBackground(display.mapCoordinates.isEmpty ? .automatic : .hidden, for: .navigationBar)
         .task { await loadFull() }
         .toolbar {
+            if isWide {
+                ToolbarItem(placement: .navigation) {
+                    Button {
+                        withAnimation(.snappy) { detailsCardOpen.toggle() }
+                    } label: {
+                        Image(systemName: "sidebar.left")
+                    }
+                    .accessibilityLabel(detailsCardOpen ? "Hide details" : "Show details")
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button("Edit") { showEdit = true }
             }
@@ -85,6 +118,8 @@ struct NoteDetailView: View {
                 }
             }
         }
+        // Playing a clip goes to the 3D chase view, as on the web.
+        .onChange(of: playback.focusRequest) { mapControls.is3D = true }
         .sheet(isPresented: $showEdit) {
             TripFormView(existing: display) { _ in
                 Task { await loadFull() }
@@ -117,6 +152,7 @@ struct NoteDetailView: View {
                     controls: $mapControls,
                     bottomInset: collapsed,
                     playhead: playhead,
+                    video: videoFollow,
                     onSelectPhoto: { lightbox = $0 }
                 )
                 .ignoresSafeArea()
@@ -147,6 +183,72 @@ struct NoteDetailView: View {
                 .offset(y: geo.safeAreaInsets.bottom)
             }
         }
+    }
+
+    // MARK: Wide layout
+
+    /// The map with the trip details in a card floating over its left side.
+    /// Hidden, nothing but the map is left.
+    private var mapWithCard: some View {
+        ZStack(alignment: .topLeading) {
+            TrailMap(
+                routes: [TrailRoute(id: display.id, coordinates: display.mapCoordinates)],
+                photos: display.photos ?? [],
+                layer: mapLayer,
+                controls: $mapControls,
+                leadingInset: detailsCardOpen ? detailsCardWidth + 16 : 0,
+                playhead: playhead,
+                video: videoFollow,
+                onSelectPhoto: { lightbox = $0 }
+            )
+            .ignoresSafeArea()
+
+            if detailsCardOpen {
+                detailsCard
+                    .padding(16)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+        }
+    }
+
+    /// Sized to its contents, scrolling only once they outgrow the screen.
+    private var detailsCard: some View {
+        ViewThatFits(in: .vertical) {
+            detailsCardBody(scrolls: false)
+            detailsCardBody(scrolls: true)
+        }
+    }
+
+    private func detailsCardBody(scrolls: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(display.title)
+                    .font(.system(size: 22, weight: .bold, design: .serif))
+                    .foregroundColor(ink)
+                Spacer()
+                Button {
+                    withAnimation(.snappy) { detailsCardOpen = false }
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(muted)
+                        .frame(width: 28, height: 28)
+                }
+                .accessibilityLabel("Hide details")
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            .padding(.bottom, 12)
+
+            if scrolls {
+                ScrollView { details.padding(.horizontal, 20).padding(.bottom, 20) }
+            } else {
+                details.padding(.horizontal, 20).padding(.bottom, 20)
+            }
+        }
+        .frame(width: detailsCardWidth)
+        .background(sand, in: RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.15), radius: 12, y: 2)
     }
 
     // MARK: Video sidebar

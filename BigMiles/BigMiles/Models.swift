@@ -37,10 +37,19 @@ struct FieldNote: Codable, Identifiable, Hashable {
         }
     }
 
-    /// Video settings saved on the web (the calibrated sync offset). The app
-    /// only reads them: calibration stays on the web.
+    /// Video settings saved on the web (the calibrated sync offset and
+    /// follow-cam angle). The app only reads them: calibration stays on the web.
     struct Playback: Codable {
         let syncOffsetSeconds: Double?
+        var cameraAngle: CameraAngle? = nil
+    }
+
+    /// The 3D follow-cam's view, relative to the direction of travel.
+    struct CameraAngle: Codable, Equatable {
+        let pitch: Double
+        let zoom: Double
+        /// Degrees the camera turns from facing the way the ride goes.
+        let bearingOffset: Double
     }
 
     // gpxData can arrive as a JSON object OR as a raw JSON string depending on
@@ -154,6 +163,29 @@ struct TimedTrack: Codable {
         let f = span > 0 ? (seconds - a[0]) / span : 0
         return CLLocationCoordinate2D(latitude: a[1] + (b[1] - a[1]) * f,
                                       longitude: a[2] + (b[2] - a[2]) * f)
+    }
+
+    /// Direction of travel at `seconds`, in degrees from north, measured over
+    /// a few seconds of track like the web's chase-cam. Nil when standing still.
+    func bearing(at seconds: Double, span: Double = 6) -> Double? {
+        guard let from = coordinate(at: seconds - span / 3),
+              let to = coordinate(at: seconds + span * 2 / 3) else { return nil }
+        let rad = Double.pi / 180
+        let lat1 = from.latitude * rad, lat2 = to.latitude * rad
+        let dLon = (to.longitude - from.longitude) * rad
+        let y = sin(dLon) * cos(lat2)
+        let x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon)
+        // Under about a metre of movement the direction is noise.
+        if abs(x) < 1.5e-7 && abs(y) < 1.5e-7 { return nil }
+        return (atan2(y, x) / rad + 360).truncatingRemainder(dividingBy: 360)
+    }
+
+    /// The stretch of route between two times, ends included.
+    func segment(from start: Double, to end: Double) -> [CLLocationCoordinate2D] {
+        guard end > start, let first = coordinate(at: start), let last = coordinate(at: end) else { return [] }
+        let middle = points.filter { $0.count >= 3 && $0[0] > start && $0[0] < end }
+            .map { CLLocationCoordinate2D(latitude: $0[1], longitude: $0[2]) }
+        return [first] + middle + [last]
     }
 }
 
