@@ -87,6 +87,9 @@ export default function ElevationProfile({ elevationProfile, onHoverPoint, class
               label={{ value: 'mi', position: 'insideBottomRight', offset: -8, style: { fontSize: 10, fontFamily: 'JetBrains Mono, monospace', fill: 'rgba(26, 24, 21, 0.5)' } }}
             />
             <YAxis
+              // Hug the route: 50 ft below its lowest point to 50 ft above its highest.
+              domain={[(min: number) => Math.floor(min - 50), (max: number) => Math.ceil(max + 50)]}
+              allowDataOverflow
               stroke="rgba(26, 24, 21, 0.5)"
               tick={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace' }}
               label={{ value: 'ft', angle: 0, position: 'insideTopLeft', offset: -4, style: { fontSize: 10, fontFamily: 'JetBrains Mono, monospace', fill: 'rgba(26, 24, 21, 0.5)' } }}

@@ -19,17 +19,19 @@ struct NoteDetailView: View {
     @State private var mapControls = MapControls()
     @StateObject private var playback = TripVideoPlayback()
 
-    @State private var videoPanelOpen = true
+    @State private var mediaCardOpen = true
     @State private var detailsCardOpen = true
+    @State private var mediaTab: MediaTab?
+    @State private var mediaContentHeight: CGFloat = 400
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
     #endif
 
     private var videoClips: [VideoClip] { display.videoClips ?? [] }
 
-    /// The Duo (and other wide screens): the map fills the left, the details
-    /// float over it in a card that hides completely, and videos get their
-    /// own collapsible panel on the right.
+    /// The Duo (and other wide screens), laid out like the web trip page: the
+    /// map fills the screen, the details float in a card on the left that
+    /// folds down to its title, and videos and photos share a card on the right.
     private var isWide: Bool {
         #if os(iOS)
         return sizeClass == .regular && !display.mapCoordinates.isEmpty
@@ -38,9 +40,20 @@ struct NoteDetailView: View {
         #endif
     }
 
-    private var videosInSidebar: Bool { isWide && !videoClips.isEmpty }
+    private var photos: [Photo] { display.photos ?? [] }
+    private var hasMedia: Bool { !videoClips.isEmpty || !photos.isEmpty }
+    private var mediaInCard: Bool { isWide && hasMedia }
+
+    private enum MediaTab: String, CaseIterable { case videos = "Videos", photos = "Photos" }
+    /// Videos first when the trip has any, as on the web.
+    private var currentTab: MediaTab {
+        mediaTab ?? (videoClips.isEmpty ? .photos : .videos)
+    }
 
     private let detailsCardWidth: CGFloat = 340
+    private let mediaCardWidth: CGFloat = 360
+    /// A playing clip widens the media card, as on the web.
+    private var mediaCardExpanded: Bool { currentTab == .videos && playback.clip != nil }
 
     private var track: TimedTrack? { display.gpxData?.timedTrack }
     private var syncOffset: Double { display.playback?.syncOffsetSeconds ?? 0 }
@@ -70,13 +83,7 @@ struct NoteDetailView: View {
                 ScrollView { details.padding(20) }
                     .background(sand.ignoresSafeArea())
             } else if isWide {
-                HStack(spacing: 0) {
-                    mapWithCard
-                    if videosInSidebar && videoPanelOpen {
-                        videoSidebar
-                            .transition(.move(edge: .trailing))
-                    }
-                }
+                mapWithCards
             } else {
                 mapWithPanel
             }
@@ -87,27 +94,17 @@ struct NoteDetailView: View {
         .toolbarBackground(display.mapCoordinates.isEmpty ? .automatic : .hidden, for: .navigationBar)
         .task { await loadFull() }
         .toolbar {
-            if isWide {
-                ToolbarItem(placement: .navigation) {
-                    Button {
-                        withAnimation(.snappy) { detailsCardOpen.toggle() }
-                    } label: {
-                        Image(systemName: "sidebar.left")
-                    }
-                    .accessibilityLabel(detailsCardOpen ? "Hide details" : "Show details")
-                }
-            }
             ToolbarItem(placement: .primaryAction) {
                 Button("Edit") { showEdit = true }
             }
-            if videosInSidebar {
+            if mediaInCard {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
-                        withAnimation(.snappy) { videoPanelOpen.toggle() }
+                        withAnimation(.snappy) { mediaCardOpen.toggle() }
                     } label: {
                         Image(systemName: "sidebar.right")
                     }
-                    .accessibilityLabel(videoPanelOpen ? "Hide videos" : "Show videos")
+                    .accessibilityLabel(mediaCardOpen ? "Hide media" : "Show media")
                 }
             }
             // Same map buttons, in the same place, as the home heat map.
@@ -187,31 +184,46 @@ struct NoteDetailView: View {
 
     // MARK: Wide layout
 
-    /// The map with the trip details in a card floating over its left side.
-    /// Hidden, nothing but the map is left.
-    private var mapWithCard: some View {
-        ZStack(alignment: .topLeading) {
-            TrailMap(
-                routes: [TrailRoute(id: display.id, coordinates: display.mapCoordinates)],
-                photos: display.photos ?? [],
-                layer: mapLayer,
-                controls: $mapControls,
-                leadingInset: detailsCardOpen ? detailsCardWidth + 16 : 0,
-                playhead: playhead,
-                video: videoFollow,
-                onSelectPhoto: { lightbox = $0 }
-            )
-            .ignoresSafeArea()
+    /// The full-screen map with the details card over its left side and the
+    /// media card over its right; the map keeps the route and the followed
+    /// pin in the space between them.
+    private var mapWithCards: some View {
+        GeometryReader { geo in
+            let showMedia = mediaInCard && mediaCardOpen
+            let mediaWidth = mediaCardExpanded
+                ? max(mediaCardWidth, min(600, geo.size.width - detailsCardWidth - 64))
+                : mediaCardWidth
 
-            if detailsCardOpen {
-                detailsCard
-                    .padding(16)
-                    .transition(.move(edge: .leading).combined(with: .opacity))
+            ZStack(alignment: .top) {
+                TrailMap(
+                    routes: [TrailRoute(id: display.id, coordinates: display.mapCoordinates)],
+                    photos: photos,
+                    layer: mapLayer,
+                    controls: $mapControls,
+                    leadingInset: detailsCardOpen ? detailsCardWidth + 16 : 0,
+                    trailingInset: showMedia ? mediaWidth + 16 : 0,
+                    playhead: playhead,
+                    video: videoFollow,
+                    onSelectPhoto: { lightbox = $0 }
+                )
+                .ignoresSafeArea()
+
+                HStack(alignment: .top, spacing: 16) {
+                    detailsCard
+                    Spacer(minLength: 0)
+                    if showMedia {
+                        mediaCard(width: mediaWidth)
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                    }
+                }
+                .padding(16)
             }
+            .animation(.snappy, value: mediaCardExpanded)
         }
     }
 
     /// Sized to its contents, scrolling only once they outgrow the screen.
+    /// Folded, only the title row is left.
     private var detailsCard: some View {
         ViewThatFits(in: .vertical) {
             detailsCardBody(scrolls: false)
@@ -221,29 +233,35 @@ struct NoteDetailView: View {
 
     private func detailsCardBody(scrolls: Bool) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(display.title)
-                    .font(.system(size: 22, weight: .bold, design: .serif))
-                    .foregroundColor(ink)
-                Spacer()
-                Button {
-                    withAnimation(.snappy) { detailsCardOpen = false }
-                } label: {
-                    Image(systemName: "chevron.left")
+            Button {
+                withAnimation(.snappy) { detailsCardOpen.toggle() }
+            } label: {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(display.title)
+                        .font(.system(size: 22, weight: .bold, design: .serif))
+                        .foregroundColor(ink)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(detailsCardOpen ? nil : 1)
+                    Spacer()
+                    Image(systemName: detailsCardOpen ? "chevron.up" : "chevron.down")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(muted)
                         .frame(width: 28, height: 28)
                 }
-                .accessibilityLabel("Hide details")
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel(detailsCardOpen ? "Collapse details" : "Expand details")
             .padding(.horizontal, 20)
             .padding(.top, 16)
-            .padding(.bottom, 12)
+            .padding(.bottom, detailsCardOpen ? 12 : 16)
 
-            if scrolls {
-                ScrollView { details.padding(.horizontal, 20).padding(.bottom, 20) }
-            } else {
-                details.padding(.horizontal, 20).padding(.bottom, 20)
+            if detailsCardOpen {
+                if scrolls {
+                    ScrollView { details.padding(.horizontal, 20).padding(.bottom, 20) }
+                } else {
+                    details.padding(.horizontal, 20).padding(.bottom, 20)
+                }
             }
         }
         .frame(width: detailsCardWidth)
@@ -251,19 +269,38 @@ struct NoteDetailView: View {
         .shadow(color: .black.opacity(0.15), radius: 12, y: 2)
     }
 
-    // MARK: Video sidebar
+    // MARK: Media card
 
-    /// Right-hand video panel on wide screens; the playhead pin keeps moving
-    /// on the map beside it.
-    private var videoSidebar: some View {
-        ScrollView {
-            TripVideoSection(clips: videoClips, playback: playback)
-                .padding(16)
+    /// Videos and photos in one card pinned to the right, with a switch
+    /// between them; the playhead pin keeps moving on the map beside it.
+    private func mediaCard(width: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if !videoClips.isEmpty && !photos.isEmpty {
+                Picker("Media", selection: Binding(get: { currentTab }, set: { mediaTab = $0 })) {
+                    ForEach(MediaTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+            }
+            // Sized to its contents, scrolling once they outgrow the screen.
+            // (Not ViewThatFits: that would build the player twice.)
+            ScrollView {
+                mediaContent
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { mediaContentHeight = $0 }
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(maxHeight: mediaContentHeight)
         }
-        .frame(width: 360)
-        .background(sand.ignoresSafeArea())
-        .overlay(alignment: .leading) {
-            Rectangle().fill(border).frame(width: 1).ignoresSafeArea()
+        .padding(16)
+        .frame(width: width)
+        .background(sand, in: RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.15), radius: 12, y: 2)
+    }
+
+    @ViewBuilder
+    private var mediaContent: some View {
+        switch currentTab {
+        case .videos: TripVideoSection(clips: videoClips, playback: playback)
+        case .photos: photoSection
         }
     }
 
@@ -274,7 +311,7 @@ struct NoteDetailView: View {
 
             // Trips with video (formerly Studio projects) lead with the
             // player: playback only, calibration stays on the web.
-            if !videoClips.isEmpty && !videosInSidebar {
+            if !videoClips.isEmpty && !mediaInCard {
                 TripVideoSection(clips: videoClips, playback: playback)
             }
 
@@ -325,8 +362,18 @@ struct NoteDetailView: View {
                     .lineSpacing(6)
             }
 
-            // Photo grid
-            if let photos = display.photos, !photos.isEmpty {
+            if !mediaInCard {
+                photoSection
+            }
+        }
+    }
+
+    // MARK: Photos
+
+    @ViewBuilder
+    private var photoSection: some View {
+        if !photos.isEmpty {
+            VStack(alignment: .leading, spacing: 16) {
                 Text("PHOTOS · \(photos.count)")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(muted)
