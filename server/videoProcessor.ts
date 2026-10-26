@@ -5,7 +5,7 @@ import { Readable } from 'stream';
 import { storage } from './storage';
 import { objectStorageService } from './objectStorage';
 import { createSerialQueue } from './serialQueue';
-import { planRemux, type RemuxPlan } from './remuxPlan';
+import { isPlayableAsIs, planRemux, type RemuxPlan } from './remuxPlan';
 
 const TEMP_DIR = '/tmp/video-processing';
 
@@ -21,6 +21,9 @@ interface ProcessingResult {
 // A stuck encode must not hold the one-at-a-time queue forever.
 const FFMPEG_TIMEOUT_MS = 45 * 60 * 1000;
 const DOWNLOAD_STALL_MS = 2 * 60 * 1000;
+const THUMBNAIL_TIMEOUT_MS = 5 * 60 * 1000;
+// Long enough for ffprobe and the thumbnail to finish reading the source.
+const SOURCE_URL_TTL_SEC = 60 * 60;
 
 function runFFmpeg(args: string[], timeoutMs = FFMPEG_TIMEOUT_MS): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -76,15 +79,19 @@ function runFFprobe(args: string[]): Promise<string> {
   });
 }
 
-async function probeRemux(inputPath: string): Promise<RemuxPlan> {
+async function probePlan(input: string): Promise<RemuxPlan> {
+  const output = await runFFprobe([
+    '-v', 'error',
+    '-show_entries', 'stream=codec_type,codec_name,profile,pix_fmt,height',
+    '-of', 'json',
+    input
+  ]);
+  return planRemux(JSON.parse(output).streams ?? []);
+}
+
+async function probeRemux(input: string): Promise<RemuxPlan> {
   try {
-    const output = await runFFprobe([
-      '-v', 'error',
-      '-show_entries', 'stream=codec_type,codec_name,profile,pix_fmt,height',
-      '-of', 'json',
-      inputPath
-    ]);
-    return planRemux(JSON.parse(output).streams ?? []);
+    return await probePlan(input);
   } catch (error) {
     console.error('FFprobe failed, falling back to full transcode:', error);
     return { video: false, audio: false, videoArgs: [] };
@@ -137,6 +144,23 @@ async function uploadProcessedFile(filePath: string, prefix: string): Promise<st
   return objectStorageService.normalizeObjectEntityPath(url.pathname);
 }
 
+function thumbnailArgs(input: string, at: string, outputPath: string): string[] {
+  // -ss before -i seeks the input, so over a URL ffmpeg only fetches the
+  // bytes around that frame instead of reading from the start.
+  return ['-ss', at, '-i', input, '-vframes', '1', '-vf', 'scale=640:-1', '-q:v', '2', '-y', outputPath];
+}
+
+async function makeThumbnail(input: string, thumbnailPath: string): Promise<void> {
+  try {
+    await runFFmpeg(thumbnailArgs(input, '00:00:01', thumbnailPath), THUMBNAIL_TIMEOUT_MS);
+  } catch {
+    // Clips under a second long have no frame at 1 s.
+  }
+  if (!fs.existsSync(thumbnailPath)) {
+    await runFFmpeg(thumbnailArgs(input, '00:00:00', thumbnailPath), THUMBNAIL_TIMEOUT_MS);
+  }
+}
+
 export async function processVideo(clipId: string): Promise<void> {
   const workDir = path.join(TEMP_DIR, clipId);
 
@@ -152,61 +176,64 @@ export async function processVideo(clipId: string): Promise<void> {
       throw new Error(`Video clip not found: ${clipId}`);
     }
     
-    const inputPath = path.join(workDir, 'input.mp4');
     const thumbnailPath = path.join(workDir, 'thumbnail.jpg');
-    const transcodedPath = path.join(workDir, 'transcoded.mp4');
-    
+    const inputPath = path.join(workDir, 'input.mp4');
     console.log(`Processing video clip ${clipId}: ${clip.title}`);
-    
-    await downloadVideo(clip.url, inputPath);
-    console.log(`Downloaded video to: ${inputPath}`);
-    
+
+    // ffprobe and the thumbnail read only the parts of the file they need,
+    // straight from storage. Downloading a whole clip took most of the
+    // processing time on this server. If reading from storage directly
+    // fails, fall back to downloading it.
+    let input = await objectStorageService.getSignedReadUrl(clip.url, SOURCE_URL_TTL_SEC);
+    let downloaded = false;
+    let remux: RemuxPlan;
+    try {
+      remux = await probePlan(input);
+    } catch (error) {
+      console.error('Probing from storage failed, downloading instead:', error);
+      await downloadVideo(clip.url, inputPath);
+      input = inputPath;
+      downloaded = true;
+      remux = await probeRemux(inputPath);
+    }
     console.log('Generating thumbnail...');
-    await runFFmpeg([
-      '-i', inputPath,
-      '-ss', '00:00:01',
-      '-vframes', '1',
-      '-vf', 'scale=640:-1',
-      '-q:v', '2',
-      '-y',
-      thumbnailPath
-    ]);
-    
-    if (!fs.existsSync(thumbnailPath)) {
+    await makeThumbnail(input, thumbnailPath);
+
+    let transcodedUrl: string | null = null;
+    if (isPlayableAsIs(remux)) {
+      // H.264 and AAC already play in browsers, so the original is served
+      // as it is rather than as a second, repackaged copy.
+      console.log('Original plays as is; skipping repackaging');
+    } else {
+      const transcodedPath = path.join(workDir, 'transcoded.mp4');
+      if (!downloaded) {
+        await downloadVideo(clip.url, inputPath);
+        console.log(`Downloaded video to: ${inputPath}`);
+      }
+      const videoArgs = remux.video
+        ? ['-c:v', 'copy', ...remux.videoArgs]
+        : ['-vf', 'scale=-2:1080', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23'];
+      const audioArgs = remux.audio ? ['-c:a', 'copy'] : ['-c:a', 'aac', '-b:a', '128k'];
+      console.log(remux.video ? 'Repackaging without re-encoding...' : 'Transcoding to 1080p...');
       await runFFmpeg([
         '-i', inputPath,
-        '-ss', '00:00:00',
-        '-vframes', '1',
-        '-vf', 'scale=640:-1',
-        '-q:v', '2',
+        ...videoArgs,
+        ...audioArgs,
+        '-movflags', '+faststart',
         '-y',
-        thumbnailPath
+        transcodedPath
       ]);
+      transcodedUrl = await uploadProcessedFile(transcodedPath, 'transcoded');
     }
-    
-    const remux = await probeRemux(inputPath);
-    const videoArgs = remux.video
-      ? ['-c:v', 'copy', ...remux.videoArgs]
-      : ['-vf', 'scale=-2:1080', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23'];
-    const audioArgs = remux.audio ? ['-c:a', 'copy'] : ['-c:a', 'aac', '-b:a', '128k'];
-    console.log(remux.video ? 'Repackaging without re-encoding...' : 'Transcoding to 1080p...');
-    await runFFmpeg([
-      '-i', inputPath,
-      ...videoArgs,
-      ...audioArgs,
-      '-movflags', '+faststart',
-      '-y',
-      transcodedPath
-    ]);
-    
-    console.log('Uploading processed files...');
+
+    console.log('Uploading thumbnail...');
     const thumbnailUrl = await uploadProcessedFile(thumbnailPath, 'thumbnail');
-    const transcodedUrl = await uploadProcessedFile(transcodedPath, 'transcoded');
     
     await storage.updateVideoClip(clipId, {
       thumbnailUrl,
       transcodedUrl,
-      processingStatus: 'ready'
+      processingStatus: 'ready',
+      processingError: null,
     });
     
     console.log(`Video processing complete for clip ${clipId}`);
@@ -253,15 +280,30 @@ export async function reprocessVideoClip(clipId: string): Promise<'queued' | 'al
   return 'queued';
 }
 
-// Jobs run inside the web server, so a restart kills them and leaves clips
-// stuck in 'pending' or 'processing'. Mark them failed so they can be retried.
+// Jobs run inside the web server, so a restart (such as a Publish) kills them
+// and leaves clips stuck in 'pending' or 'processing'. Queue them again, once:
+// a clip that was already requeued and got interrupted again may be what is
+// bringing the server down, so it is failed instead and left for a Retry.
+const REQUEUED_AFTER_RESTART = 'Requeued after a server restart';
+
 export async function recoverInterruptedVideoProcessing(): Promise<void> {
   try {
-    const count = await storage.failInterruptedVideoClips(
-      'Processing was interrupted by a server restart. Retry to process again.'
-    );
-    if (count > 0) {
-      console.log(`Marked ${count} interrupted video clip(s) as failed`);
+    const clips = await storage.getInterruptedVideoClips();
+    let requeued = 0;
+    for (const clip of clips) {
+      if (clip.processingError === REQUEUED_AFTER_RESTART) {
+        await storage.updateVideoClip(clip.id, {
+          processingStatus: 'error',
+          processingError: 'Processing was interrupted by a server restart twice. Retry to process again.',
+        });
+        continue;
+      }
+      await storage.updateVideoClip(clip.id, { processingStatus: 'pending', processingError: REQUEUED_AFTER_RESTART });
+      queue.add(clip.id);
+      requeued++;
+    }
+    if (clips.length > 0) {
+      console.log(`Requeued ${requeued} of ${clips.length} interrupted video clip(s)`);
     }
   } catch (error) {
     console.error('Failed to recover interrupted video processing:', error);

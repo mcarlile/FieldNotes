@@ -66,7 +66,7 @@ export interface IStorage {
   createVideoClip(clip: InsertVideoClip): Promise<VideoClip>;
   updateVideoClip(id: string, clip: Partial<InsertVideoClip>): Promise<VideoClip | undefined>;
   deleteVideoClip(id: string): Promise<boolean>;
-  failInterruptedVideoClips(message: string): Promise<number>;
+  getInterruptedVideoClips(): Promise<VideoClip[]>;
 
   // Webhook Tokens
   getWebhookTokenByUserId(userId: string): Promise<WebhookToken | undefined>;
@@ -422,13 +422,11 @@ export class DatabaseStorage implements IStorage {
     return result.rowCount !== null && result.rowCount > 0;
   }
 
-  async failInterruptedVideoClips(message: string): Promise<number> {
-    const clips = await db
-      .update(videoClips)
-      .set({ processingStatus: 'error', processingError: message })
-      .where(inArray(videoClips.processingStatus, ['pending', 'processing']))
-      .returning({ id: videoClips.id });
-    return clips.length;
+  async getInterruptedVideoClips(): Promise<VideoClip[]> {
+    return db
+      .select()
+      .from(videoClips)
+      .where(inArray(videoClips.processingStatus, ['pending', 'processing']));
   }
 
   // Webhook Tokens
@@ -1107,16 +1105,10 @@ export class MemStorage implements IStorage {
     return false;
   }
 
-  async failInterruptedVideoClips(message: string): Promise<number> {
-    let count = 0;
-    for (const clip of this.videoClipsData) {
-      if (clip.processingStatus === 'pending' || clip.processingStatus === 'processing') {
-        clip.processingStatus = 'error';
-        clip.processingError = message;
-        count++;
-      }
-    }
-    return count;
+  async getInterruptedVideoClips(): Promise<VideoClip[]> {
+    return this.videoClipsData.filter(
+      (clip) => clip.processingStatus === 'pending' || clip.processingStatus === 'processing',
+    );
   }
 
   // Webhook Tokens (stubs — MemStorage not used in production)
