@@ -932,6 +932,11 @@ export default function MapboxMap({
         img.onerror = () => { img.style.display = 'none'; };
         el.appendChild(img);
 
+        // Mapbox positions a marker by writing `transform` on its root element,
+        // so the hover scale lives on the inner button, not the marker root.
+        const markerRoot = document.createElement('div');
+        markerRoot.appendChild(el);
+
         el.addEventListener('mouseenter', () => { el.style.transform = 'scale(1.12)'; });
         el.addEventListener('mouseleave', () => { el.style.transform = 'scale(1)'; });
         el.addEventListener('click', (e) => {
@@ -939,7 +944,7 @@ export default function MapboxMap({
           onPhotoMarkerClickRef.current?.(pm.id);
         });
 
-        const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+        const marker = new mapboxgl.Marker({ element: markerRoot, anchor: 'center' })
           .setLngLat([pm.longitude, pm.latitude])
           .addTo(map.current!);
 
