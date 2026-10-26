@@ -14,6 +14,7 @@ import * as path from 'path';
 
 import * as crypto from 'crypto';
 import { createClipWithCoordinates, tripDurationSeconds } from "./trailcam";
+import { inboxTripGpxData, timedTripFields } from "./tripTimestamps";
 import { generateApiToken } from "./apiTokens";
 import { registerMcpRoutes } from "./mcp";
 import { getValidStravaToken, stravaFetch, buildGpxFromActivity, importGpxToInbox } from "./strava";
@@ -1391,6 +1392,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Item not found" });
       }
       const stats = item.gpxStats as any;
+      // Keep the GPX's times so the trip can take video clips.
+      const { timedTrack, startTime, endTime } = timedTripFields(item.rawGpx);
       const fieldNote = await storage.createFieldNote({
         userId: req.dbUser.id,
         title: req.body.title || item.filename.replace(/\.gpx$/i, ''),
@@ -1399,7 +1402,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         date: stats?.date ? new Date(stats.date) : new Date(item.receivedAt),
         distance: stats?.distance ?? null,
         elevationGain: stats?.elevationGain ?? null,
-        gpxData: stats?.coordinates ? { coordinates: stats.coordinates } : null,
+        gpxData: inboxTripGpxData(stats, timedTrack),
+        startTime,
+        endTime,
         stravaId: item.stravaId ?? null,
         stravaSource: item.source ?? null,
       });

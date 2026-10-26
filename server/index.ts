@@ -13,6 +13,7 @@ import { pool } from "./db";
 import { registerDesignPreview } from "./designPreview";
 import { recoverInterruptedVideoProcessing } from "./videoProcessor";
 import { migrateStudioProjectsToTrips } from "./tripMigration";
+import { backfillTripTimestamps } from "./tripTimestamps";
 
 const app = express();
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
@@ -196,6 +197,12 @@ async function runStartupMigrations() {
     }
   } catch (err) {
     log(`Studio-to-trips migration warning: ${(err as Error).message}`);
+  }
+  try {
+    const restored = await backfillTripTimestamps(tripClient);
+    if (restored) log(`Restored route timestamps on ${restored} imported trips`);
+  } catch (err) {
+    log(`Trip timestamp backfill warning: ${(err as Error).message}`);
   } finally {
     tripClient.release();
   }
