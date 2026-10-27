@@ -10,6 +10,7 @@ struct NotesListView: View {
     @State private var path: [FieldNote] = []
     @State private var showNewTrip = false
     @State private var showStravaImport = false
+    @State private var showHealthImport = false
     /// The app always opens on the map.
     @State private var showsMap = true
     @AppStorage("mapLayer") private var mapLayer: MapLayer = .standard
@@ -46,7 +47,7 @@ struct NotesListView: View {
                         notes.isEmpty ? "No field notes yet" : "No results",
                         systemImage: "map",
                         description: Text(notes.isEmpty
-                            ? "Tap + to add a trip from a GPX file or Strava."
+                            ? "Tap + to add a trip from a GPX file, Strava, or Apple Health."
                             : mediaFilter == .all
                                 ? "Try a different search term."
                                 : "No trips match “\(mediaFilter.label)”. Change the filter to see more.")
@@ -116,6 +117,9 @@ struct NotesListView: View {
             .sheet(isPresented: $showStravaImport) {
                 StravaImportView(onSaved: added)
             }
+            .sheet(isPresented: $showHealthImport) {
+                HealthImportView(onSaved: added)
+            }
             // Like the web heat map popup: every trip under the tap.
             .sheet(isPresented: Binding(
                 get: { !selectedRouteIds.isEmpty },
@@ -146,14 +150,19 @@ struct NotesListView: View {
         .ignoresSafeArea()
     }
 
-    // Same two entries as the web dashboard's Create dropdown.
+    // The web dashboard's Create dropdown, plus Apple Health.
     private func createMenu<Label: View>(@ViewBuilder label: () -> Label) -> some View {
         Menu {
             Button { showNewTrip = true } label: {
-                SwiftUI.Label("New trip", systemImage: "square.and.pencil")
+                SwiftUI.Label("New trip from GPX file", systemImage: "square.and.pencil")
             }
             Button { showStravaImport = true } label: {
                 SwiftUI.Label("Import from Strava", systemImage: "square.and.arrow.down")
+            }
+            if HealthSync.shared.isAvailable {
+                Button { showHealthImport = true } label: {
+                    SwiftUI.Label("Import from Apple Health", systemImage: "heart")
+                }
             }
         } label: {
             label()
