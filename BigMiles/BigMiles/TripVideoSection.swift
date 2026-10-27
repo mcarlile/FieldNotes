@@ -45,6 +45,13 @@ final class TripVideoPlayback: ObservableObject {
 
     func play(_ clip: VideoClip) {
         guard clip.isReady, let url = clip.streamURL else { return }
+        #if os(iOS)
+        // The default audio session is silenced by the ring/silent switch;
+        // a video the user starts should be heard, as in the Photos app.
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .moviePlayback)
+        try? session.setActive(true)
+        #endif
         if self.clip?.id != clip.id {
             self.clip = clip
             seconds = 0

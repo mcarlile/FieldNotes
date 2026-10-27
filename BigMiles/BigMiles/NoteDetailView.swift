@@ -91,25 +91,15 @@ struct NoteDetailView: View {
         }
         // On wide screens the trip's name heads the details card instead.
         .navigationTitle(isWide ? "" : display.title)
-        // ...and its own back button replaces the system one, which the card
-        // would cover now that it rises level with the Edit button.
-        .navigationBarBackButtonHidden(isWide)
+        // ...and the navigation bar gives way to the cards' own buttons: left
+        // over them, it would take the taps meant for the title card.
+        .toolbar(isWide ? .hidden : .automatic, for: .navigationBar)
         .toolbarTitleDisplayMode(.inline)
         .toolbarBackground(display.mapCoordinates.isEmpty ? .automatic : .hidden, for: .navigationBar)
         .task { await loadFull() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Edit") { showEdit = true }
-            }
-            if mediaInCard {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        withAnimation(.snappy) { mediaCardOpen.toggle() }
-                    } label: {
-                        Image(systemName: "photo.on.rectangle")
-                    }
-                    .accessibilityLabel(mediaCardOpen ? "Hide media" : "Show media")
-                }
             }
             // Same map buttons, in the same place, as the home heat map.
             if !display.mapCoordinates.isEmpty {
@@ -229,7 +219,7 @@ struct NoteDetailView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     // Laid out first so it keeps its natural height; with media
                     // below it gets at most about half the column, then scrolls.
-                    detailsCard(width: width, maxHeight: showMedia ? (geo.size.height - geo.safeAreaInsets.top) * 0.4 : .infinity)
+                    detailsCard(width: width, maxHeight: showMedia ? geo.size.height * 0.4 : .infinity)
                         .layoutPriority(1)
                     if showMedia {
                         mediaCard(width: width)
@@ -237,28 +227,28 @@ struct NoteDetailView: View {
                     }
                 }
                 .frame(maxHeight: .infinity, alignment: .top)
-                .padding(.horizontal, 16)
-                .padding(.top, toolbarButtonTop(navigationBarBottom: geo.safeAreaInsets.top))
-                .padding(.bottom, 16)
+                .padding(16)
+
+                // Level with the top of the title card.
+                HStack(spacing: 8) {
+                    if mediaInCard {
+                        Button {
+                            withAnimation(.snappy) { mediaCardOpen.toggle() }
+                        } label: {
+                            Image(systemName: "photo.on.rectangle")
+                                .frame(height: 22)
+                        }
+                        .accessibilityLabel(mediaCardOpen ? "Hide media" : "Show media")
+                    }
+                    Button("Edit") { showEdit = true }
+                }
+                .buttonStyle(.glass)
+                .controlSize(.large)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(16)
             }
             .animation(.snappy, value: mediaCardExpanded)
         }
-        // Reaches up under the see-through navigation bar so the cards can
-        // start level with the Edit button.
-        .ignoresSafeArea(.container, edges: .top)
-    }
-
-    /// The top of the navigation bar's buttons: they're 44pt tall and centred
-    /// in the bar between the status bar and the bar's bottom edge.
-    private func toolbarButtonTop(navigationBarBottom: CGFloat) -> CGFloat {
-        #if os(iOS)
-        let statusBar = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?
-            .statusBarManager?.statusBarFrame.height ?? 0
-        guard navigationBarBottom > statusBar + 44 else { return navigationBarBottom + 16 }
-        return (statusBar + navigationBarBottom - 44) / 2
-        #else
-        return 16
-        #endif
     }
 
     /// Sized to its contents, scrolling only once they outgrow the screen.
@@ -490,26 +480,36 @@ struct LightboxView: View {
     let photos: [Photo]
     let onDismiss: () -> Void
 
-    @State private var current: Photo
+    @State private var currentId: String
 
     init(initial: Photo, photos: [Photo], onDismiss: @escaping () -> Void) {
         self.initial = initial
         self.photos = photos
         self.onDismiss = onDismiss
-        _current = State(initialValue: initial)
+        _currentId = State(initialValue: initial.id)
     }
 
-    private var idx: Int { photos.firstIndex(where: { $0.id == current.id }) ?? 0 }
+    private var idx: Int { photos.firstIndex(where: { $0.id == currentId }) ?? 0 }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            AsyncImage(url: current.imageURL) { img in
-                img.resizable().scaledToFit()
-            } placeholder: {
-                ProgressView().tint(.white)
+            // Swipe left and right between the trip's photos.
+            TabView(selection: $currentId) {
+                ForEach(photos.isEmpty ? [initial] : photos) { photo in
+                    AsyncImage(url: photo.imageURL) { img in
+                        img.resizable().scaledToFit()
+                    } placeholder: {
+                        ProgressView().tint(.white)
+                    }
+                    .tag(photo.id)
+                }
             }
+            #if os(iOS)
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            #endif
+            .ignoresSafeArea()
 
             VStack {
                 HStack {
@@ -524,13 +524,13 @@ struct LightboxView: View {
                 Spacer()
                 if photos.count > 1 {
                     HStack(spacing: 32) {
-                        Button { current = photos[(idx - 1 + photos.count) % photos.count] } label: {
+                        Button { withAnimation { currentId = photos[(idx - 1 + photos.count) % photos.count].id } } label: {
                             Image(systemName: "chevron.left").font(.system(size: 22)).foregroundColor(.white)
                         }
                         Text("\(idx + 1) / \(photos.count)")
                             .foregroundColor(.white.opacity(0.5))
                             .font(.system(size: 14))
-                        Button { current = photos[(idx + 1) % photos.count] } label: {
+                        Button { withAnimation { currentId = photos[(idx + 1) % photos.count].id } } label: {
                             Image(systemName: "chevron.right").font(.system(size: 22)).foregroundColor(.white)
                         }
                     }
