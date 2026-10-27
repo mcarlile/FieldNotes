@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0A1B2C3D4E5F607182930001 /* MapboxMaps in Frameworks */ = {isa = PBXBuildFile; platformFilters = (ios, ); productRef = 0A1B2C3D4E5F607182930002 /* MapboxMaps */; };
+		0A1B2C3D4E5F607182930001 /* MapboxMaps in Frameworks */ = {isa = PBXBuildFile; platformFilter = ios; productRef = 0A1B2C3D4E5F607182930002 /* MapboxMaps */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
