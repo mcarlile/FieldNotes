@@ -24,6 +24,7 @@ struct NoteDetailView: View {
     @State private var mediaTab: MediaTab?
     @State private var mediaContentHeight: CGFloat = 400
     @State private var detailsContentHeight: CGFloat = 400
+    @Environment(\.dismiss) private var dismiss
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
     #endif
@@ -90,6 +91,9 @@ struct NoteDetailView: View {
         }
         // On wide screens the trip's name heads the details card instead.
         .navigationTitle(isWide ? "" : display.title)
+        // ...and its own back button replaces the system one, which the card
+        // would cover now that it rises level with the Edit button.
+        .navigationBarBackButtonHidden(isWide)
         .toolbarTitleDisplayMode(.inline)
         .toolbarBackground(display.mapCoordinates.isEmpty ? .automatic : .hidden, for: .navigationBar)
         .task { await loadFull() }
@@ -117,6 +121,10 @@ struct NoteDetailView: View {
         }
         // Playing a clip goes to the 3D chase view, as on the web.
         .onChange(of: playback.focusRequest) { mapControls.is3D = true }
+        // On wide screens the details fold away so the video gets the column.
+        .onChange(of: playback.isPlaying) { _, playing in
+            if playing && isWide { withAnimation(.snappy) { detailsCardOpen = false } }
+        }
         .sheet(isPresented: $showEdit) {
             TripFormView(existing: display) { _ in
                 Task { await loadFull() }
@@ -221,7 +229,7 @@ struct NoteDetailView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     // Laid out first so it keeps its natural height; with media
                     // below it gets at most about half the column, then scrolls.
-                    detailsCard(width: width, maxHeight: showMedia ? geo.size.height * 0.4 : .infinity)
+                    detailsCard(width: width, maxHeight: showMedia ? (geo.size.height - geo.safeAreaInsets.top) * 0.4 : .infinity)
                         .layoutPriority(1)
                     if showMedia {
                         mediaCard(width: width)
@@ -229,10 +237,28 @@ struct NoteDetailView: View {
                     }
                 }
                 .frame(maxHeight: .infinity, alignment: .top)
-                .padding(16)
+                .padding(.horizontal, 16)
+                .padding(.top, toolbarButtonTop(navigationBarBottom: geo.safeAreaInsets.top))
+                .padding(.bottom, 16)
             }
             .animation(.snappy, value: mediaCardExpanded)
         }
+        // Reaches up under the see-through navigation bar so the cards can
+        // start level with the Edit button.
+        .ignoresSafeArea(.container, edges: .top)
+    }
+
+    /// The top of the navigation bar's buttons: they're 44pt tall and centred
+    /// in the bar between the status bar and the bar's bottom edge.
+    private func toolbarButtonTop(navigationBarBottom: CGFloat) -> CGFloat {
+        #if os(iOS)
+        let statusBar = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?
+            .statusBarManager?.statusBarFrame.height ?? 0
+        guard navigationBarBottom > statusBar + 44 else { return navigationBarBottom + 16 }
+        return (statusBar + navigationBarBottom - 44) / 2
+        #else
+        return 16
+        #endif
     }
 
     /// Sized to its contents, scrolling only once they outgrow the screen.
@@ -240,26 +266,39 @@ struct NoteDetailView: View {
     /// (Measured like the media card, so it never stretches past its contents.)
     private func detailsCard(width: CGFloat, maxHeight: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button {
-                withAnimation(.snappy) { detailsCardOpen.toggle() }
-            } label: {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(display.title)
-                        .font(.system(size: 22, weight: .bold, design: .serif))
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Button { dismiss() } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 17, weight: .semibold))
                         .foregroundColor(ink)
-                        .multilineTextAlignment(.leading)
-                        .lineLimit(detailsCardOpen ? nil : 1)
-                    Spacer()
-                    Image(systemName: detailsCardOpen ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(muted)
                         .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
                 }
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .accessibilityLabel("Back")
+
+                Button {
+                    withAnimation(.snappy) { detailsCardOpen.toggle() }
+                } label: {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(display.title)
+                            .font(.system(size: 22, weight: .bold, design: .serif))
+                            .foregroundColor(ink)
+                            .multilineTextAlignment(.leading)
+                            .lineLimit(detailsCardOpen ? nil : 1)
+                        Spacer()
+                        Image(systemName: detailsCardOpen ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(muted)
+                            .frame(width: 28, height: 28)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(detailsCardOpen ? "Collapse details" : "Expand details")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(detailsCardOpen ? "Collapse details" : "Expand details")
-            .padding(.horizontal, 20)
+            .padding(.leading, 12)
+            .padding(.trailing, 20)
             .padding(.top, 16)
             .padding(.bottom, detailsCardOpen ? 12 : 16)
 
