@@ -61,10 +61,10 @@ function studioTripFor(trip: FieldNote) {
 // How far either side of the current spot a calibration drag may move the pin.
 const CALIBRATE_RANGE_SECONDS = 300;
 
-// Width of the floating cards on wide screens, and their gap from the edges.
+// Width of the left column of cards on wide screens, and its gap from the edges.
 const CARD_WIDTH = 340;
 const CARD_MARGIN = 12;
-// The media card grows to this while a clip is open.
+// The column grows to this (at most half the page) while a clip is open.
 const PLAYER_CARD_WIDTH = 720;
 
 export type MediaTab = "videos" | "photos";
@@ -510,21 +510,16 @@ export default function TripView({
     setCalibrating(false);
   };
 
-  // A clip open in the player widens the media card on wide screens.
+  // A clip open in the player widens the left column on wide screens.
   const playerOpen = tab === "videos" && !!selectedClip;
   const canAddVideo = canEdit && !!timedTrack;
-  const mediaWidth = playerOpen
-    ? Math.max(CARD_WIDTH, Math.min(PLAYER_CARD_WIDTH, viewport.width - CARD_WIDTH - CARD_MARGIN * 4))
+  const columnWidth = playerOpen
+    ? Math.max(CARD_WIDTH, Math.min(PLAYER_CARD_WIDTH, viewport.width * 0.5))
     : CARD_WIDTH;
   // The map centres the route and the followed pin in the space the cards leave.
   const mapPadding = isMobile
     ? { top: 64, right: 0, bottom: Math.round(viewport.height * 0.45), left: 0 }
-    : {
-        top: 0,
-        right: mediaWidth + CARD_MARGIN * 2,
-        bottom: 0,
-        left: infoOpen ? CARD_WIDTH + CARD_MARGIN * 2 : 0,
-      };
+    : { top: 0, right: 0, bottom: 0, left: columnWidth + CARD_MARGIN * 2 };
 
   const tabClass = (active: boolean) =>
     `meta-mono px-2.5 py-1 rounded-full transition-colors ${
@@ -582,10 +577,15 @@ export default function TripView({
       </Suspense>
       </div>
 
+      {/* On wide screens the trip card and the media card under it share a
+          column on the left; on phones they float at the top and bottom. */}
+      <div
+        className="contents md:absolute md:z-20 md:top-3 md:left-3 md:bottom-3 md:flex md:flex-col md:gap-3 md:pointer-events-none md:transition-[width] md:duration-300"
+        style={isMobile ? undefined : { width: columnWidth }}
+      >
       {/* Trip card: back, name and details; folds down to its header. */}
       <aside
-        className="absolute z-20 top-3 left-3 right-3 md:right-auto flex flex-col max-h-[50%] md:max-h-[calc(100%-1.5rem)] rounded-lg border border-border bg-card shadow-lg"
-        style={isMobile ? undefined : { width: CARD_WIDTH }}
+        className="absolute z-20 top-3 left-3 right-3 md:static md:w-full md:flex-shrink-0 md:pointer-events-auto flex flex-col max-h-[50%] md:max-h-[40%] rounded-lg border border-border bg-card shadow-lg"
         data-testid="trip-card"
       >
         <div className="flex items-center gap-2 px-3 py-2.5 flex-shrink-0">
@@ -618,12 +618,9 @@ export default function TripView({
         )}
       </aside>
 
-      {/* Media card: photos or videos; widens while a clip is open. */}
+      {/* Media card: photos or videos, under the trip card on wide screens. */}
       <section
-        className={`absolute z-20 inset-x-3 bottom-3 max-h-[45%] md:inset-x-auto md:right-3 md:top-3 md:max-h-[calc(100%-1.5rem)] ${
-          playerOpen ? "md:bottom-3" : "md:bottom-auto"
-        } flex flex-col rounded-lg border border-border bg-card shadow-lg md:transition-[width] md:duration-300`}
-        style={isMobile ? undefined : { width: mediaWidth }}
+        className="absolute z-20 inset-x-3 bottom-3 max-h-[45%] md:static md:w-full md:min-h-0 md:max-h-none md:pointer-events-auto flex flex-col rounded-lg border border-border bg-card shadow-lg"
         data-testid="media-card"
       >
         <div className="flex items-center gap-1 px-3 py-2 flex-shrink-0 border-b border-border">
@@ -677,6 +674,8 @@ export default function TripView({
                         onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
                         onPlay={() => {
                           setIsPlaying(true);
+                          // The trip card folds so the video gets the column; its header reopens it.
+                          setInfoOpen(false);
                           // Every play goes back to the chase view behind the pin.
                           setMapFocus({ id: selectedClip.id, nonce: Date.now() });
                         }}
@@ -927,6 +926,7 @@ export default function TripView({
           )}
         </div>
       </section>
+      </div>
     </div>
   );
 }

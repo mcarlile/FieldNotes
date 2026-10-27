@@ -42,3 +42,12 @@ export function planRemux(streams: StreamInfo[]): RemuxPlan {
     videoArgs: hevc ? ["-tag:v", "hvc1"] : [],
   };
 }
+
+/**
+ * True when the original file can be served as it is: H.264 video, AAC (or
+ * no) audio. Repackaging it would only move the index to the front, and
+ * browsers find an index at the end with one extra range request.
+ */
+export function isPlayableAsIs(plan: RemuxPlan): boolean {
+  return plan.video && plan.audio && plan.videoArgs.length === 0;
+}

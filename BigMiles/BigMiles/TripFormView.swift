@@ -230,11 +230,28 @@ struct TripFormView: View {
             body["gpxData"] = gpx.asGpxData
         }
         do {
-            var uploaded: [[String: Any]] = []
-            for (i, photo) in newPhotos.enumerated() {
-                uploadProgress = "Uploading \(i + 1) of \(newPhotos.count)"
-                uploaded.append(try await PhotoUploader.upload(photo))
+            // A few at a time: one by one, each photo waited on its own
+            // signed-URL round trip before its upload could start.
+            let pending = newPhotos
+            var results = [[String: Any]?](repeating: nil, count: pending.count)
+            var done = 0
+            if !pending.isEmpty { uploadProgress = "Uploading 0 of \(pending.count)" }
+            try await withThrowingTaskGroup(of: (Int, [String: Any]).self) { group in
+                for (i, photo) in pending.enumerated() {
+                    if i >= 4, let (j, entry) = try await group.next() {
+                        results[j] = entry
+                        done += 1
+                        uploadProgress = "Uploading \(done) of \(pending.count)"
+                    }
+                    group.addTask { (i, try await PhotoUploader.upload(photo)) }
+                }
+                while let (j, entry) = try await group.next() {
+                    results[j] = entry
+                    done += 1
+                    uploadProgress = "Uploading \(done) of \(pending.count)"
+                }
             }
+            let uploaded = results.compactMap { $0 }
             uploadProgress = nil
             // The server replaces a trip's photos with this list: existing ones
             // are kept by id. Only sent when the set changed, and never when the

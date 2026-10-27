@@ -23,6 +23,8 @@ struct NoteDetailView: View {
     @State private var detailsCardOpen = true
     @State private var mediaTab: MediaTab?
     @State private var mediaContentHeight: CGFloat = 400
+    @State private var detailsContentHeight: CGFloat = 400
+    @Environment(\.dismiss) private var dismiss
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
     #endif
@@ -31,7 +33,7 @@ struct NoteDetailView: View {
 
     /// The Duo (and other wide screens), laid out like the web trip page: the
     /// map fills the screen, the details float in a card on the left that
-    /// folds down to its title, and videos and photos share a card on the right.
+    /// folds down to its title, and videos and photos share a card under it.
     private var isWide: Bool {
         #if os(iOS)
         return sizeClass == .regular && !display.mapCoordinates.isEmpty
@@ -50,9 +52,8 @@ struct NoteDetailView: View {
         mediaTab ?? (videoClips.isEmpty ? .photos : .videos)
     }
 
-    private let detailsCardWidth: CGFloat = 340
-    private let mediaCardWidth: CGFloat = 360
-    /// A playing clip widens the media card, as on the web.
+    private let columnWidth: CGFloat = 360
+    /// A playing clip widens the left column, as the media card does on the web.
     private var mediaCardExpanded: Bool { currentTab == .videos && playback.clip != nil }
 
     private var track: TimedTrack? { display.gpxData?.timedTrack }
@@ -90,22 +91,15 @@ struct NoteDetailView: View {
         }
         // On wide screens the trip's name heads the details card instead.
         .navigationTitle(isWide ? "" : display.title)
+        // ...and the navigation bar gives way to the cards' own buttons: left
+        // over them, it would take the taps meant for the title card.
+        .toolbar(isWide ? .hidden : .automatic, for: .navigationBar)
         .toolbarTitleDisplayMode(.inline)
         .toolbarBackground(display.mapCoordinates.isEmpty ? .automatic : .hidden, for: .navigationBar)
         .task { await loadFull() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Edit") { showEdit = true }
-            }
-            if mediaInCard {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        withAnimation(.snappy) { mediaCardOpen.toggle() }
-                    } label: {
-                        Image(systemName: "sidebar.right")
-                    }
-                    .accessibilityLabel(mediaCardOpen ? "Hide media" : "Show media")
-                }
             }
             // Same map buttons, in the same place, as the home heat map.
             if !display.mapCoordinates.isEmpty {
@@ -117,6 +111,10 @@ struct NoteDetailView: View {
         }
         // Playing a clip goes to the 3D chase view, as on the web.
         .onChange(of: playback.focusRequest) { mapControls.is3D = true }
+        // On wide screens the details fold away so the video gets the column.
+        .onChange(of: playback.isPlaying) { _, playing in
+            if playing && isWide { withAnimation(.snappy) { detailsCardOpen = false } }
+        }
         .sheet(isPresented: $showEdit) {
             TripFormView(existing: display) { _ in
                 Task { await loadFull() }
@@ -169,10 +167,21 @@ struct NoteDetailView: View {
                                 if drag.translation.height > 30 { panelExpanded = false }
                             }
                         })
+                    // The panel's bottom sits under the toolbar and home
+                    // indicator, so pad past them to reach the last photo.
+                    // Scrolling the folded panel opens it.
                     ScrollView {
-                        details.padding(.horizontal, 20).padding(.bottom, 20)
+                        details
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 20 + geo.safeAreaInsets.bottom)
                     }
-                    .scrollDisabled(!panelExpanded)
+                    .onScrollGeometryChange(for: Bool.self) { scroll in
+                        scroll.contentOffset.y + scroll.contentInsets.top > 8
+                    } action: { _, scrolled in
+                        if scrolled && !panelExpanded {
+                            withAnimation(.snappy) { panelExpanded = true }
+                        }
+                    }
                 }
                 .frame(height: panelHeight + geo.safeAreaInsets.bottom, alignment: .top)
                 .background(sand, in: UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20))
@@ -185,37 +194,57 @@ struct NoteDetailView: View {
     // MARK: Wide layout
 
     /// The full-screen map with the details card over its left side and the
-    /// media card over its right; the map keeps the route and the followed
-    /// pin in the space between them.
+    /// media card under it; the map keeps the route and the followed pin in
+    /// the space to their right.
     private var mapWithCards: some View {
         GeometryReader { geo in
             let showMedia = mediaInCard && mediaCardOpen
-            let mediaWidth = mediaCardExpanded
-                ? max(mediaCardWidth, min(600, geo.size.width - detailsCardWidth - 64))
-                : mediaCardWidth
+            let width = showMedia && mediaCardExpanded
+                ? max(columnWidth, min(600, geo.size.width * 0.5))
+                : columnWidth
 
-            ZStack(alignment: .top) {
+            ZStack(alignment: .topLeading) {
                 TrailMap(
                     routes: [TrailRoute(id: display.id, coordinates: display.mapCoordinates)],
                     photos: photos,
                     layer: mapLayer,
                     controls: $mapControls,
-                    leadingInset: detailsCardOpen ? detailsCardWidth + 16 : 0,
-                    trailingInset: showMedia ? mediaWidth + 16 : 0,
+                    leadingInset: detailsCardOpen || showMedia ? width + 16 : 0,
                     playhead: playhead,
                     video: videoFollow,
                     onSelectPhoto: { lightbox = $0 }
                 )
                 .ignoresSafeArea()
 
-                HStack(alignment: .top, spacing: 16) {
-                    detailsCard
-                    Spacer(minLength: 0)
+                VStack(alignment: .leading, spacing: 16) {
+                    // Laid out first so it keeps its natural height; with media
+                    // below it gets at most about half the column, then scrolls.
+                    detailsCard(width: width, maxHeight: showMedia ? geo.size.height * 0.4 : .infinity)
+                        .layoutPriority(1)
                     if showMedia {
-                        mediaCard(width: mediaWidth)
-                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                        mediaCard(width: width)
+                            .transition(.move(edge: .leading).combined(with: .opacity))
                     }
                 }
+                .frame(maxHeight: .infinity, alignment: .top)
+                .padding(16)
+
+                // Level with the top of the title card.
+                HStack(spacing: 8) {
+                    if mediaInCard {
+                        Button {
+                            withAnimation(.snappy) { mediaCardOpen.toggle() }
+                        } label: {
+                            Image(systemName: "photo.on.rectangle")
+                                .frame(height: 22)
+                        }
+                        .accessibilityLabel(mediaCardOpen ? "Hide media" : "Show media")
+                    }
+                    Button("Edit") { showEdit = true }
+                }
+                .buttonStyle(.glass)
+                .controlSize(.large)
+                .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(16)
             }
             .animation(.snappy, value: mediaCardExpanded)
@@ -224,54 +253,62 @@ struct NoteDetailView: View {
 
     /// Sized to its contents, scrolling only once they outgrow the screen.
     /// Folded, only the title row is left.
-    private var detailsCard: some View {
-        ViewThatFits(in: .vertical) {
-            detailsCardBody(scrolls: false)
-            detailsCardBody(scrolls: true)
-        }
-    }
-
-    private func detailsCardBody(scrolls: Bool) -> some View {
+    /// (Measured like the media card, so it never stretches past its contents.)
+    private func detailsCard(width: CGFloat, maxHeight: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button {
-                withAnimation(.snappy) { detailsCardOpen.toggle() }
-            } label: {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(display.title)
-                        .font(.system(size: 22, weight: .bold, design: .serif))
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Button { dismiss() } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 17, weight: .semibold))
                         .foregroundColor(ink)
-                        .multilineTextAlignment(.leading)
-                        .lineLimit(detailsCardOpen ? nil : 1)
-                    Spacer()
-                    Image(systemName: detailsCardOpen ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(muted)
                         .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
                 }
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .accessibilityLabel("Back")
+
+                Button {
+                    withAnimation(.snappy) { detailsCardOpen.toggle() }
+                } label: {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(display.title)
+                            .font(.system(size: 22, weight: .bold, design: .serif))
+                            .foregroundColor(ink)
+                            .multilineTextAlignment(.leading)
+                            .lineLimit(detailsCardOpen ? nil : 1)
+                        Spacer()
+                        Image(systemName: detailsCardOpen ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(muted)
+                            .frame(width: 28, height: 28)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(detailsCardOpen ? "Collapse details" : "Expand details")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(detailsCardOpen ? "Collapse details" : "Expand details")
-            .padding(.horizontal, 20)
+            .padding(.leading, 12)
+            .padding(.trailing, 20)
             .padding(.top, 16)
             .padding(.bottom, detailsCardOpen ? 12 : 16)
 
             if detailsCardOpen {
-                if scrolls {
-                    ScrollView { details.padding(.horizontal, 20).padding(.bottom, 20) }
-                } else {
+                ScrollView {
                     details.padding(.horizontal, 20).padding(.bottom, 20)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { detailsContentHeight = $0 }
                 }
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(maxHeight: min(detailsContentHeight, maxHeight))
             }
         }
-        .frame(width: detailsCardWidth)
+        .frame(width: width)
         .background(sand, in: RoundedRectangle(cornerRadius: 16))
         .shadow(color: .black.opacity(0.15), radius: 12, y: 2)
     }
 
     // MARK: Media card
 
-    /// Videos and photos in one card pinned to the right, with a switch
+    /// Videos and photos in one card under the details, with a switch
     /// between them; the playhead pin keeps moving on the map beside it.
     private func mediaCard(width: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -443,26 +480,36 @@ struct LightboxView: View {
     let photos: [Photo]
     let onDismiss: () -> Void
 
-    @State private var current: Photo
+    @State private var currentId: String
 
     init(initial: Photo, photos: [Photo], onDismiss: @escaping () -> Void) {
         self.initial = initial
         self.photos = photos
         self.onDismiss = onDismiss
-        _current = State(initialValue: initial)
+        _currentId = State(initialValue: initial.id)
     }
 
-    private var idx: Int { photos.firstIndex(where: { $0.id == current.id }) ?? 0 }
+    private var idx: Int { photos.firstIndex(where: { $0.id == currentId }) ?? 0 }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            AsyncImage(url: current.imageURL) { img in
-                img.resizable().scaledToFit()
-            } placeholder: {
-                ProgressView().tint(.white)
+            // Swipe left and right between the trip's photos.
+            TabView(selection: $currentId) {
+                ForEach(photos.isEmpty ? [initial] : photos) { photo in
+                    AsyncImage(url: photo.imageURL) { img in
+                        img.resizable().scaledToFit()
+                    } placeholder: {
+                        ProgressView().tint(.white)
+                    }
+                    .tag(photo.id)
+                }
             }
+            #if os(iOS)
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            #endif
+            .ignoresSafeArea()
 
             VStack {
                 HStack {
@@ -477,13 +524,13 @@ struct LightboxView: View {
                 Spacer()
                 if photos.count > 1 {
                     HStack(spacing: 32) {
-                        Button { current = photos[(idx - 1 + photos.count) % photos.count] } label: {
+                        Button { withAnimation { currentId = photos[(idx - 1 + photos.count) % photos.count].id } } label: {
                             Image(systemName: "chevron.left").font(.system(size: 22)).foregroundColor(.white)
                         }
                         Text("\(idx + 1) / \(photos.count)")
                             .foregroundColor(.white.opacity(0.5))
                             .font(.system(size: 14))
-                        Button { current = photos[(idx + 1) % photos.count] } label: {
+                        Button { withAnimation { currentId = photos[(idx + 1) % photos.count].id } } label: {
                             Image(systemName: "chevron.right").font(.system(size: 22)).foregroundColor(.white)
                         }
                     }

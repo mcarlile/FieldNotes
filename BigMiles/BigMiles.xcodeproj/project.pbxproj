@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0A1B2C3D4E5F607182930001 /* MapboxMaps in Frameworks */ = {isa = PBXBuildFile; platformFilters = (ios, ); productRef = 0A1B2C3D4E5F607182930002 /* MapboxMaps */; };
+		0A1B2C3D4E5F607182930001 /* MapboxMaps in Frameworks */ = {isa = PBXBuildFile; platformFilter = ios; productRef = 0A1B2C3D4E5F607182930002 /* MapboxMaps */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -275,6 +275,8 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BigMiles/Info.plist;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Big Miles reads your workouts and their GPS routes to add them as trips.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Big Miles shows where you are on the map.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -320,6 +322,8 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BigMiles/Info.plist;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Big Miles reads your workouts and their GPS routes to add them as trips.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Big Miles shows where you are on the map.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
