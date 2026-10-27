@@ -24,6 +24,7 @@ struct NoteDetailView: View {
     @State private var mediaTab: MediaTab?
     @State private var mediaContentHeight: CGFloat = 400
     @State private var detailsContentHeight: CGFloat = 400
+    @Environment(\.dismiss) private var dismiss
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
     #endif
@@ -90,22 +91,15 @@ struct NoteDetailView: View {
         }
         // On wide screens the trip's name heads the details card instead.
         .navigationTitle(isWide ? "" : display.title)
+        // ...and the navigation bar gives way to the cards' own buttons: left
+        // over them, it would take the taps meant for the title card.
+        .toolbar(isWide ? .hidden : .automatic, for: .navigationBar)
         .toolbarTitleDisplayMode(.inline)
         .toolbarBackground(display.mapCoordinates.isEmpty ? .automatic : .hidden, for: .navigationBar)
         .task { await loadFull() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Edit") { showEdit = true }
-            }
-            if mediaInCard {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        withAnimation(.snappy) { mediaCardOpen.toggle() }
-                    } label: {
-                        Image(systemName: "photo.on.rectangle")
-                    }
-                    .accessibilityLabel(mediaCardOpen ? "Hide media" : "Show media")
-                }
             }
             // Same map buttons, in the same place, as the home heat map.
             if !display.mapCoordinates.isEmpty {
@@ -117,6 +111,10 @@ struct NoteDetailView: View {
         }
         // Playing a clip goes to the 3D chase view, as on the web.
         .onChange(of: playback.focusRequest) { mapControls.is3D = true }
+        // On wide screens the details fold away so the video gets the column.
+        .onChange(of: playback.isPlaying) { _, playing in
+            if playing && isWide { withAnimation(.snappy) { detailsCardOpen = false } }
+        }
         .sheet(isPresented: $showEdit) {
             TripFormView(existing: display) { _ in
                 Task { await loadFull() }
@@ -230,6 +228,24 @@ struct NoteDetailView: View {
                 }
                 .frame(maxHeight: .infinity, alignment: .top)
                 .padding(16)
+
+                // Level with the top of the title card.
+                HStack(spacing: 8) {
+                    if mediaInCard {
+                        Button {
+                            withAnimation(.snappy) { mediaCardOpen.toggle() }
+                        } label: {
+                            Image(systemName: "photo.on.rectangle")
+                                .frame(height: 22)
+                        }
+                        .accessibilityLabel(mediaCardOpen ? "Hide media" : "Show media")
+                    }
+                    Button("Edit") { showEdit = true }
+                }
+                .buttonStyle(.glass)
+                .controlSize(.large)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(16)
             }
             .animation(.snappy, value: mediaCardExpanded)
         }
@@ -240,26 +256,39 @@ struct NoteDetailView: View {
     /// (Measured like the media card, so it never stretches past its contents.)
     private func detailsCard(width: CGFloat, maxHeight: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button {
-                withAnimation(.snappy) { detailsCardOpen.toggle() }
-            } label: {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(display.title)
-                        .font(.system(size: 22, weight: .bold, design: .serif))
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Button { dismiss() } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 17, weight: .semibold))
                         .foregroundColor(ink)
-                        .multilineTextAlignment(.leading)
-                        .lineLimit(detailsCardOpen ? nil : 1)
-                    Spacer()
-                    Image(systemName: detailsCardOpen ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(muted)
                         .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
                 }
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .accessibilityLabel("Back")
+
+                Button {
+                    withAnimation(.snappy) { detailsCardOpen.toggle() }
+                } label: {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(display.title)
+                            .font(.system(size: 22, weight: .bold, design: .serif))
+                            .foregroundColor(ink)
+                            .multilineTextAlignment(.leading)
+                            .lineLimit(detailsCardOpen ? nil : 1)
+                        Spacer()
+                        Image(systemName: detailsCardOpen ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(muted)
+                            .frame(width: 28, height: 28)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(detailsCardOpen ? "Collapse details" : "Expand details")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(detailsCardOpen ? "Collapse details" : "Expand details")
-            .padding(.horizontal, 20)
+            .padding(.leading, 12)
+            .padding(.trailing, 20)
             .padding(.top, 16)
             .padding(.bottom, detailsCardOpen ? 12 : 16)
 
@@ -451,26 +480,36 @@ struct LightboxView: View {
     let photos: [Photo]
     let onDismiss: () -> Void
 
-    @State private var current: Photo
+    @State private var currentId: String
 
     init(initial: Photo, photos: [Photo], onDismiss: @escaping () -> Void) {
         self.initial = initial
         self.photos = photos
         self.onDismiss = onDismiss
-        _current = State(initialValue: initial)
+        _currentId = State(initialValue: initial.id)
     }
 
-    private var idx: Int { photos.firstIndex(where: { $0.id == current.id }) ?? 0 }
+    private var idx: Int { photos.firstIndex(where: { $0.id == currentId }) ?? 0 }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            AsyncImage(url: current.imageURL) { img in
-                img.resizable().scaledToFit()
-            } placeholder: {
-                ProgressView().tint(.white)
+            // Swipe left and right between the trip's photos.
+            TabView(selection: $currentId) {
+                ForEach(photos.isEmpty ? [initial] : photos) { photo in
+                    AsyncImage(url: photo.imageURL) { img in
+                        img.resizable().scaledToFit()
+                    } placeholder: {
+                        ProgressView().tint(.white)
+                    }
+                    .tag(photo.id)
+                }
             }
+            #if os(iOS)
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            #endif
+            .ignoresSafeArea()
 
             VStack {
                 HStack {
@@ -485,13 +524,13 @@ struct LightboxView: View {
                 Spacer()
                 if photos.count > 1 {
                     HStack(spacing: 32) {
-                        Button { current = photos[(idx - 1 + photos.count) % photos.count] } label: {
+                        Button { withAnimation { currentId = photos[(idx - 1 + photos.count) % photos.count].id } } label: {
                             Image(systemName: "chevron.left").font(.system(size: 22)).foregroundColor(.white)
                         }
                         Text("\(idx + 1) / \(photos.count)")
                             .foregroundColor(.white.opacity(0.5))
                             .font(.system(size: 14))
-                        Button { current = photos[(idx + 1) % photos.count] } label: {
+                        Button { withAnimation { currentId = photos[(idx + 1) % photos.count].id } } label: {
                             Image(systemName: "chevron.right").font(.system(size: 22)).foregroundColor(.white)
                         }
                     }
