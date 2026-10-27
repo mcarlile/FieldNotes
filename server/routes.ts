@@ -1978,10 +1978,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         storage.getPhotosByFieldNoteId(note.id),
         storage.getVideoClipsByTripId(note.id),
       ]);
+      // Only playable clips, with what the trip view needs to place them on
+      // the route; the player streams them through /api/video-clips/:id/stream.
       const videoClips = clips
-        .filter((c) => c.processingStatus !== "error")
-        .map(({ id, title, url, transcodedUrl, thumbnailUrl, startTime, duration }) => ({
-          id, title, url: transcodedUrl || url, thumbnailUrl, startTime, duration,
+        .filter((c) => c.processingStatus === "ready")
+        .map(({
+          id, fieldNoteId, title, url, transcodedUrl, thumbnailUrl, processingStatus,
+          startTime, endTime, duration, startLatitude, startLongitude, endLatitude, endLongitude, color,
+        }) => ({
+          id, fieldNoteId, title, url: transcodedUrl || url, thumbnailUrl, processingStatus,
+          startTime, endTime, duration, startLatitude, startLongitude, endLatitude, endLongitude, color,
         }));
       res.json({ ...note, photos, videoClips });
     } catch (err) {

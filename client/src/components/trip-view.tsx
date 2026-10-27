@@ -24,7 +24,7 @@ import type { FieldNote, Photo, TripPlayback, VideoClip, InsertVideoClip } from 
 import { type PhotoExifData } from "@/lib/exif-extractor";
 import { ApiError, apiRequest } from "@/lib/queryClient";
 
-type StudioClip = VideoClip & { processingActive?: boolean };
+export type StudioClip = VideoClip & { processingActive?: boolean };
 
 // A clip still marked pending or processing that the server isn't working on
 // lost its job (for example when the server was stopped mid-transcode).
@@ -83,6 +83,10 @@ interface TripViewProps {
   initialTab: MediaTab;
   /** Detail pages opt into the tilted terrain camera; keep other uses 2D. */
   initial3D?: boolean;
+  /** The trip's clips, for viewers who can't load them (a shared link). Loaded and polled when left out. */
+  clips?: StudioClip[];
+  /** Where the trip card's back arrow goes; null hides it. */
+  backHref?: string | null;
 }
 
 /**
@@ -99,6 +103,8 @@ export default function TripView({
   canEdit,
   initialTab,
   initial3D = false,
+  clips: givenClips,
+  backHref = "/dashboard",
 }: TripViewProps) {
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -161,14 +167,14 @@ export default function TripView({
     setHoveredClipId(null);
   }, [isMobile]);
 
-  const { data: clips = [] } = useQuery<StudioClip[]>({
+  const { data: loadedClips = [] } = useQuery<StudioClip[]>({
     queryKey: ["/api/video-clips", selectedProject?.id],
     queryFn: async () => {
       if (!selectedProject?.id) return [];
       const response = await apiRequest(`/api/video-clips?tripId=${selectedProject.id}`, "GET");
       return response.json();
     },
-    enabled: !!selectedProject?.id,
+    enabled: !!selectedProject?.id && !givenClips,
     refetchInterval: (query) => {
       const hasProcessing = query.state.data?.some(
         (clip) => clip.processingStatus !== "ready" && clip.processingStatus !== "error",
@@ -176,6 +182,7 @@ export default function TripView({
       return hasProcessing ? 3000 : false;
     },
   });
+  const clips = givenClips ?? loadedClips;
 
   // Keep the player's clip in step with polling, so it switches from
   // processing to playable (or stuck) without reselecting it.
@@ -582,14 +589,16 @@ export default function TripView({
         data-testid="trip-card"
       >
         <div className="flex items-center gap-2 px-3 py-2.5 flex-shrink-0">
-          <Link
-            href="/dashboard"
-            className="flex-shrink-0 p-1 -m-1 rounded text-muted-foreground hover:text-foreground transition-colors"
-            aria-label="Back to trips"
-            data-testid="button-back-to-trips"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
+          {backHref && (
+            <Link
+              href={backHref}
+              className="flex-shrink-0 p-1 -m-1 rounded text-muted-foreground hover:text-foreground transition-colors"
+              aria-label="Back to trips"
+              data-testid="button-back-to-trips"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          )}
           <h1 className="flex-1 min-w-0 font-serif text-lg leading-tight text-foreground truncate">{trip.title}</h1>
           <button
             type="button"
