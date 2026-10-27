@@ -23,6 +23,7 @@ struct NoteDetailView: View {
     @State private var detailsCardOpen = true
     @State private var mediaTab: MediaTab?
     @State private var mediaContentHeight: CGFloat = 400
+    @State private var detailsContentHeight: CGFloat = 400
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
     #endif
@@ -31,7 +32,7 @@ struct NoteDetailView: View {
 
     /// The Duo (and other wide screens), laid out like the web trip page: the
     /// map fills the screen, the details float in a card on the left that
-    /// folds down to its title, and videos and photos share a card on the right.
+    /// folds down to its title, and videos and photos share a card under it.
     private var isWide: Bool {
         #if os(iOS)
         return sizeClass == .regular && !display.mapCoordinates.isEmpty
@@ -50,9 +51,8 @@ struct NoteDetailView: View {
         mediaTab ?? (videoClips.isEmpty ? .photos : .videos)
     }
 
-    private let detailsCardWidth: CGFloat = 340
-    private let mediaCardWidth: CGFloat = 360
-    /// A playing clip widens the media card, as on the web.
+    private let columnWidth: CGFloat = 360
+    /// A playing clip widens the left column, as the media card does on the web.
     private var mediaCardExpanded: Bool { currentTab == .videos && playback.clip != nil }
 
     private var track: TimedTrack? { display.gpxData?.timedTrack }
@@ -102,7 +102,7 @@ struct NoteDetailView: View {
                     Button {
                         withAnimation(.snappy) { mediaCardOpen.toggle() }
                     } label: {
-                        Image(systemName: "sidebar.right")
+                        Image(systemName: "photo.on.rectangle")
                     }
                     .accessibilityLabel(mediaCardOpen ? "Hide media" : "Show media")
                 }
@@ -185,37 +185,39 @@ struct NoteDetailView: View {
     // MARK: Wide layout
 
     /// The full-screen map with the details card over its left side and the
-    /// media card over its right; the map keeps the route and the followed
-    /// pin in the space between them.
+    /// media card under it; the map keeps the route and the followed pin in
+    /// the space to their right.
     private var mapWithCards: some View {
         GeometryReader { geo in
             let showMedia = mediaInCard && mediaCardOpen
-            let mediaWidth = mediaCardExpanded
-                ? max(mediaCardWidth, min(600, geo.size.width - detailsCardWidth - 64))
-                : mediaCardWidth
+            let width = showMedia && mediaCardExpanded
+                ? max(columnWidth, min(600, geo.size.width * 0.5))
+                : columnWidth
 
-            ZStack(alignment: .top) {
+            ZStack(alignment: .topLeading) {
                 TrailMap(
                     routes: [TrailRoute(id: display.id, coordinates: display.mapCoordinates)],
                     photos: photos,
                     layer: mapLayer,
                     controls: $mapControls,
-                    leadingInset: detailsCardOpen ? detailsCardWidth + 16 : 0,
-                    trailingInset: showMedia ? mediaWidth + 16 : 0,
+                    leadingInset: detailsCardOpen || showMedia ? width + 16 : 0,
                     playhead: playhead,
                     video: videoFollow,
                     onSelectPhoto: { lightbox = $0 }
                 )
                 .ignoresSafeArea()
 
-                HStack(alignment: .top, spacing: 16) {
-                    detailsCard
-                    Spacer(minLength: 0)
+                VStack(alignment: .leading, spacing: 16) {
+                    // Laid out first so it keeps its natural height; with media
+                    // below it gets at most about half the column, then scrolls.
+                    detailsCard(width: width, maxHeight: showMedia ? geo.size.height * 0.4 : .infinity)
+                        .layoutPriority(1)
                     if showMedia {
-                        mediaCard(width: mediaWidth)
-                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                        mediaCard(width: width)
+                            .transition(.move(edge: .leading).combined(with: .opacity))
                     }
                 }
+                .frame(maxHeight: .infinity, alignment: .top)
                 .padding(16)
             }
             .animation(.snappy, value: mediaCardExpanded)
@@ -224,14 +226,8 @@ struct NoteDetailView: View {
 
     /// Sized to its contents, scrolling only once they outgrow the screen.
     /// Folded, only the title row is left.
-    private var detailsCard: some View {
-        ViewThatFits(in: .vertical) {
-            detailsCardBody(scrolls: false)
-            detailsCardBody(scrolls: true)
-        }
-    }
-
-    private func detailsCardBody(scrolls: Bool) -> some View {
+    /// (Measured like the media card, so it never stretches past its contents.)
+    private func detailsCard(width: CGFloat, maxHeight: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
                 withAnimation(.snappy) { detailsCardOpen.toggle() }
@@ -257,21 +253,22 @@ struct NoteDetailView: View {
             .padding(.bottom, detailsCardOpen ? 12 : 16)
 
             if detailsCardOpen {
-                if scrolls {
-                    ScrollView { details.padding(.horizontal, 20).padding(.bottom, 20) }
-                } else {
+                ScrollView {
                     details.padding(.horizontal, 20).padding(.bottom, 20)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { detailsContentHeight = $0 }
                 }
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(maxHeight: min(detailsContentHeight, maxHeight))
             }
         }
-        .frame(width: detailsCardWidth)
+        .frame(width: width)
         .background(sand, in: RoundedRectangle(cornerRadius: 16))
         .shadow(color: .black.opacity(0.15), radius: 12, y: 2)
     }
 
     // MARK: Media card
 
-    /// Videos and photos in one card pinned to the right, with a switch
+    /// Videos and photos in one card under the details, with a switch
     /// between them; the playhead pin keeps moving on the map beside it.
     private func mediaCard(width: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 12) {
