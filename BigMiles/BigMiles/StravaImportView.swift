@@ -65,7 +65,14 @@ struct StravaImportView: View {
                 Text(errorMessage ?? "")
             }
             .sheet(item: $pending) { item in
-                PromoteSheet(item: item) { note in
+                SaveAsTripSheet(title: item.title, tripType: item.tripType) { title, tripTypes in
+                    struct Promoted: Decodable { let fieldNote: FieldNote }
+                    let result: Promoted = try await API.post("/api/inbox/\(item.inboxId)/promote", body: [
+                        "title": title,
+                        "tripType": tripTypes,
+                    ])
+                    return result.fieldNote
+                } onSaved: { note in
                     onSaved(note)
                     dismiss()
                 }
@@ -107,7 +114,7 @@ struct StravaImportView: View {
     }
 }
 
-// MARK: - Promote
+// MARK: - Save as trip
 
 struct PendingPromote: Identifiable {
     let inboxId: String
@@ -116,8 +123,10 @@ struct PendingPromote: Identifiable {
     var id: String { inboxId }
 }
 
-private struct PromoteSheet: View {
-    let item: PendingPromote
+/// Title and activity for an imported route, then save. Shared by the
+/// Strava and Apple Health import lists; `save` makes the trip.
+struct SaveAsTripSheet: View {
+    var save: (_ title: String, _ tripTypes: [String]) async throws -> FieldNote
     var onSaved: (FieldNote) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -126,11 +135,13 @@ private struct PromoteSheet: View {
     @State private var isSaving = false
     @State private var errorMessage: String?
 
-    init(item: PendingPromote, onSaved: @escaping (FieldNote) -> Void) {
-        self.item = item
+    init(title: String, tripType: String,
+         save: @escaping (_ title: String, _ tripTypes: [String]) async throws -> FieldNote,
+         onSaved: @escaping (FieldNote) -> Void) {
+        self.save = save
         self.onSaved = onSaved
-        _title = State(initialValue: item.title)
-        _tripTypes = State(initialValue: [item.tripType])
+        _title = State(initialValue: title)
+        _tripTypes = State(initialValue: [tripType])
     }
 
     var body: some View {
@@ -148,7 +159,7 @@ private struct PromoteSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Back") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     if isSaving { ProgressView() } else {
-                        Button("Save") { Task { await promote() } }
+                        Button("Save") { Task { await saveTrip() } }
                             .disabled(title.isEmpty || tripTypes.isEmpty)
                     }
                 }
@@ -157,15 +168,11 @@ private struct PromoteSheet: View {
         .presentationDetents([.medium, .large])
     }
 
-    private func promote() async {
+    private func saveTrip() async {
         isSaving = true
-        struct Promoted: Decodable { let fieldNote: FieldNote }
         do {
-            let result: Promoted = try await API.post("/api/inbox/\(item.inboxId)/promote", body: [
-                "title": title,
-                "tripType": TripTypes.all.map(\.id).filter(tripTypes.contains),
-            ])
-            onSaved(result.fieldNote)
+            let note = try await save(title, TripTypes.all.map(\.id).filter(tripTypes.contains))
+            onSaved(note)
             dismiss()
         } catch {
             errorMessage = error.localizedDescription

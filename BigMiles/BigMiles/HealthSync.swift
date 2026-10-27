@@ -48,13 +48,19 @@ final class HealthSync: ObservableObject {
 
     // MARK: - Turning it on and off
 
+    /// Asks for read access to workouts and their routes. iOS only shows the
+    /// prompt the first time; after that this returns right away.
+    func requestAccess() async throws {
+        try await store.requestAuthorization(
+            toShare: [],
+            read: [HKObjectType.workoutType(), HKSeriesType.workoutRoute()]
+        )
+    }
+
     func enable() async {
         lastError = nil
         do {
-            try await store.requestAuthorization(
-                toShare: [],
-                read: [HKObjectType.workoutType(), HKSeriesType.workoutRoute()]
-            )
+            try await requestAccess()
         } catch {
             lastError = error.localizedDescription
             return
@@ -128,7 +134,30 @@ final class HealthSync: ObservableObject {
         }
     }
 
-    private func routePoints(for workout: HKWorkout) async throws -> [GPXPoint] {
+    // MARK: - Picking a workout by hand
+
+    /// Every workout in Apple Health, newest first, for the import list.
+    func allWorkouts() async throws -> [HKWorkout] {
+        try await HKSampleQueryDescriptor(
+            predicates: [.workout()],
+            sortDescriptors: [SortDescriptor(\.startDate, order: .reverse)]
+        ).result(for: store)
+    }
+
+    func isImported(_ workout: HKWorkout) -> Bool {
+        importedIds.contains(workout.uuid.uuidString)
+    }
+
+    /// Turns a workout picked from the list into a trip, and remembers it so
+    /// automatic import doesn't add it a second time.
+    func importWorkout(_ workout: HKWorkout, points: [GPXPoint],
+                       title: String, tripTypes: [String]) async throws -> FieldNote {
+        let note = try await createTrip(from: workout, points: points, title: title, tripTypes: tripTypes)
+        importedIds.insert(workout.uuid.uuidString)
+        return note
+    }
+
+    func routePoints(for workout: HKWorkout) async throws -> [GPXPoint] {
         let routes = try await HKSampleQueryDescriptor(
             predicates: [.workoutRoute(HKQuery.predicateForObjects(from: workout))],
             sortDescriptors: [SortDescriptor(\.startDate)]
@@ -144,18 +173,25 @@ final class HealthSync: ObservableObject {
         return points
     }
 
-    private func createTrip(from workout: HKWorkout, points: [GPXPoint]) async throws {
+    @discardableResult
+    private func createTrip(from workout: HKWorkout, points: [GPXPoint],
+                            title: String? = nil, tripTypes: [String]? = nil) async throws -> FieldNote {
         let stats = GPXParser.stats(from: points, fallbackDate: workout.startDate)
         let kind = WorkoutKind(workout.workoutActivityType)
-        let _: FieldNote = try await API.post("/api/field-notes", body: [
-            "title": "\(Self.partOfDay(workout.startDate)) \(kind.noun)",
+        return try await API.post("/api/field-notes", body: [
+            "title": title ?? Self.defaultTitle(for: workout),
             "description": "",
-            "tripType": [kind.tripType],
+            "tripType": tripTypes ?? [kind.tripType],
             "date": ISO8601DateFormatter().string(from: workout.startDate),
             "distance": stats.distance,
             "elevationGain": stats.elevationGain,
             "gpxData": stats.asGpxData,
         ])
+    }
+
+    /// "Morning ride", "Evening hike", and so on.
+    static func defaultTitle(for workout: HKWorkout) -> String {
+        "\(partOfDay(workout.startDate)) \(WorkoutKind(workout.workoutActivityType).noun)"
     }
 
     private static func partOfDay(_ date: Date) -> String {
@@ -169,7 +205,7 @@ final class HealthSync: ObservableObject {
 }
 
 /// Maps a HealthKit activity onto the web app's trip types.
-private struct WorkoutKind {
+struct WorkoutKind {
     let tripType: String
     let noun: String
 
