@@ -546,6 +546,17 @@ private struct TrailMapView: UIViewRepresentable {
 
         func followUser() {
             guard let map else { return }
+            // Location turned off for the app: nothing to follow, and iOS
+            // won't ask again, so send them to the app's Settings page.
+            switch CLLocationManager().authorizationStatus {
+            case .denied, .restricted:
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+                return
+            default:
+                break
+            }
             map.location.options.puckType = .puck2D(.makeDefault(showBearing: true))
             // Pitch is left alone so following the puck doesn't fight the 3D toggle.
             let state = map.viewport.makeFollowPuckViewportState(options: FollowPuckViewportStateOptions(
