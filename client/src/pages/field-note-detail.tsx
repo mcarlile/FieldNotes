@@ -289,6 +289,7 @@ export default function FieldNoteDetail() {
           info={info}
           hoveredElevationPoint={hoveredElevationPoint}
           canEdit={canEdit}
+          initial3D
           initialTab={videoClips.length > 0 ? "videos" : "photos"}
         />
       </Suspense>

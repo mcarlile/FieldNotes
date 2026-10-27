@@ -64,6 +64,8 @@ interface MapboxMapProps {
   onPlayheadDragEnd?: (position: [number, number]) => void;
   /** Shows the 3D terrain switch in the map's corner. */
   showTerrainControls?: boolean;
+  /** Start detail maps in true-scale 3D terrain; other maps remain 2D by default. */
+  initial3D?: boolean;
   /** The 3D follow-cam's pitch, zoom and turn from the direction of travel; unset uses the default chase-cam. */
   cameraAngle?: CameraAngle | null;
   /** While set, the map goes to the 3D follow view and reports the angle each time the user moves the camera. */
@@ -105,6 +107,7 @@ export default function MapboxMap({
   onPlayheadDrag,
   onPlayheadDragEnd,
   showTerrainControls,
+  initial3D = false,
   cameraAngle,
   onCameraAngleChange,
   banner,
@@ -148,8 +151,8 @@ export default function MapboxMap({
   followingRef.current = following;
   // While the zoom-in animation runs, the follow-cam leaves the camera alone.
   const focusAnimatingUntil = useRef(0);
-  const [is3D, setIs3D] = useState(false);
-  const is3DRef = useRef(false);
+  const [is3D, setIs3D] = useState(initial3D);
+  const is3DRef = useRef(initial3D);
   is3DRef.current = is3D;
   const autoBearingRef = useRef(true);
   // True while the user's hand is on the camera (zooming, tilting, turning).
@@ -290,6 +293,7 @@ export default function MapboxMap({
         style: getMapStyle(mapStyleIdRef.current).url,
         center: initialCenter,
         zoom: initialZoom,
+        pitch: initial3D ? TERRAIN_PITCH : 0,
       });
     } catch (error) {
       console.warn('Failed to create Mapbox map:', error);
@@ -364,7 +368,8 @@ export default function MapboxMap({
         if (!bounds.isEmpty()) {
           map.current.fitBounds(bounds, { 
             padding: 50,
-            duration: 0 // No animation
+            duration: 0, // No animation
+            pitch: is3DRef.current ? TERRAIN_PITCH : 0,
           });
         }
       }
@@ -696,10 +701,10 @@ export default function MapboxMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapReady, calibratingAngle]);
 
-  // 3D terrain, for maps that show the terrain controls.
+  // Terrain also applies to detail maps that intentionally hide the 3D switch.
   useEffect(() => {
     const m = loadedMap();
-    if (!m || !showTerrainControls) return;
+    if (!m) return;
     applyTerrain(m, { is3D });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapReady, showTerrainControls, is3D]);

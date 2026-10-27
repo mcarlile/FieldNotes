@@ -75,6 +75,7 @@ function DayCard({ note, index, onPhotoClick }: {
             <div className="h-48 rounded-lg overflow-hidden">
               <MapboxMap
                 gpxData={{ coordinates: gpxCoords }}
+                initial3D
                 photoMarkers={note.photos
                   .filter(p => p.latitude != null && p.longitude != null)
                   .map(p => ({
@@ -226,7 +227,7 @@ export default function PublicExpeditionPage() {
         {/* Combined map */}
         {allCoords.length > 0 && (
           <div className="h-72 sm:h-96 rounded-xl overflow-hidden border border-stone-200">
-            <MapboxMap gpxData={{ coordinates: allCoords }} className="h-full" />
+            <MapboxMap gpxData={{ coordinates: allCoords }} initial3D className="h-full" />
           </div>
         )}
 

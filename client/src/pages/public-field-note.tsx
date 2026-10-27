@@ -142,6 +142,7 @@ export default function PublicFieldNotePage() {
             <MapboxMap
               gpxData={{ coordinates: parsedGpx.coordinates }}
               photoMarkers={photoMarkers}
+              initial3D
               className="h-full"
             />
           </div>

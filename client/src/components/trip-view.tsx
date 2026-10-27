@@ -81,6 +81,8 @@ interface TripViewProps {
   /** Whether the viewer may add media and calibrate (the trip's owner). */
   canEdit: boolean;
   initialTab: MediaTab;
+  /** Detail pages opt into the tilted terrain camera; keep other uses 2D. */
+  initial3D?: boolean;
 }
 
 /**
@@ -96,6 +98,7 @@ export default function TripView({
   hoveredElevationPoint,
   canEdit,
   initialTab,
+  initial3D = false,
 }: TripViewProps) {
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -544,6 +547,7 @@ export default function TripView({
           hoveredElevationPoint={hoveredElevationPoint}
           photoMarkers={photoMarkers}
           onPhotoMarkerClick={onOpenPhoto}
+          initial3D={initial3D}
           showTerrainControls
           showNavigationControl={false}
           widgetsClassName="w-max top-16 md:top-auto md:bottom-3 left-1/2 -translate-x-1/2 flex-row flex-wrap items-center justify-center"
