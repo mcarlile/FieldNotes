@@ -3,7 +3,7 @@ import { z } from "zod";
 import { storage } from "./storage";
 import { objectStorageService } from "./objectStorage";
 import { requireAuth } from "./middlewares/clerkAuth";
-import { createClipWithCoordinates, createTripFromGpx, tripDurationSeconds } from "./trailcam";
+import { createClipWithCoordinates, createTripFromGpx, replaceTripRoute, tripDurationSeconds } from "./trailcam";
 import { clipOffsetSeconds } from "@shared/clip-timing";
 import { isVideoProcessingActive, reprocessVideoClip } from "./videoProcessor";
 import type { FieldNote } from "@shared/schema";
@@ -88,6 +88,23 @@ const tools = [
     },
   },
   {
+    name: "set_route",
+    description:
+      "Replace an existing trip's route with a GPX that has a timestamp on each point, so clips can " +
+      "be placed with recorded_at. Pass `gpx` inline or `gpx_object_path` from request_upload. " +
+      "Photos and clips stay; existing clips keep their start_seconds.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project_id: { type: "string" },
+        gpx: { type: "string", description: "GPX file contents." },
+        gpx_object_path: { type: "string", description: "object_path of an uploaded GPX file." },
+        gpx_filename: { type: "string" },
+      },
+      required: ["project_id"],
+    },
+  },
+  {
     name: "add_clip",
     description:
       "Add an uploaded video to a trip. Place it with `recorded_at` (the UTC time the video " +
@@ -133,6 +150,12 @@ const createProjectArgs = z.object({
   gpx_object_path: z.string().optional(),
   gpx_filename: z.string().optional(),
   trip_type: z.array(z.string()).optional(),
+});
+const setRouteArgs = z.object({
+  project_id: z.string(),
+  gpx: z.string().optional(),
+  gpx_object_path: z.string().optional(),
+  gpx_filename: z.string().optional(),
 });
 const addClipArgs = z.object({
   project_id: z.string(),
@@ -257,6 +280,25 @@ async function callTool(name: string, args: unknown, userId?: string): Promise<u
         throw new ToolError(`Could not read the GPX: ${error instanceof Error ? error.message : String(error)}`);
       }
       return summarizeTrip(trip);
+    }
+    case "set_route": {
+      const input = setRouteArgs.parse(args);
+      if (!input.gpx === !input.gpx_object_path) {
+        throw new ToolError("Pass exactly one of gpx or gpx_object_path.");
+      }
+      const trip = await ownedTrip(input.project_id, userId);
+      const gpxContent = input.gpx ?? (await readUploadedText(input.gpx_object_path!));
+      if (Buffer.byteLength(gpxContent) > MAX_GPX_BYTES) {
+        throw new ToolError("GPX file is larger than 25 MB.");
+      }
+      let updated;
+      try {
+        updated = await replaceTripRoute(trip, gpxContent, input.gpx_filename);
+      } catch (error) {
+        throw new ToolError(`Could not read the GPX: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      if (!updated) throw new ToolError("The GPX has no timestamped track points.");
+      return summarizeTrip(updated);
     }
     case "reprocess_clip": {
       const { clip_id } = reprocessClipArgs.parse(args);

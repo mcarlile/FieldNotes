@@ -49,6 +49,29 @@ export async function createTripFromGpx(params: {
 }
 
 /**
+ * Replaces a trip's route with raw GPX that has timestamps, so clips can be
+ * placed by recorded time. Keeps other gpxData fields such as the sync offset.
+ * Returns null when the GPX has no timed points.
+ */
+export async function replaceTripRoute(trip: FieldNote, gpxContent: string, filename?: string): Promise<FieldNote | null> {
+  const timedTrack = compactTimedTrack(gpxContent);
+  if (!timedTrack) return null;
+  const stats = parseGpxData(gpxContent);
+  const startTime = new Date(timedTrack.startTime);
+  const updated = await storage.updateFieldNote(trip.id, {
+    gpxData: {
+      ...((trip.gpxData as Record<string, unknown> | null) ?? {}),
+      ...stats,
+      timedTrack,
+      filename: filename ?? (trip.gpxData as { filename?: string } | null)?.filename,
+    },
+    startTime,
+    endTime: new Date(startTime.getTime() + timedTrack.durationSeconds * 1000),
+  });
+  return updated ?? null;
+}
+
+/**
  * Creates a video clip on a trip: normalizes its storage URL, places it on
  * the route from its time offsets, and starts transcoding in the background.
  */
