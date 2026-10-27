@@ -169,10 +169,21 @@ struct NoteDetailView: View {
                                 if drag.translation.height > 30 { panelExpanded = false }
                             }
                         })
+                    // The panel's bottom sits under the toolbar and home
+                    // indicator, so pad past them to reach the last photo.
+                    // Scrolling the folded panel opens it.
                     ScrollView {
-                        details.padding(.horizontal, 20).padding(.bottom, 20)
+                        details
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 20 + geo.safeAreaInsets.bottom)
                     }
-                    .scrollDisabled(!panelExpanded)
+                    .onScrollGeometryChange(for: Bool.self) { scroll in
+                        scroll.contentOffset.y + scroll.contentInsets.top > 8
+                    } action: { _, scrolled in
+                        if scrolled && !panelExpanded {
+                            withAnimation(.snappy) { panelExpanded = true }
+                        }
+                    }
                 }
                 .frame(height: panelHeight + geo.safeAreaInsets.bottom, alignment: .top)
                 .background(sand, in: UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20))
