@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { planRemux } from "./remuxPlan";
+import { isPlayableAsIs, planRemux } from "./remuxPlan";
 
 const aac = { codec_type: "audio", codec_name: "aac" };
 
@@ -40,4 +40,14 @@ test("non-AAC audio is re-encoded and a silent clip needs no audio work", () => 
   const video = { codec_type: "video", codec_name: "h264", pix_fmt: "yuv420p", height: 720 };
   assert.equal(planRemux([video, { codec_type: "audio", codec_name: "opus" }]).audio, false);
   assert.equal(planRemux([video]).audio, true);
+});
+
+test("only H.264 with AAC or no audio is served as it is", () => {
+  const h264 = { codec_type: "video", codec_name: "h264", pix_fmt: "yuvj420p", height: 2160 };
+  const hevc = { codec_type: "video", codec_name: "hevc", profile: "Main", pix_fmt: "yuv420p", height: 1080 };
+  assert.equal(isPlayableAsIs(planRemux([h264, aac])), true);
+  assert.equal(isPlayableAsIs(planRemux([h264])), true);
+  // H.265 needs its hvc1 tag, other audio needs re-encoding.
+  assert.equal(isPlayableAsIs(planRemux([hevc, aac])), false);
+  assert.equal(isPlayableAsIs(planRemux([h264, { codec_type: "audio", codec_name: "opus" }])), false);
 });
