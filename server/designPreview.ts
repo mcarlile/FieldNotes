@@ -28,7 +28,8 @@ async function readProduction(path: string, query: Record<string, string>, userI
       search: query.search,
       tripType: query.tripType,
       sortOrder: query.sortOrder as "recent" | "oldest" | "name" | undefined,
-    })).filter(note => note.userId === userId);
+      userId,
+    }));
     const counts = await storage.getTripMediaCounts(notes.map(note => note.id));
     return notes
       .map(note => ({ ...note, ...(counts.get(note.id) ?? { photoCount: 0, videoCount: 0 }) }))

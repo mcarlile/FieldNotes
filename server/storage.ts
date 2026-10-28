@@ -1,6 +1,6 @@
 import { fieldNotes, photos, trailcamProjects, videoClips, webhookTokens, gpxInbox, stravaConnections, expeditions, expeditionFieldNotes, type TripPlayback, type FieldNote, type Photo, type InsertFieldNote, type InsertPhoto, type TrailcamProject, type VideoClip, type InsertTrailcamProject, type InsertVideoClip, type WebhookToken, type GpxInboxItem, type StravaConnection, type InsertStravaConnection, type Expedition, type InsertExpedition, type ExpeditionFieldNote } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, asc, like, ilike, and, or, sql, inArray } from "drizzle-orm";
+import { eq, desc, asc, like, ilike, and, or, sql, inArray, getTableColumns } from "drizzle-orm";
 import { MAX_TRIP_PHOTOS } from "@shared/photo-limit";
 import { existingPhotoCaptionPatch } from "./photo-caption";
 
@@ -27,13 +27,22 @@ export interface TripMediaCounts {
   videoCount: number;
 }
 
+export interface FieldNoteListOptions {
+  search?: string;
+  tripType?: string;
+  sortOrder?: 'recent' | 'oldest' | 'name';
+  /** Only this user's trips. */
+  userId?: string;
+  /**
+   * Read only the route's coordinates from gpxData, not the timed track or
+   * elevation profile, for lists that only draw the route.
+   */
+  routeOnly?: boolean;
+}
+
 export interface IStorage {
   // Field Notes
-  getFieldNotes(options?: {
-    search?: string;
-    tripType?: string;
-    sortOrder?: 'recent' | 'oldest' | 'name';
-  }): Promise<FieldNote[]>;
+  getFieldNotes(options?: FieldNoteListOptions): Promise<FieldNote[]>;
   getFieldNoteById(id: string): Promise<FieldNote | undefined>;
   createFieldNote(fieldNote: InsertFieldNote): Promise<FieldNote>;
   updateFieldNote(id: string, fieldNote: Partial<InsertFieldNote>): Promise<FieldNote | undefined>;
@@ -116,14 +125,20 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
-  async getFieldNotes(options: {
-    search?: string;
-    tripType?: string;
-    sortOrder?: 'recent' | 'oldest' | 'name';
-  } = {}): Promise<FieldNote[]> {
-    let query = db.select().from(fieldNotes);
+  async getFieldNotes(options: FieldNoteListOptions = {}): Promise<FieldNote[]> {
+    // Raw GPX XML is stored as a JSON string; that stays whole for the caller to parse.
+    const gpxData = options.routeOnly
+      ? sql<unknown>`CASE WHEN jsonb_typeof(${fieldNotes.gpxData}) = 'object'
+          THEN jsonb_build_object('coordinates', ${fieldNotes.gpxData}->'coordinates')
+          ELSE ${fieldNotes.gpxData} END`
+      : fieldNotes.gpxData;
+    let query = db.select({ ...getTableColumns(fieldNotes), gpxData }).from(fieldNotes);
 
     const conditions = [];
+
+    if (options.userId) {
+      conditions.push(eq(fieldNotes.userId, options.userId));
+    }
 
     if (options.search) {
       const searchTerm = options.search.trim();
@@ -844,12 +859,8 @@ export class MemStorage implements IStorage {
     }
   ];
 
-  async getFieldNotes(options: {
-    search?: string;
-    tripType?: string;
-    sortOrder?: 'recent' | 'oldest' | 'name';
-  } = {}): Promise<FieldNote[]> {
-    let filtered = [...this.fieldNotesData];
+  async getFieldNotes(options: FieldNoteListOptions = {}): Promise<FieldNote[]> {
+    let filtered = this.fieldNotesData.filter(note => !options.userId || note.userId === options.userId);
 
     if (options.search) {
       const searchLower = options.search.toLowerCase().trim();
