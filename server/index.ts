@@ -1,5 +1,6 @@
 import express, { type Request, Response, NextFunction } from "express";
 import cors from "cors";
+import compression from "compression";
 import { clerkMiddleware } from "@clerk/express";
 import { publishableKeyFromHost } from "@clerk/shared/keys";
 import { registerRoutes } from "./routes";
@@ -19,6 +20,8 @@ const app = express();
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 // Increase body size limit to handle large GPX files (50MB limit)
 app.use(cors({ credentials: true, origin: true }));
+// gzip API responses and assets; the trips list is mostly route coordinates.
+app.use(compression());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 

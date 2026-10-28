@@ -228,11 +228,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/field-notes", requireAuth, async (req: any, res) => {
     try {
       const { search, tripType, sortOrder, media } = req.query;
-      const fieldNotes = (await storage.getFieldNotes({
+      const fieldNotes = await storage.getFieldNotes({
         search: search as string,
         tripType: tripType as string,
         sortOrder: sortOrder as 'recent' | 'oldest' | 'name',
-      })).filter((note) => note.userId === req.dbUser.id);
+        userId: req.dbUser.id,
+        routeOnly: true,
+      });
 
       // Every trip carries its photo and video counts; ?media=photos or
       // ?media=videos keeps only the trips that have some.

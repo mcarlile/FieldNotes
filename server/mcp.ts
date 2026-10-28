@@ -222,7 +222,7 @@ async function callTool(name: string, args: unknown, userId?: string): Promise<u
     case "list_projects": {
       const { search, has_videos } = listProjectsArgs.parse(args ?? {});
       const owner = requireUser(userId);
-      const trips = (await storage.getFieldNotes({ search, sortOrder: "recent" })).filter((trip) => trip.userId === owner);
+      const trips = await storage.getFieldNotes({ search, sortOrder: "recent", userId: owner });
       const counts = await storage.getTripMediaCounts(trips.map((trip) => trip.id));
       return trips
         .filter((trip) => !has_videos || (counts.get(trip.id)?.videoCount ?? 0) > 0)
