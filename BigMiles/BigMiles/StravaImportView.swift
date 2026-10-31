@@ -1,4 +1,8 @@
 import SwiftUI
+import PhotosUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Pick a recent Strava activity and turn it into a trip. Uses the same two
 /// calls as the web Inbox: import into the GPX inbox, then promote.
@@ -65,12 +69,11 @@ struct StravaImportView: View {
                 Text(errorMessage ?? "")
             }
             .sheet(item: $pending) { item in
-                SaveAsTripSheet(title: item.title, tripType: item.tripType) { title, tripTypes in
+                SaveAsTripSheet(title: item.title, tripType: item.tripType) { title, tripTypes, photos in
                     struct Promoted: Decodable { let fieldNote: FieldNote }
-                    let result: Promoted = try await API.post("/api/inbox/\(item.inboxId)/promote", body: [
-                        "title": title,
-                        "tripType": tripTypes,
-                    ])
+                    var body: [String: Any] = ["title": title, "tripType": tripTypes]
+                    if !photos.isEmpty { body["photos"] = photos }
+                    let result: Promoted = try await API.post("/api/inbox/\(item.inboxId)/promote", body: body)
                     return result.fieldNote
                 } onSaved: { note in
                     onSaved(note)
@@ -123,21 +126,29 @@ struct PendingPromote: Identifiable {
     var id: String { inboxId }
 }
 
-/// Title and activity for an imported route, then save. Shared by the
-/// Strava and Apple Health import lists; `save` makes the trip.
+/// Title, activity, photos and videos for an imported route, then save.
+/// Shared by the Strava and Apple Health import lists; `save` makes the trip
+/// with the uploaded photo entries. Videos upload in the background after.
 struct SaveAsTripSheet: View {
-    var save: (_ title: String, _ tripTypes: [String]) async throws -> FieldNote
+    typealias Save = (_ title: String, _ tripTypes: [String], _ photos: [[String: Any]]) async throws -> FieldNote
+    var save: Save
     var onSaved: (FieldNote) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var title: String
     @State private var tripTypes: Set<String>
+    @State private var photos: [PendingPhoto] = []
+    @State private var photoItems: [PhotosPickerItem] = []
+    @State private var isLoadingPhotos = false
+    @State private var videos: [PendingVideo] = []
     @State private var isSaving = false
+    @State private var uploadProgress: String?
     @State private var errorMessage: String?
 
-    init(title: String, tripType: String,
-         save: @escaping (_ title: String, _ tripTypes: [String]) async throws -> FieldNote,
-         onSaved: @escaping (FieldNote) -> Void) {
+    private static let maxPhotos = 100  // MAX_TRIP_PHOTOS in shared/photo-limit.ts
+    private let muted = Color(red: 138/255, green: 132/255, blue: 126/255)
+
+    init(title: String, tripType: String, save: @escaping Save, onSaved: @escaping (FieldNote) -> Void) {
         self.save = save
         self.onSaved = onSaved
         _title = State(initialValue: title)
@@ -149,6 +160,8 @@ struct SaveAsTripSheet: View {
             Form {
                 Section("Title") { TextField("Title", text: $title) }
                 Section("Activity") { TripTypePicker(selection: $tripTypes) }
+                photosSection
+                VideoPickerSection(videos: $videos)
                 if let errorMessage {
                     Section { Text(errorMessage).foregroundColor(.red) }
                 }
@@ -158,25 +171,94 @@ struct SaveAsTripSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Back") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    if isSaving { ProgressView() } else {
+                    if isSaving {
+                        HStack(spacing: 6) {
+                            if let uploadProgress { Text(uploadProgress).font(.system(size: 13)).foregroundColor(muted) }
+                            ProgressView()
+                        }
+                    } else {
                         Button("Save") { Task { await saveTrip() } }
-                            .disabled(title.isEmpty || tripTypes.isEmpty)
+                            .disabled(title.isEmpty || tripTypes.isEmpty || isLoadingPhotos)
                     }
                 }
             }
+            .onChange(of: photoItems) { Task { await loadPhotos() } }
+            .onDisappear { videos.forEach(VideoUploadManager.discard) }
         }
         .presentationDetents([.medium, .large])
     }
 
+    private var photosSection: some View {
+        Section {
+            if !photos.isEmpty {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 76), spacing: 8)], spacing: 8) {
+                    ForEach(photos) { photo in
+                        Color.clear
+                            .aspectRatio(1, contentMode: .fit)
+                            .overlay {
+                                #if canImport(UIKit)
+                                if let image = UIImage(data: photo.jpeg) { Image(uiImage: image).resizable().scaledToFill() }
+                                #endif
+                            }
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .overlay(alignment: .topTrailing) {
+                                Button { photos.removeAll { $0.id == photo.id } } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundStyle(.white, .black.opacity(0.6))
+                                        .padding(3)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+            PhotosPicker(selection: $photoItems,
+                         maxSelectionCount: max(Self.maxPhotos - photos.count, 1),
+                         matching: .images) {
+                HStack {
+                    SwiftUI.Label("Add photos", systemImage: "photo.on.rectangle.angled")
+                    if isLoadingPhotos { Spacer(); ProgressView() }
+                }
+            }
+            .disabled(photos.count >= Self.maxPhotos || isLoadingPhotos)
+        } header: {
+            Text("Photos")
+        } footer: {
+            Text("Photos with a location show as pins on the route map.")
+        }
+    }
+
+    private func loadPhotos() async {
+        guard !photoItems.isEmpty else { return }
+        isLoadingPhotos = true
+        let items = photoItems
+        photoItems = []
+        for item in items {
+            guard let data = try? await item.loadTransferable(type: Data.self),
+                  let photo = PhotoUploader.prepare(data, index: photos.count)
+            else { continue }
+            photos.append(photo)
+        }
+        isLoadingPhotos = false
+    }
+
     private func saveTrip() async {
         isSaving = true
+        errorMessage = nil
         do {
-            let note = try await save(title, TripTypes.all.map(\.id).filter(tripTypes.contains))
+            let uploaded = try await PhotoUploader.uploadAll(photos) { uploadProgress = $0 }
+            let note = try await save(title, TripTypes.all.map(\.id).filter(tripTypes.contains), uploaded)
+            // Videos go up in the background; the sheet closes now.
+            let picked = videos
+            videos = []
+            Task { await VideoUploadManager.shared.enqueue(picked, for: note) }
             onSaved(note)
             dismiss()
         } catch {
             errorMessage = error.localizedDescription
         }
+        uploadProgress = nil
         isSaving = false
     }
 }

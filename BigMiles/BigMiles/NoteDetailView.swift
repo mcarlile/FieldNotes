@@ -18,6 +18,7 @@ struct NoteDetailView: View {
     @State private var panelExpanded = false
     @State private var mapControls = MapControls()
     @StateObject private var playback = TripVideoPlayback()
+    @ObservedObject private var uploads = VideoUploadManager.shared
 
     @State private var mediaCardOpen = true
     @State private var detailsCardOpen = true
@@ -97,6 +98,8 @@ struct NoteDetailView: View {
         .toolbarTitleDisplayMode(.inline)
         .toolbarBackground(display.mapCoordinates.isEmpty ? .automatic : .hidden, for: .navigationBar)
         .task { await loadFull() }
+        // A video picked while creating the trip became a clip: show it.
+        .onChange(of: uploads.clipsAdded[note.id]) { Task { await loadFull() } }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Edit") { showEdit = true }
@@ -345,6 +348,9 @@ struct NoteDetailView: View {
 
     private var details: some View {
         VStack(alignment: .leading, spacing: 16) {
+
+            // Videos picked while creating the trip, still going up.
+            VideoUploadBanner(tripId: note.id)
 
             // Trips with video (formerly Studio projects) lead with the
             // player: playback only, calibration stays on the web.
