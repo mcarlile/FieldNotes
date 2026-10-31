@@ -76,3 +76,22 @@ export async function backfillTripTimestamps(client: PoolClient): Promise<number
   }
   return restored;
 }
+
+/**
+ * Start and end times for a trip saved through the field-notes API, read from
+ * the gpxData it was sent with: the raw GPX text the web editor keeps, or the
+ * parsed object (with its timedTrack) the iOS app sends. Without these the
+ * trip has no route start, so clips can't be placed from their recording time.
+ */
+export function gpxDataTimes(gpxData: unknown): { startTime: Date; endTime: Date } | null {
+  if (typeof gpxData === "string") {
+    const { startTime, endTime } = timedTripFields(gpxData);
+    return startTime && endTime ? { startTime, endTime } : null;
+  }
+  const timedTrack = (gpxData as { timedTrack?: { startTime?: unknown; durationSeconds?: unknown } } | null)?.timedTrack;
+  if (typeof timedTrack?.startTime !== "string") return null;
+  const startTime = new Date(timedTrack.startTime);
+  if (isNaN(startTime.getTime())) return null;
+  const duration = typeof timedTrack.durationSeconds === "number" ? timedTrack.durationSeconds : 0;
+  return { startTime, endTime: new Date(startTime.getTime() + duration * 1000) };
+}
