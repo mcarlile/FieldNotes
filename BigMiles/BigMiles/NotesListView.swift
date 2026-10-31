@@ -79,7 +79,11 @@ struct NotesListView: View {
             .toolbarTitleDisplayMode(showsMap ? .inline : .automatic)
             .toolbarBackground(showsMap ? .hidden : .automatic, for: .navigationBar)
             .navigationDestination(for: FieldNote.self) { note in
-                NoteDetailView(note: note)
+                NoteDetailView(note: note) {
+                    // Back to the list or map, without the deleted trip.
+                    notes.removeAll { $0.id == note.id }
+                    path.removeAll { $0.id == note.id }
+                }
             }
             .searchable(text: $searchText, prompt: "Search")
             .toolbar {

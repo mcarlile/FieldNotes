@@ -3,6 +3,8 @@ import CoreLocation
 
 struct NoteDetailView: View {
     let note: FieldNote
+    /// Called after the trip is deleted from its edit sheet.
+    var onDeleted: () -> Void = {}
     @State private var full: FieldNote?
     @State private var lightbox: Photo?
     @State private var showEdit = false
@@ -116,9 +118,9 @@ struct NoteDetailView: View {
             if playing && isWide { withAnimation(.snappy) { detailsCardOpen = false } }
         }
         .sheet(isPresented: $showEdit) {
-            TripFormView(existing: display) { _ in
+            TripFormView(existing: display, onSaved: { _ in
                 Task { await loadFull() }
-            }
+            }, onDeleted: onDeleted)
         }
         .lightboxCover(item: $lightbox) { photo in
             LightboxView(
