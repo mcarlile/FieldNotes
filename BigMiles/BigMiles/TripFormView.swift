@@ -24,6 +24,8 @@ struct TripFormView: View {
     @State private var pickerItems: [PhotosPickerItem] = []
     @State private var isLoadingPhotos = false
     @State private var uploadProgress: String?
+    /// New trips only: these upload in the background after saving.
+    @State private var newVideos: [PendingVideo] = []
 
     private static let maxPhotos = 100  // MAX_TRIP_PHOTOS in shared/photo-limit.ts
 
@@ -81,6 +83,10 @@ struct TripFormView: View {
 
                 photosSection
 
+                if existing == nil {
+                    VideoPickerSection(videos: $newVideos)
+                }
+
                 Section("Notes") {
                     TextField("What happened out there?", text: $description, axis: .vertical)
                         .lineLimit(4...12)
@@ -113,6 +119,8 @@ struct TripFormView: View {
                 }
             }
             .onChange(of: pickerItems) { Task { await loadPicked() } }
+            // Videos the form closed without saving (a swipe down, say).
+            .onDisappear { newVideos.forEach(VideoUploadManager.discard) }
             .fileImporter(isPresented: $showImporter, allowedContentTypes: [.gpx, .xml, .data]) { result in
                 loadGPX(result)
             }
@@ -230,28 +238,7 @@ struct TripFormView: View {
             body["gpxData"] = gpx.asGpxData
         }
         do {
-            // A few at a time: one by one, each photo waited on its own
-            // signed-URL round trip before its upload could start.
-            let pending = newPhotos
-            var results = [[String: Any]?](repeating: nil, count: pending.count)
-            var done = 0
-            if !pending.isEmpty { uploadProgress = "Uploading 0 of \(pending.count)" }
-            try await withThrowingTaskGroup(of: (Int, [String: Any]).self) { group in
-                for (i, photo) in pending.enumerated() {
-                    if i >= 4, let (j, entry) = try await group.next() {
-                        results[j] = entry
-                        done += 1
-                        uploadProgress = "Uploading \(done) of \(pending.count)"
-                    }
-                    group.addTask { (i, try await PhotoUploader.upload(photo)) }
-                }
-                while let (j, entry) = try await group.next() {
-                    results[j] = entry
-                    done += 1
-                    uploadProgress = "Uploading \(done) of \(pending.count)"
-                }
-            }
-            let uploaded = results.compactMap { $0 }
+            let uploaded = try await PhotoUploader.uploadAll(newPhotos) { uploadProgress = $0 }
             uploadProgress = nil
             // The server replaces a trip's photos with this list: existing ones
             // are kept by id. Only sent when the set changed, and never when the
@@ -267,6 +254,10 @@ struct TripFormView: View {
             } else {
                 saved = try await API.post("/api/field-notes", body: body)
             }
+            // Videos go up in the background; the form closes now.
+            let videos = newVideos
+            newVideos = []
+            Task { await VideoUploadManager.shared.enqueue(videos, for: saved) }
             onSaved(saved)
             dismiss()
         } catch {

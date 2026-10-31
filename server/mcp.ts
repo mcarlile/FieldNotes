@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { objectStorageService } from "./objectStorage";
 import { requireAuth } from "./middlewares/clerkAuth";
 import { createClipWithCoordinates, createTripFromGpx, replaceTripRoute, tripDurationSeconds } from "./trailcam";
-import { clipOffsetSeconds } from "@shared/clip-timing";
+import { clipOffsetSeconds, routeStartOf } from "@shared/clip-timing";
 import { isVideoProcessingActive, reprocessVideoClip } from "./videoProcessor";
 import type { FieldNote } from "@shared/schema";
 
@@ -168,12 +168,6 @@ const addClipArgs = z.object({
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   file_size_bytes: z.number().optional(),
 });
-
-function routeStartOf(trip: { gpxData: unknown; startTime: Date | null }): Date | null {
-  const timedStart = (trip.gpxData as { timedTrack?: { startTime?: string } } | null)?.timedTrack?.startTime;
-  if (timedStart) return new Date(timedStart);
-  return trip.startTime ? new Date(trip.startTime) : null;
-}
 
 function summarizeTrip(trip: FieldNote, counts?: { photoCount: number; videoCount: number }) {
   return {

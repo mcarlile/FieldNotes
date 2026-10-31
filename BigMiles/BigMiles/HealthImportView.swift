@@ -70,9 +70,9 @@ struct HealthImportView: View {
             }
             .sheet(item: $pending) { item in
                 SaveAsTripSheet(title: HealthSync.defaultTitle(for: item.workout),
-                                tripType: WorkoutKind(item.workout.workoutActivityType).tripType) { title, tripTypes in
+                                tripType: WorkoutKind(item.workout.workoutActivityType).tripType) { title, tripTypes, photos in
                     try await health.importWorkout(item.workout, points: item.points,
-                                                   title: title, tripTypes: tripTypes)
+                                                   title: title, tripTypes: tripTypes, photos: photos)
                 } onSaved: { note in
                     onSaved(note)
                     dismiss()

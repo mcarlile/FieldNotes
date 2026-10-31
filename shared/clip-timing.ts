@@ -107,3 +107,27 @@ export function clipOffsetSeconds(
   if (isNaN(offset) || offset < 0 || offset > MAX_AUTO_OFFSET_SECONDS) return null;
   return offset;
 }
+
+/**
+ * When a trip's route started: the first timed GPX point, or the trip's
+ * stored start time for older trips.
+ */
+export function routeStartOf(trip: { gpxData: unknown; startTime: Date | string | null }): Date | null {
+  const timedStart = (trip.gpxData as { timedTrack?: { startTime?: string } } | null)?.timedTrack?.startTime;
+  if (timedStart) return new Date(timedStart);
+  return trip.startTime ? new Date(trip.startTime) : null;
+}
+
+/**
+ * Where a newly added clip starts, in seconds after the route start: the
+ * offset from its recording time when that falls on the route, otherwise 0.
+ */
+export function clipStartFromRecording(
+  recordedAt: string | null | undefined,
+  routeStart: Date | null,
+): number {
+  if (!recordedAt) return 0;
+  const recorded = new Date(recordedAt);
+  if (isNaN(recorded.getTime())) return 0;
+  return clipOffsetSeconds(recorded, routeStart) ?? 0;
+}

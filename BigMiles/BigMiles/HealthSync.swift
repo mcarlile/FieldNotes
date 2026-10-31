@@ -151,8 +151,8 @@ final class HealthSync: ObservableObject {
     /// Turns a workout picked from the list into a trip, and remembers it so
     /// automatic import doesn't add it a second time.
     func importWorkout(_ workout: HKWorkout, points: [GPXPoint],
-                       title: String, tripTypes: [String]) async throws -> FieldNote {
-        let note = try await createTrip(from: workout, points: points, title: title, tripTypes: tripTypes)
+                       title: String, tripTypes: [String], photos: [[String: Any]] = []) async throws -> FieldNote {
+        let note = try await createTrip(from: workout, points: points, title: title, tripTypes: tripTypes, photos: photos)
         importedIds.insert(workout.uuid.uuidString)
         return note
     }
@@ -175,10 +175,11 @@ final class HealthSync: ObservableObject {
 
     @discardableResult
     private func createTrip(from workout: HKWorkout, points: [GPXPoint],
-                            title: String? = nil, tripTypes: [String]? = nil) async throws -> FieldNote {
+                            title: String? = nil, tripTypes: [String]? = nil,
+                            photos: [[String: Any]] = []) async throws -> FieldNote {
         let stats = GPXParser.stats(from: points, fallbackDate: workout.startDate)
         let kind = WorkoutKind(workout.workoutActivityType)
-        return try await API.post("/api/field-notes", body: [
+        var body: [String: Any] = [
             "title": title ?? Self.defaultTitle(for: workout),
             "description": "",
             "tripType": tripTypes ?? [kind.tripType],
@@ -186,7 +187,9 @@ final class HealthSync: ObservableObject {
             "distance": stats.distance,
             "elevationGain": stats.elevationGain,
             "gpxData": stats.asGpxData,
-        ])
+        ]
+        if !photos.isEmpty { body["photos"] = photos }
+        return try await API.post("/api/field-notes", body: body)
     }
 
     /// "Morning ride", "Evening hike", and so on.

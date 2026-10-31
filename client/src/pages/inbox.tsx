@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { TripMediaPicker } from "@/components/trip-media-picker";
+import { startTripMediaUploads } from "@/lib/trip-media-uploads";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
 import { ApiError, apiRequest } from "@/lib/queryClient";
@@ -428,6 +430,9 @@ export default function InboxPage() {
   const [promoteTitle, setPromoteTitle] = useState("");
   const [promoteDescription, setPromoteDescription] = useState("");
   const [promoteTripTypes, setPromoteTripTypes] = useState<string[]>(["hiking"]);
+  // Photos and videos picked in the dialog upload after the trip is made.
+  const [promotePhotos, setPromotePhotos] = useState<File[]>([]);
+  const [promoteVideos, setPromoteVideos] = useState<File[]>([]);
   const { data: readOnlyPreview, isLoading: previewStatusLoading } = useDesignPreview();
 
   // Handle Strava OAuth redirect result (runs once per query-param change, never during render)
@@ -489,8 +494,12 @@ export default function InboxPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/field-notes"] });
       setPromoteItem(null);
       toast({ title: "Added to Big Miles", description: "Your trip is now in your journal." });
-      if (data?.fieldNote?.id) {
-        setLocation(`/admin/${data.fieldNote.id}`);
+      const trip = data?.fieldNote;
+      if (trip?.id && (promotePhotos.length > 0 || promoteVideos.length > 0)) {
+        startTripMediaUploads(trip, promotePhotos, promoteVideos);
+        setLocation(`/field-notes/${trip.id}`);
+      } else if (trip?.id) {
+        setLocation(`/admin/${trip.id}`);
       }
     },
     onError: () => {
@@ -511,6 +520,8 @@ export default function InboxPage() {
     setPromoteTitle(prefill?.title ?? item.filename.replace(/\.gpx$/i, "").replace(/[_-]/g, " "));
     setPromoteDescription(prefill?.description ?? "");
     setPromoteTripTypes(prefill?.tripType ? [prefill.tripType] : ["hiking"]);
+    setPromotePhotos([]);
+    setPromoteVideos([]);
     setPromoteItem(item);
   }
 
@@ -792,7 +803,7 @@ export default function InboxPage() {
 
       {/* Promote dialog */}
       <Dialog open={!!promoteItem} onOpenChange={(open) => !open && setPromoteItem(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-serif text-2xl font-normal">Add to journal</DialogTitle>
           </DialogHeader>
@@ -848,6 +859,17 @@ export default function InboxPage() {
                   );
                 })}
               </div>
+            </div>
+            <div>
+              <div className="meta-mono text-muted-foreground mb-2">
+                Photos and videos <span className="normal-case">(optional)</span>
+              </div>
+              <TripMediaPicker
+                photos={promotePhotos}
+                onPhotosChange={setPromotePhotos}
+                videos={promoteVideos}
+                onVideosChange={setPromoteVideos}
+              />
             </div>
           </div>
           <DialogFooter className="gap-3 sm:gap-6">

@@ -7,6 +7,7 @@ import { extractExifData, extractExifFromBuffer } from "./exif-extractor";
 import { isVideoProcessingActive, reprocessVideoClip } from "./videoProcessor";
 import { resolveClipCoordinates } from "@shared/gpx-utils";
 import { validateTripPhotos, MAX_TRIP_PHOTOS } from "@shared/photo-limit";
+import { clipStartFromRecording, routeStartOf } from "@shared/clip-timing";
 import { requireAuth } from "./middlewares/clerkAuth";
 import multer from 'multer';
 import * as fs from 'fs';
@@ -803,10 +804,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/video-clips", requireAuth, async (req: any, res) => {
     try {
       const tripId = req.body?.fieldNoteId ?? req.body?.projectId;
-      if (typeof tripId !== "string" || !await getOwnedFieldNote(tripId, req.dbUser.id)) {
+      if (typeof tripId !== "string") {
         return res.status(404).json({ message: "Field note not found" });
       }
-      const validatedData = insertVideoClipSchema.parse({ ...req.body, projectId: null, fieldNoteId: tripId });
+      const trip = await getOwnedFieldNote(tripId, req.dbUser.id);
+      if (!trip) {
+        return res.status(404).json({ message: "Field note not found" });
+      }
+      // The apps can send only the clip's recording time and length (and a
+      // signed upload URL); the server places it on the route.
+      const body = { ...req.body };
+      if (body.startTime === undefined && typeof body.duration === "number") {
+        body.startTime = clipStartFromRecording(body.recordedAt, routeStartOf(trip));
+        body.endTime = body.startTime + body.duration;
+      }
+      delete body.recordedAt;
+      if (typeof body.url === "string") body.url = objectStorageService.normalizeObjectEntityPath(body.url);
+      const validatedData = insertVideoClipSchema.parse({ ...body, projectId: null, fieldNoteId: tripId });
       const clip = await createClipWithCoordinates({ ...validatedData, fieldNoteId: tripId });
       res.status(201).json(clip);
     } catch (error) {
@@ -1402,6 +1416,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!item || item.userId !== req.dbUser.id) {
         return res.status(404).json({ message: "Item not found" });
       }
+      // Photos picked in the same dialog come along, as on POST /api/field-notes.
+      const photosData = req.body.photos;
+      const photoError = validateTripPhotos(photosData);
+      if (photoError) return res.status(400).json({ message: photoError });
       const stats = item.gpxStats as any;
       // Keep the GPX's times so the trip can take video clips.
       const { timedTrack, startTime, endTime } = timedTripFields(item.rawGpx);
@@ -1419,6 +1437,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         stravaId: item.stravaId ?? null,
         stravaSource: item.source ?? null,
       });
+      if (Array.isArray(photosData) && photosData.length > 0) {
+        await storage.updateFieldNotePhotos(fieldNote.id, photosData);
+      }
       await storage.updateInboxItemStatus(item.id, 'promoted');
       res.json({ fieldNote });
     } catch (error) {

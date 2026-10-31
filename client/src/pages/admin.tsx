@@ -11,6 +11,8 @@ import type { UploadResult } from "@uppy/core";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { AutoPhotoUploader } from "@/components/auto-photo-uploader";
+import { TripMediaPicker } from "@/components/trip-media-picker";
+import { startTripMediaUploads } from "@/lib/trip-media-uploads";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -75,6 +77,8 @@ export default function AdminPage() {
   }>>([]);
   const [acknowledgedUploadIds, setAcknowledgedUploadIds] = useState<string[]>([]);
   const [photosUploading, setPhotosUploading] = useState(false);
+  // Videos picked while creating a trip; they upload after it's saved.
+  const [newVideos, setNewVideos] = useState<File[]>([]);
   const hydratedPhotosFor = useRef<string | null>(null);
   const [selectedTripTypes, setSelectedTripTypes] = useState<string[]>(["hiking"]);
   const [customTripTypes, setCustomTripTypes] = useState<string[]>([]);
@@ -249,10 +253,16 @@ export default function AdminPage() {
         date: gpxStats?.date || new Date(),
         photos: buildPhotoPayload(),
       }),
-    onSuccess: () => {
+    onSuccess: async (response) => {
       trackEvent("field_note_created", { source: "editor" });
       toast({ title: "Field note created", variant: "success" });
       queryClient.invalidateQueries({ queryKey: ["/api/field-notes"] });
+      const created = (await response.json().catch(() => null)) as FieldNote | null;
+      if (created?.id && newVideos.length > 0) {
+        startTripMediaUploads(created, [], newVideos);
+        setLocation(`/field-notes/${created.id}`);
+        return;
+      }
       setLocation("/dashboard");
     },
     onError: (error) =>
@@ -656,6 +666,16 @@ export default function AdminPage() {
               </div>
             )}
           </div>
+
+          {/* Videos, new trips only: they upload in the background after saving. */}
+          {!isEditing && (
+            <div>
+              <label className="meta-mono text-foreground block mb-3">
+                Videos {newVideos.length > 0 && `· ${newVideos.length}`}
+              </label>
+              <TripMediaPicker videos={newVideos} onVideosChange={setNewVideos} />
+            </div>
+          )}
 
           {/* Actions */}
           <div className="pt-4 border-t border-border flex flex-wrap items-center gap-6">
