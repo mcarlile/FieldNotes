@@ -512,7 +512,6 @@ export default function TripView({
 
   // A clip open in the player widens the left column on wide screens.
   const playerOpen = tab === "videos" && !!selectedClip;
-  const canAddVideo = canEdit && !!timedTrack;
   const columnWidth = playerOpen
     ? Math.max(CARD_WIDTH, Math.min(PLAYER_CARD_WIDTH, viewport.width * 0.5))
     : CARD_WIDTH;
@@ -631,7 +630,7 @@ export default function TripView({
             Photos · {photos.length}
           </button>
           <div className="ml-auto">
-            {tab === "videos" && canAddVideo && (
+            {tab === "videos" && canEdit && (
               <ChunkedVideoUploader onComplete={handleClipsUpload} routeStartTime={routeStartTime} buttonClassName={addButtonClass}>
                 + Add
               </ChunkedVideoUploader>
@@ -802,7 +801,7 @@ export default function TripView({
                   <p className="font-serif text-muted-foreground">No videos yet.</p>
                   {canEdit && !timedTrack && (
                     <p className="meta-mono text-muted-foreground mt-2">
-                      Videos are placed on the route by time, so this trip needs a GPX file with timestamps.
+                      This trip's route has no timestamps, so videos you add will play but won't be placed on the map.
                     </p>
                   )}
                 </div>
