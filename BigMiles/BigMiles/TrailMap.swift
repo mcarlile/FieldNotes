@@ -73,10 +73,17 @@ struct VideoFollow {
     var focusRequest: Int
     /// The follow-cam angle calibrated on the web, if any.
     var angle: FieldNote.CameraAngle?
-    /// The selected clip's stretch of route, drawn over the trip line.
+    /// The selected clip's stretch of route.
     var clipId: String?
-    var clipIndex: Int = 0
     var segment: [CLLocationCoordinate2D] = []
+    /// Every clip's stretch of route, drawn in yellow over the trip line.
+    var segments: [ClipStretch] = []
+}
+
+/// One clip's stretch of route; tapping it on the map plays the clip.
+struct ClipStretch {
+    var clipId: String
+    var coordinates: [CLLocationCoordinate2D]
 }
 
 /// A Mapbox map with routes and photo pins, plus location and 3D terrain
@@ -105,6 +112,8 @@ struct TrailMap: View {
     var video: VideoFollow? = nil
     var onSelectRoutes: (([String]) -> Void)? = nil
     var onSelectPhoto: ((Photo) -> Void)? = nil
+    /// A tap on a clip's yellow stretch of route.
+    var onSelectClip: ((String) -> Void)? = nil
 
     @State private var ownControls = MapControls()
     /// True once the user pans away from the pin while a clip plays.
@@ -119,7 +128,8 @@ struct TrailMap: View {
                      bottomInset: bottomInset, leadingInset: leadingInset, trailingInset: trailingInset, playhead: playhead,
                      video: video, resumeRequest: resumeRequest,
                      onFollowPausedChange: { followPaused = $0 },
-                     onSelectRoutes: onSelectRoutes, onSelectPhoto: onSelectPhoto)
+                     onSelectRoutes: onSelectRoutes, onSelectPhoto: onSelectPhoto,
+                     onSelectClip: onSelectClip)
             .overlay(alignment: .bottom) {
                 // Like the web's "Follow" button: back to the pin after panning away.
                 if followPaused, video?.isPlaying == true {
@@ -223,6 +233,7 @@ private struct TrailMapView: UIViewRepresentable {
     var onFollowPausedChange: (Bool) -> Void
     var onSelectRoutes: (([String]) -> Void)?
     var onSelectPhoto: ((Photo) -> Void)?
+    var onSelectClip: ((String) -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -392,7 +403,11 @@ private struct TrailMapView: UIViewRepresentable {
             })
             line.lineOpacity = .constant(0.9)
             line.lineSortKey = .expression(Exp(.get) { "level" })
-            try? style.addLayer(line)
+            if style.layerExists(withId: clipLayerId) {
+                try? style.addLayer(line, layerPosition: .below(clipLayerId))
+            } else {
+                try? style.addLayer(line)
+            }
         }
 
         private func plainFeatures() -> [Feature] {
@@ -615,7 +630,7 @@ private struct TrailMapView: UIViewRepresentable {
         /// The selected clip's stretch, zoom-in on play, and following the pin.
         func followVideo(resumeRequest: Int) {
             guard let map, let video else { return }
-            let key = "\(video.clipId ?? ""):\(video.segment.count)"
+            let key = video.segments.map { "\($0.clipId):\($0.coordinates.count)" }.joined(separator: ",")
             if key != clipKey {
                 clipKey = key
                 installClipSegment()
@@ -682,19 +697,20 @@ private struct TrailMapView: UIViewRepresentable {
             DispatchQueue.main.async { report?(!value) }
         }
 
-        // The web clip palette, so a clip's stretch matches its color there.
-        private static let clipColors: [UIColor] = [
-            0x3b82f6, 0x8b5cf6, 0xf59e0b, 0x10b981, 0xef4444, 0xf97316, 0x6366f1, 0x84cc16,
-        ].map { UIColor(red: CGFloat($0 >> 16 & 0xff) / 255, green: CGFloat($0 >> 8 & 0xff) / 255,
-                        blue: CGFloat($0 & 0xff) / 255, alpha: 1) }
+        // The Big Miles logo yellow (#FAD82D), for the stretches of route with video.
+        private static let clipColor = UIColor(red: 250/255, green: 216/255, blue: 45/255, alpha: 1)
 
         private func installClipSegment() {
             guard let map, styleReady else { return }
             let style: MapboxMap = map.mapboxMap
-            let coords = video?.segment ?? []
-            let data: GeoJSONSourceData = coords.count >= 2
-                ? .feature(Feature(geometry: .lineString(LineString(coords))))
-                : .featureCollection(FeatureCollection(features: []))
+            let lines = (video?.segments ?? []).filter { $0.coordinates.count >= 2 }
+            let data: GeoJSONSourceData = .featureCollection(FeatureCollection(
+                features: lines.map { stretch in
+                    var f = Feature(geometry: .lineString(LineString(stretch.coordinates)))
+                    f.properties = ["clipId": .string(stretch.clipId)]
+                    return f
+                }
+            ))
             if style.sourceExists(withId: clipSourceId) {
                 style.updateGeoJSONSource(withId: clipSourceId, data: data)
             } else {
@@ -702,17 +718,14 @@ private struct TrailMapView: UIViewRepresentable {
                 source.data = data
                 try? style.addSource(source)
             }
-            let color = Self.clipColors[(video?.clipIndex ?? 0) % Self.clipColors.count]
-            if style.layerExists(withId: clipLayerId) {
-                try? style.setLayerProperty(for: clipLayerId, property: "line-color",
-                                            value: StyleColor(color).rawValue)
-            } else {
+            if !style.layerExists(withId: clipLayerId) {
                 var line = LineLayer(id: clipLayerId, source: clipSourceId)
                 line.lineCap = .constant(.round)
                 line.lineJoin = .constant(.round)
-                line.lineColor = .constant(StyleColor(color))
+                line.lineColor = .constant(StyleColor(Self.clipColor))
                 line.lineWidth = .constant(6)
-                try? style.addLayer(line)
+                // Over the trip line, so the video stretches show on top of it.
+                try? style.addLayer(line, layerPosition: style.layerExists(withId: layerId) ? .above(layerId) : nil)
             }
         }
 
@@ -739,8 +752,27 @@ private struct TrailMapView: UIViewRepresentable {
         // MARK: Route taps
 
         private func tapped(at point: CGPoint) {
-            guard let map, let onSelect = parent?.onSelectRoutes else { return }
+            guard let map else { return }
             let box = CGRect(x: point.x - 22, y: point.y - 22, width: 44, height: 44)
+            // A clip's yellow stretch takes the tap before the route under it.
+            if let onSelectClip = parent?.onSelectClip, map.mapboxMap.layerExists(withId: clipLayerId) {
+                _ = map.mapboxMap.queryRenderedFeatures(
+                    with: box, options: RenderedQueryOptions(layerIds: [clipLayerId], filter: nil)
+                ) { [weak self] result in
+                    if case .success(let hits) = result,
+                       case .string(let id)? = hits.first?.queriedFeature.feature.properties?["clipId"] {
+                        onSelectClip(id)
+                    } else {
+                        self?.selectRoutes(in: box)
+                    }
+                }
+                return
+            }
+            selectRoutes(in: box)
+        }
+
+        private func selectRoutes(in box: CGRect) {
+            guard let map, let onSelect = parent?.onSelectRoutes else { return }
             _ = map.mapboxMap.queryRenderedFeatures(
                 with: box, options: RenderedQueryOptions(layerIds: [layerId], filter: nil)
             ) { result in
@@ -793,6 +825,12 @@ private final class PhotoPinView: UIImageView {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    // Mapbox sizes a view annotation once, from the view's fitting size, which
+    // for an image view is its image's. With no thumbnail yet that is zero, and
+    // the pin stays invisible after the thumbnail arrives. Always be 36pt.
+    override var intrinsicContentSize: CGSize { CGSize(width: 36, height: 36) }
+    override func sizeThatFits(_ size: CGSize) -> CGSize { intrinsicContentSize }
 
     @objc private func tapped() { onTap() }
 }
