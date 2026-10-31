@@ -793,6 +793,11 @@ private final class PhotoPinView: UIImageView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
+    // Mapbox sizes a view annotation from its fitting size, which for an image
+    // view is the image's: zero before the thumbnail loads (so the pin never
+    // shows if it fails) and 96pt after. Keep it a 36pt circle either way.
+    override var intrinsicContentSize: CGSize { CGSize(width: 36, height: 36) }
+
     @objc private func tapped() { onTap() }
 }
 
