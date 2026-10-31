@@ -73,9 +73,11 @@ struct VideoFollow {
     var focusRequest: Int
     /// The follow-cam angle calibrated on the web, if any.
     var angle: FieldNote.CameraAngle?
-    /// The selected clip's stretch of route, drawn over the trip line.
+    /// The selected clip's stretch of route.
     var clipId: String?
     var segment: [CLLocationCoordinate2D] = []
+    /// Every clip's stretch of route, drawn in yellow over the trip line.
+    var segments: [[CLLocationCoordinate2D]] = []
 }
 
 /// A Mapbox map with routes and photo pins, plus location and 3D terrain
@@ -391,7 +393,11 @@ private struct TrailMapView: UIViewRepresentable {
             })
             line.lineOpacity = .constant(0.9)
             line.lineSortKey = .expression(Exp(.get) { "level" })
-            try? style.addLayer(line)
+            if style.layerExists(withId: clipLayerId) {
+                try? style.addLayer(line, layerPosition: .below(clipLayerId))
+            } else {
+                try? style.addLayer(line)
+            }
         }
 
         private func plainFeatures() -> [Feature] {
@@ -614,7 +620,7 @@ private struct TrailMapView: UIViewRepresentable {
         /// The selected clip's stretch, zoom-in on play, and following the pin.
         func followVideo(resumeRequest: Int) {
             guard let map, let video else { return }
-            let key = "\(video.clipId ?? ""):\(video.segment.count)"
+            let key = video.segments.map { "\($0.count)" }.joined(separator: ",")
             if key != clipKey {
                 clipKey = key
                 installClipSegment()
@@ -681,16 +687,16 @@ private struct TrailMapView: UIViewRepresentable {
             DispatchQueue.main.async { report?(!value) }
         }
 
-        // The Big Miles logo yellow (#FAD82D), so video stretches match the brand.
+        // The Big Miles logo yellow (#FAD82D), for the stretches of route with video.
         private static let clipColor = UIColor(red: 250/255, green: 216/255, blue: 45/255, alpha: 1)
 
         private func installClipSegment() {
             guard let map, styleReady else { return }
             let style: MapboxMap = map.mapboxMap
-            let coords = video?.segment ?? []
-            let data: GeoJSONSourceData = coords.count >= 2
-                ? .feature(Feature(geometry: .lineString(LineString(coords))))
-                : .featureCollection(FeatureCollection(features: []))
+            let lines = (video?.segments ?? []).filter { $0.count >= 2 }
+            let data: GeoJSONSourceData = .featureCollection(FeatureCollection(
+                features: lines.map { Feature(geometry: .lineString(LineString($0))) }
+            ))
             if style.sourceExists(withId: clipSourceId) {
                 style.updateGeoJSONSource(withId: clipSourceId, data: data)
             } else {
@@ -704,7 +710,8 @@ private struct TrailMapView: UIViewRepresentable {
                 line.lineJoin = .constant(.round)
                 line.lineColor = .constant(StyleColor(Self.clipColor))
                 line.lineWidth = .constant(6)
-                try? style.addLayer(line)
+                // Over the trip line, so the video stretches show on top of it.
+                try? style.addLayer(line, layerPosition: style.layerExists(withId: layerId) ? .above(layerId) : nil)
             }
         }
 

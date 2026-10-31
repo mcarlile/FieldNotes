@@ -73,7 +73,10 @@ struct NoteDetailView: View {
             focusRequest: playback.focusRequest,
             angle: display.playback?.cameraAngle,
             clipId: playback.clip?.id,
-            segment: playback.clipSegment(on: track, syncOffset: syncOffset)
+            segment: playback.clipSegment(on: track, syncOffset: syncOffset),
+            segments: track.map { track in
+                videoClips.map { track.segment(from: $0.startTime + syncOffset, to: $0.endTime + syncOffset) }
+            } ?? []
         )
     }
 
