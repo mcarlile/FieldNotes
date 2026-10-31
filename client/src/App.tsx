@@ -16,6 +16,7 @@ import { queryClient } from "./lib/queryClient";
 import { CarbonNotificationContainer } from "@/components/carbon-notification";
 import { ThemeProvider } from "@/contexts/theme-context";
 import GlobalHeader from "@/components/global-header";
+import { TripMediaUploadStatus } from "@/components/trip-media-upload-status";
 import { useDesignPreview } from "@/hooks/use-design-preview";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
@@ -202,6 +203,7 @@ function AppContent() {
   return (
     <>
       {showHeader && <GlobalHeader />}
+      <TripMediaUploadStatus />
       {readOnlyPreview && location !== "/" && !location.startsWith("/sign-") && (
         <div data-preview-banner className="border-b border-border bg-muted px-5 py-2 text-center text-xs text-foreground">
           Live production data · Read-only preview
