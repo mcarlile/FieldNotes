@@ -228,7 +228,7 @@ export default function Dashboard() {
           </span>
         </div>
         <div className="h-[calc(100vh-2.75rem-3.5rem)] min-h-[60vh]">
-          <HeatMapView fieldNotes={allFieldNotes} />
+          <HeatMapView fieldNotes={allFieldNotes} showPhotoToggle />
         </div>
       </div>
     );

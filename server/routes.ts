@@ -300,6 +300,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Every photo with GPS on the user's trips, for photo pins on the heat map.
+  // Registered before /api/photos/:id so "map" isn't read as a photo id.
+  app.get("/api/photos/map", requireAuth, async (req: any, res) => {
+    try {
+      const mapPhotos = await storage.getMapPhotosForUser(req.dbUser.id);
+      res.set('Cache-Control', 'private, max-age=60');
+      res.json(mapPhotos);
+    } catch (error) {
+      console.error("Error fetching map photos:", error);
+      res.status(500).json({ message: "Failed to fetch map photos" });
+    }
+  });
+
   // Get specific photo by ID
   app.get("/api/photos/:id", requireAuth, async (req: any, res) => {
     try {
