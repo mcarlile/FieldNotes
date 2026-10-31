@@ -22,7 +22,7 @@ test("MCP lists the project and upload tools", async () => {
   const response: any = await handleRpc({ jsonrpc: "2.0", id: 1, method: "tools/list" });
   assert.deepEqual(
     response.result.tools.map((t: { name: string }) => t.name),
-    ["list_projects", "get_project", "request_upload", "create_project", "set_route", "add_clip", "reprocess_clip"],
+    ["list_projects", "get_project", "request_upload", "create_project", "set_route", "add_clip", "move_clip", "reprocess_clip"],
   );
 });
 
