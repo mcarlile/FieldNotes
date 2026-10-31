@@ -75,7 +75,10 @@ struct NoteDetailView: View {
             clipId: playback.clip?.id,
             segment: playback.clipSegment(on: track, syncOffset: syncOffset),
             segments: track.map { track in
-                videoClips.map { track.segment(from: $0.startTime + syncOffset, to: $0.endTime + syncOffset) }
+                videoClips.map { clip in
+                    ClipStretch(clipId: clip.id, coordinates: track.segment(
+                        from: clip.startTime + syncOffset, to: clip.endTime + syncOffset))
+                }
             } ?? []
         )
     }
@@ -150,7 +153,8 @@ struct NoteDetailView: View {
                     bottomInset: collapsed,
                     playhead: playhead,
                     video: videoFollow,
-                    onSelectPhoto: { lightbox = $0 }
+                    onSelectPhoto: { lightbox = $0 },
+                    onSelectClip: playClip
                 )
                 .ignoresSafeArea()
 
@@ -214,7 +218,8 @@ struct NoteDetailView: View {
                     leadingInset: detailsCardOpen || showMedia ? width + 16 : 0,
                     playhead: playhead,
                     video: videoFollow,
-                    onSelectPhoto: { lightbox = $0 }
+                    onSelectPhoto: { lightbox = $0 },
+                    onSelectClip: playClip
                 )
                 .ignoresSafeArea()
 
@@ -445,6 +450,15 @@ struct NoteDetailView: View {
                 }
             }
         }
+    }
+
+    /// A tap on a clip's stretch of route: show the videos and play that clip,
+    /// which zooms the map in behind the pin.
+    private func playClip(_ id: String) {
+        guard let clip = videoClips.first(where: { $0.id == id }) else { return }
+        mediaTab = .videos
+        mediaCardOpen = true
+        playback.play(clip, refocus: true)
     }
 
     private func loadFull() async {
