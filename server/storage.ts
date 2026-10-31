@@ -1,6 +1,6 @@
 import { fieldNotes, photos, trailcamProjects, videoClips, webhookTokens, gpxInbox, stravaConnections, expeditions, expeditionFieldNotes, type TripPlayback, type FieldNote, type Photo, type InsertFieldNote, type InsertPhoto, type TrailcamProject, type VideoClip, type InsertTrailcamProject, type InsertVideoClip, type WebhookToken, type GpxInboxItem, type StravaConnection, type InsertStravaConnection, type Expedition, type InsertExpedition, type ExpeditionFieldNote } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, asc, like, ilike, and, or, sql, inArray } from "drizzle-orm";
+import { eq, desc, asc, like, ilike, and, or, sql, inArray, isNotNull } from "drizzle-orm";
 import { MAX_TRIP_PHOTOS } from "@shared/photo-limit";
 import { existingPhotoCaptionPatch } from "./photo-caption";
 
@@ -43,6 +43,8 @@ export interface IStorage {
 
   // Photos
   getPhotosByFieldNoteId(fieldNoteId: string): Promise<Photo[]>;
+  /** Every photo with GPS on the user's trips, for the heat map's photo pins. */
+  getMapPhotosForUser(userId: string): Promise<Photo[]>;
   getPhotoById(id: string): Promise<Photo | undefined>;
   createPhoto(photo: InsertPhoto): Promise<Photo>;
   createPhotoWithinLimit(photo: InsertPhoto): Promise<Photo | undefined>;
@@ -226,6 +228,16 @@ export class DatabaseStorage implements IStorage {
 
   async getPhotosByFieldNoteId(fieldNoteId: string): Promise<Photo[]> {
     return await db.select().from(photos).where(eq(photos.fieldNoteId, fieldNoteId));
+  }
+
+  async getMapPhotosForUser(userId: string): Promise<Photo[]> {
+    const rows = await db
+      .select({ photo: photos })
+      .from(photos)
+      .innerJoin(fieldNotes, eq(photos.fieldNoteId, fieldNotes.id))
+      .where(and(eq(fieldNotes.userId, userId), isNotNull(photos.latitude), isNotNull(photos.longitude)))
+      .orderBy(asc(photos.timestamp));
+    return rows.map((row) => row.photo);
   }
 
   async getPhotoById(id: string): Promise<Photo | undefined> {
@@ -923,6 +935,12 @@ export class MemStorage implements IStorage {
 
   async getPhotosByFieldNoteId(fieldNoteId: string): Promise<Photo[]> {
     return this.photosData.filter(photo => photo.fieldNoteId === fieldNoteId);
+  }
+
+  async getMapPhotosForUser(userId: string): Promise<Photo[]> {
+    const tripIds = new Set(this.fieldNotesData.filter(note => note.userId === userId).map(note => note.id));
+    return this.photosData.filter(photo =>
+      tripIds.has(photo.fieldNoteId) && photo.latitude != null && photo.longitude != null);
   }
 
   async getPhotoById(id: string): Promise<Photo | undefined> {

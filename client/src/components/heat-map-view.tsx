@@ -6,6 +6,17 @@ import type { FieldNote } from "@shared/schema";
 import { parseGpxData } from "@shared/gpx-utils";
 import { MapTerrainControls, TERRAIN_PITCH, applyTerrain } from "@/components/map-terrain-controls";
 import { applyMapStyleExtras, getMapStyle } from "@/lib/map-styles";
+import { useQuery } from "@tanstack/react-query";
+import type { Photo } from "@shared/schema";
+import { apiRequest } from "@/lib/queryClient";
+import { absolutePhotoUrl, createPhotoMarkerElement } from "@/lib/photo-marker";
+import PhotoLightbox from "@/components/photo-lightbox";
+
+const PHOTO_PINS_KEY = "heatMapPhotoPins";
+
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+}
 
 // Anything with a route can go on the heat map: field notes, or Studio
 // projects shaped like them.
@@ -15,9 +26,11 @@ interface HeatMapViewProps {
   fieldNotes: HeatMapRoute[];
   // Where a route's popup link goes. Defaults to the field note page.
   routeHref?: (id: string) => string;
+  // Offer the photo pins switch (trips only; Studio projects have no photos).
+  showPhotoToggle?: boolean;
 }
 
-export default function HeatMapView({ fieldNotes, routeHref = (id) => `/field-notes/${id}` }: HeatMapViewProps) {
+export default function HeatMapView({ fieldNotes, routeHref = (id) => `/field-notes/${id}`, showPhotoToggle = false }: HeatMapViewProps) {
   const { theme } = useTheme();
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -28,6 +41,27 @@ export default function HeatMapView({ fieldNotes, routeHref = (id) => `/field-no
   const [selectedMapStyle, setSelectedMapStyle] = useState("outdoors-v11");
   const [webGLSupported, setWebGLSupported] = useState<boolean>(true);
   const [mapError, setMapError] = useState<string | null>(null);
+  const [showPhotos, setShowPhotos] = useState(() => {
+    try { return localStorage.getItem(PHOTO_PINS_KEY) === "1"; } catch { return false; }
+  });
+  const [lightboxPhotoId, setLightboxPhotoId] = useState<string | null>(null);
+  const photoMarkers = useRef<Map<string, mapboxgl.Marker>>(new Map());
+  const photoPopup = useRef<mapboxgl.Popup | null>(null);
+
+  const togglePhotos = () => {
+    setShowPhotos((on) => {
+      try { localStorage.setItem(PHOTO_PINS_KEY, on ? "0" : "1"); } catch { /* private mode */ }
+      return !on;
+    });
+  };
+
+  // Every photo with GPS, fetched the first time the switch is on.
+  const { data: mapPhotos = [] } = useQuery<Photo[]>({
+    queryKey: ["/api/photos/map"],
+    queryFn: async () => (await apiRequest("/api/photos/map", "GET")).json(),
+    enabled: showPhotoToggle && showPhotos,
+    staleTime: 60_000,
+  });
 
   // Theme-aware colors
   const getThemeColors = () => {
@@ -208,6 +242,66 @@ export default function HeatMapView({ fieldNotes, routeHref = (id) => `/field-no
       }
     };
   }, []);
+
+  // Photo pins: the trip pages' thumbnails, for photos on the trips shown.
+  const visiblePhotos = showPhotoToggle && showPhotos
+    ? mapPhotos.filter((photo) => photo.latitude != null && photo.longitude != null
+        && filteredFieldNotes.some((note) => note.id === photo.fieldNoteId))
+    : [];
+  const visiblePhotoKey = visiblePhotos.map((photo) => photo.id).join(",");
+
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+    const wanted = new Set(visiblePhotos.map((photo) => photo.id));
+    photoMarkers.current.forEach((marker, id) => {
+      if (!wanted.has(id)) {
+        marker.remove();
+        photoMarkers.current.delete(id);
+      }
+    });
+    if (wanted.size === 0) {
+      photoPopup.current?.remove();
+      photoPopup.current = null;
+    }
+    for (const photo of visiblePhotos) {
+      if (photoMarkers.current.has(photo.id)) continue;
+      const element = createPhotoMarkerElement(
+        { id: photo.id, thumbnailUrl: photo.url },
+        () => openPhotoPopup(photo),
+      );
+      const marker = new mapboxgl.Marker({ element, anchor: "center" })
+        .setLngLat([photo.longitude!, photo.latitude!])
+        .addTo(m);
+      photoMarkers.current.set(photo.id, marker);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visiblePhotoKey, mapLoaded]);
+
+  // The photo with its trip's name and a link to the trip; the image opens the lightbox.
+  const openPhotoPopup = (photo: Photo) => {
+    if (!map.current) return;
+    photoPopup.current?.remove();
+    const note = fieldNotes.find((n) => n.id === photo.fieldNoteId);
+    const container = document.createElement("div");
+    container.className = "text-sm";
+    container.style.width = "220px";
+    container.innerHTML = `
+      <button type="button" data-role="open-photo" aria-label="View photo"
+        style="display:block;width:100%;padding:0;border:0;background:#e8e4de;border-radius:6px;overflow:hidden;cursor:zoom-in;">
+        <img src="${escapeHtml(absolutePhotoUrl(photo.url))}" alt="" style="display:block;width:100%;height:150px;object-fit:cover;" />
+      </button>
+      ${note ? `<a href="${escapeHtml(routeHref(note.id))}" class="font-semibold underline" style="display:block;margin-top:8px;color:${getThemeColors().primary};">${escapeHtml(note.title)}</a>` : ""}
+      <span class="text-xs" style="color:#6b7280;">Open trip</span>
+    `;
+    container.querySelector('[data-role="open-photo"]')?.addEventListener("click", () => {
+      setLightboxPhotoId(photo.id);
+    });
+    photoPopup.current = new mapboxgl.Popup({ closeButton: true, closeOnClick: true, offset: 22, maxWidth: "260px" })
+      .setLngLat([photo.longitude!, photo.latitude!])
+      .setDOMContent(container)
+      .addTo(map.current);
+  };
 
   // Handle 3D mode toggle
   const toggle3DMode = () => {
@@ -887,12 +981,42 @@ export default function HeatMapView({ fieldNotes, routeHref = (id) => `/field-no
         </div>
       </div>
 
-      {/* 3D Mode Toggle */}
-      <MapTerrainControls
-        className="absolute top-4 right-4 z-10"
-        is3D={is3DMode}
-        onToggle3D={toggle3DMode}
-      />
+      {/* 3D Mode Toggle, with the photo pins switch under it */}
+      <div className="absolute top-4 right-4 z-10 flex flex-col gap-2">
+        <MapTerrainControls is3D={is3DMode} onToggle3D={toggle3DMode} />
+        {showPhotoToggle && (
+          <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-medium text-foreground">Photo pins</span>
+              <button
+                type="button"
+                onClick={togglePhotos}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  showPhotos ? "bg-primary" : "bg-muted"
+                }`}
+                aria-label="Show photo pins"
+                aria-pressed={showPhotos}
+                data-testid="toggle-photo-pins"
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    showPhotos ? "translate-x-6" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {lightboxPhotoId && (
+        <PhotoLightbox
+          photoId={lightboxPhotoId}
+          photos={mapPhotos.filter((photo) => photo.fieldNoteId === mapPhotos.find((p) => p.id === lightboxPhotoId)?.fieldNoteId)}
+          onClose={() => setLightboxPhotoId(null)}
+          onPhotoChange={setLightboxPhotoId}
+        />
+      )}
       
       <div ref={mapContainer} className="w-full h-full" />
       

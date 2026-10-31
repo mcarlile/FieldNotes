@@ -478,16 +478,21 @@ struct StatCell: View {
 struct LightboxView: View {
     let initial: Photo
     let photos: [Photo]
+    /// When set (on the heat map), an "Open trip" button goes to the photo's trip.
+    var onOpenTrip: ((Photo) -> Void)? = nil
     let onDismiss: () -> Void
 
     @State private var currentId: String
 
-    init(initial: Photo, photos: [Photo], onDismiss: @escaping () -> Void) {
+    init(initial: Photo, photos: [Photo], onOpenTrip: ((Photo) -> Void)? = nil, onDismiss: @escaping () -> Void) {
         self.initial = initial
         self.photos = photos
+        self.onOpenTrip = onOpenTrip
         self.onDismiss = onDismiss
         _currentId = State(initialValue: initial.id)
     }
+
+    private var current: Photo { photos.first { $0.id == currentId } ?? initial }
 
     private var idx: Int { photos.firstIndex(where: { $0.id == currentId }) ?? 0 }
 
@@ -534,6 +539,17 @@ struct LightboxView: View {
                             Image(systemName: "chevron.right").font(.system(size: 22)).foregroundColor(.white)
                         }
                     }
+                    .padding(.bottom, onOpenTrip == nil ? 40 : 16)
+                }
+                if let onOpenTrip {
+                    Button { onOpenTrip(current) } label: {
+                        Label("Open trip", systemImage: "map")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 10)
+                            .background(.white, in: Capsule())
+                    }
                     .padding(.bottom, 40)
                 }
             }
@@ -543,7 +559,7 @@ struct LightboxView: View {
 
 // MARK: - Cross-platform lightbox presentation
 
-private extension View {
+extension View {
     @ViewBuilder
     func lightboxCover<Item: Identifiable, Content: View>(
         item: Binding<Item?>,
