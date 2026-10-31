@@ -5,6 +5,7 @@ import { objectStorageService } from "./objectStorage";
 import { requireAuth } from "./middlewares/clerkAuth";
 import { createClipWithCoordinates, createTripFromGpx, replaceTripRoute, tripDurationSeconds } from "./trailcam";
 import { clipOffsetSeconds } from "@shared/clip-timing";
+import { resolveClipCoordinates } from "@shared/gpx-utils";
 import { isVideoProcessingActive, reprocessVideoClip } from "./videoProcessor";
 import type { FieldNote } from "@shared/schema";
 
@@ -127,6 +128,21 @@ const tools = [
     },
   },
   {
+    name: "move_clip",
+    description:
+      "Change where a clip sits on its trip's route. Pass `start_seconds` (seconds after the route " +
+      "start) or `recorded_at` (UTC time the video starts); the clip keeps its length.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        clip_id: { type: "string" },
+        start_seconds: { type: "number", description: "Seconds after the route start." },
+        recorded_at: { type: "string", description: "ISO 8601 UTC time the video starts." },
+      },
+      required: ["clip_id"],
+    },
+  },
+  {
     name: "reprocess_clip",
     description:
       "Retry processing (thumbnail and transcode) for a clip that failed or is stuck. A clip is stuck " +
@@ -141,6 +157,11 @@ const tools = [
 
 const getProjectArgs = z.object({ project_id: z.string() });
 const reprocessClipArgs = z.object({ clip_id: z.string() });
+const moveClipArgs = z.object({
+  clip_id: z.string(),
+  start_seconds: z.number().min(0).optional(),
+  recorded_at: z.string().datetime({ offset: true }).optional(),
+});
 const listProjectsArgs = z.object({ search: z.string().optional(), has_videos: z.boolean().optional() });
 const requestUploadArgs = z.object({ content_type: z.string().optional() });
 const createProjectArgs = z.object({
@@ -309,6 +330,41 @@ async function callTool(name: string, args: unknown, userId?: string): Promise<u
       if (result === "not_found") throw new ToolError("Clip not found.");
       if (result === "already_active") throw new ToolError("This clip is already processing or waiting its turn.");
       return { clip_id, processing_status: "pending" };
+    }
+    case "move_clip": {
+      const input = moveClipArgs.parse(args);
+      const clip = await storage.getVideoClipById(input.clip_id);
+      if (!clip?.fieldNoteId) throw new ToolError("Clip not found.");
+      const trip = await ownedTrip(clip.fieldNoteId, userId);
+      let startSeconds = input.start_seconds;
+      if (startSeconds === undefined && input.recorded_at) {
+        startSeconds = clipOffsetSeconds(new Date(input.recorded_at), routeStartOf(trip)) ?? undefined;
+        if (startSeconds === undefined) {
+          throw new ToolError("recorded_at is before the route starts or more than two days after it.");
+        }
+      }
+      if (startSeconds === undefined) throw new ToolError("Pass start_seconds or recorded_at.");
+      const length = clip.endTime - clip.startTime;
+      const coords = resolveClipCoordinates(
+        trip.gpxData,
+        startSeconds,
+        startSeconds + length,
+        tripDurationSeconds(trip) ?? undefined,
+      );
+      const moved = await storage.updateVideoClip(clip.id, {
+        startTime: startSeconds,
+        endTime: startSeconds + length,
+        ...coords,
+      });
+      if (!moved) throw new ToolError("Clip not found.");
+      return {
+        id: moved.id,
+        title: moved.title,
+        start_seconds: moved.startTime,
+        end_seconds: moved.endTime,
+        start_latitude: moved.startLatitude,
+        start_longitude: moved.startLongitude,
+      };
     }
     case "add_clip": {
       const input = addClipArgs.parse(args);
