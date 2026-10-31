@@ -39,7 +39,7 @@ export default function MapboxRoutePreview({ fieldNote, className = "" }: Mapbox
 
   if (!staticUrl || failedUrl === staticUrl) {
     return (
-      <div className={`bg-muted flex items-center justify-center text-muted-foreground text-sm font-ibm ${className}`}>
+      <div className={`bg-muted flex items-center justify-center text-muted-foreground text-sm font-sans ${className}`}>
         {staticUrl ? "Map preview unavailable" : "No Route Data"}
       </div>
     );

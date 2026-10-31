@@ -10,7 +10,7 @@ This document is a technical reference for AI agents (Gemini, Claude Code, etc.)
 |---|---|
 | Runtime | Node.js + Express (TypeScript, ES modules) |
 | Frontend | React 18, Vite, Wouter routing, TanStack Query |
-| UI | Radix UI + Tailwind CSS + Carbon Design System (`@carbon/react`) |
+| UI | Tailwind CSS + shadcn/ui (Radix UI primitives, `client/src/components/ui/`), Lucide icons |
 | Database | PostgreSQL via Drizzle ORM (`drizzle-orm/pg-core`) |
 | Object Storage | Google Cloud Storage via Replit sidecar (`http://127.0.0.1:1106`) |
 | Maps | Mapbox GL JS |
@@ -39,8 +39,10 @@ client/src/
   App.tsx            — Route definitions (Wouter)
   pages/             — Page components
   components/
-    carbon-photo-uploader.tsx  — Full photo upload UI + compression + retry logic
-    gpx-file-uploader.tsx      — GPX file selection and parsing
+    auto-photo-uploader.tsx    — Photo upload dialog, queue and retry
+    chunked-video-uploader.tsx — Chunked video clip upload dialog
+    file-drop-zone.tsx         — Shared drag-and-drop file target
+    ui/                        — shadcn/ui components
   lib/
     exif-extractor.ts          — Client-side EXIF type definitions
     queryClient.ts             — TanStack Query setup, apiRequest helper
@@ -202,12 +204,11 @@ Client                              Server                          GCS
                                       updatePhoto() with EXIF fields
 ```
 
-### Client Upload Logic (`carbon-photo-uploader.tsx`)
+### Client Upload Logic (`auto-photo-uploader.tsx`)
 
-- `compressImage(file, maxWidth=2048, quality=0.85)` — canvas-based compression; skips files < 500KB; only uses compressed version if smaller than original
-- Parallel uploads via `Promise.all()` across all selected files
-- Dynamic timeout: `Math.max(30000, file.size / 1024)` ms (at least 30s, grows with file size)
-- Retry loop: up to 3 attempts with 1s/2s/4s delays
+- Files upload as soon as they are picked, through `runUploadQueue` in `lib/upload-queue.ts` (at most three at once)
+- Each PUT has a timeout of `Math.max(60000, file.size / 1024)` ms
+- Failed files can be retried or removed from the dialog
 
 ### Server Upload Verification (`server/routes.ts` → `POST /api/photos`)
 

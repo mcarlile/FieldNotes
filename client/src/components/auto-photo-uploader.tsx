@@ -1,14 +1,17 @@
-import { createPortal } from "react-dom";
 import { useState, useRef } from "react";
-import { 
-  Button as CarbonButton,
-  Modal,
-  FileUploaderDropContainer,
-  FileUploaderItem,
-  ProgressBar,
-  InlineNotification
-} from "@carbon/react";
-import { ImageUp } from "lucide-react";
+import { CircleAlert, CircleCheck, ImageUp, Loader2, X } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Progress } from "@/components/ui/progress";
+import { FileDropZone } from "@/components/file-drop-zone";
 import type { UploadResult } from "@uppy/core";
 import { type PhotoExifData } from "@/lib/exif-extractor";
 import { apiRequest } from "@/lib/queryClient";
@@ -212,12 +215,6 @@ export function AutoPhotoUploader({
     onComplete?.({ successful, failed } as unknown as UploadResult<Record<string, unknown>, Record<string, unknown>>, exifData);
   };
 
-  const handleFileAdd = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFiles = Array.from(event.target.files || []);
-    event.target.value = "";
-    await processNewFiles(selectedFiles);
-  };
-
   const handleFilesFromDropContainer = async (newFiles: File[]) => {
     await processNewFiles(newFiles);
   };
@@ -243,109 +240,119 @@ export function AutoPhotoUploader({
 
   return (
     <>
-      <CarbonButton
-        kind="tertiary"
-        className={buttonClassName}
+      <button
+        type="button"
+        className={buttonClassName ?? "meta-mono inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors [&>svg]:h-4 [&>svg]:w-4"}
         onClick={() => setShowModal(true)}
-        renderIcon={ImageUp}
       >
         {children}
-      </CarbonButton>
+        <ImageUp strokeWidth={1.5} />
+      </button>
 
-      {/* On the body, so a card or panel the button sits in can't clip or trap it. */}
-      {createPortal(
-      <Modal
-        open={showModal}
-        onRequestClose={() => setShowModal(false)}
-        modalHeading="Upload Photos"
-        primaryButtonText={allUploadsComplete ? "Done" : "Close"}
-        secondaryButtonText=""
-        onRequestSubmit={() => setShowModal(false)}
-        size="lg"
-      >
-        <div className="space-y-4">
-          <p className="text-sm text-gray-600 mb-4">
-            Photos upload automatically when selected. Up to {maxNumberOfFiles} photos per trip.
-          </p>
-          {notice && <InlineNotification kind="error" title="Cannot add photos" subtitle={notice} hideCloseButton />}
+      <Dialog open={showModal} onOpenChange={setShowModal}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Upload photos</DialogTitle>
+            <DialogDescription>
+              Photos upload automatically when selected. Up to {maxNumberOfFiles} photos per trip.
+            </DialogDescription>
+          </DialogHeader>
 
-          <FileUploaderDropContainer
-            labelText="Drag photos here or click to browse"
-            multiple={maxNumberOfFiles > 1}
-            accept={["image/*"]}
-            onAddFiles={(evt, { addedFiles }) => {
-              handleFilesFromDropContainer(addedFiles);
-            }}
-          />
+          <div className="space-y-4">
+            {notice && (
+              <Alert variant="destructive">
+                <CircleAlert className="h-4 w-4" />
+                <AlertTitle>Cannot add photos</AlertTitle>
+                <AlertDescription>{notice}</AlertDescription>
+              </Alert>
+            )}
 
-          <input
-            type="file"
-            accept="image/*"
-            multiple={maxNumberOfFiles > 1}
-            onChange={handleFileAdd}
-            style={{ display: 'none' }}
-            id="file-input"
-          />
+            <FileDropZone
+              label="Drag photos here or click to browse"
+              accept="image/*"
+              multiple={maxNumberOfFiles > 1}
+              onAddFiles={handleFilesFromDropContainer}
+            />
 
-          {files.length > 0 && (
-            <div className="space-y-3 mt-6">
-              <h4 className="text-sm font-semibold">Upload Status</h4>
-              
-              {hasFailedUploads && (
-                <div>
-                  <InlineNotification kind="error" title="Some uploads failed" subtitle="Failed files can be retried or removed below." hideCloseButton />
-                  <CarbonButton kind="tertiary" size="sm" disabled={pendingBatches.current > 0} onClick={retryFailed}>Retry failed uploads</CarbonButton>
-                </div>
-              )}
+            {files.length > 0 && (
+              <div className="space-y-3 pt-2">
+                <h4 className="text-sm font-semibold">Upload status</h4>
 
-              {allUploadsComplete && (
-                <InlineNotification
-                  kind="success"
-                  title="All photos uploaded successfully!"
-                  hideCloseButton
-                />
-              )}
-
-              {files.map((fileState) => (
-                <div key={fileState.id} className="border border-gray-200 rounded p-3">
-                  <FileUploaderItem
-                    name={fileState.file.name}
-                    status={fileState.status === 'complete' ? 'complete' : 
-                           fileState.status === 'error' ? 'edit' : 'uploading'}
-                    onDelete={() => {
-                      if (fileState.status === 'error' || fileState.status === 'complete') removeFile(fileState.id);
-                    }}
-                    size="md"
-                  />
-                  
-                  <div className="mt-2">
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="text-xs text-gray-600">{fileState.statusMessage}</span>
-                      <span className="text-xs text-gray-600">{fileState.progress}%</span>
-                    </div>
-                    
-                    <ProgressBar
-                      value={fileState.progress}
-                      max={100}
-                      size="small"
-                      label=""
-                      hideLabel
-                    />
+                {hasFailedUploads && (
+                  <div className="space-y-2">
+                    <Alert variant="destructive">
+                      <CircleAlert className="h-4 w-4" />
+                      <AlertTitle>Some uploads failed</AlertTitle>
+                      <AlertDescription>Failed files can be retried or removed below.</AlertDescription>
+                    </Alert>
+                    <Button variant="outline" size="sm" disabled={pendingBatches.current > 0} onClick={retryFailed}>
+                      Retry failed uploads
+                    </Button>
                   </div>
+                )}
 
-                  {fileState.status === 'error' && fileState.errorMessage && (
-                    <div className="mt-2 text-xs text-red-600">
-                      {fileState.errorMessage}
+                {allUploadsComplete && (
+                  <Alert variant="success">
+                    <CircleCheck className="h-4 w-4" />
+                    <AlertTitle>All photos uploaded successfully!</AlertTitle>
+                  </Alert>
+                )}
+
+                {files.map((fileState) => {
+                  const isDone = fileState.status === 'complete';
+                  const isError = fileState.status === 'error';
+                  return (
+                    <div key={fileState.id} className="rounded-md border border-border p-3">
+                      <div className="flex items-center gap-2">
+                        {isDone ? (
+                          <CircleCheck className="h-4 w-4 shrink-0 text-emerald-600" />
+                        ) : isError ? (
+                          <CircleAlert className="h-4 w-4 shrink-0 text-destructive" />
+                        ) : (
+                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+                        )}
+                        <span className="min-w-0 flex-1 truncate text-sm">{fileState.file.name}</span>
+                        {(isDone || isError) && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            aria-label={`Remove ${fileState.file.name}`}
+                            onClick={() => removeFile(fileState.id)}
+                          >
+                            <X />
+                          </Button>
+                        )}
+                      </div>
+
+                      <div className="mt-2">
+                        <div className="mb-1 flex items-center justify-between">
+                          <span className="text-xs text-muted-foreground">{fileState.statusMessage}</span>
+                          <span className="text-xs text-muted-foreground">{fileState.progress}%</span>
+                        </div>
+                        <Progress value={fileState.progress} className="h-1.5" />
+                      </div>
+
+                      {isError && fileState.errorMessage && (
+                        <div className="mt-2 text-xs text-destructive">
+                          {fileState.errorMessage}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </Modal>,
-        document.body,
-      )}
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button onClick={() => setShowModal(false)}>
+              {allUploadsComplete ? "Done" : "Close"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
