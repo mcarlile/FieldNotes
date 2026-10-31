@@ -471,7 +471,9 @@ export function ChunkedVideoUploader({
                         Length {formatTime(item.duration)}
                         {item.startTimeSource
                           ? ` · start from ${item.startTimeSource}`
-                          : " · start time not found, enter it by hand"}
+                          : routeStartTime
+                            ? " · start time not found, enter it by hand"
+                            : " · this trip's route has no timestamps, so the start can't be worked out"}
                       </div>
                     )}
                   </div>

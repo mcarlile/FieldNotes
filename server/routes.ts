@@ -14,7 +14,7 @@ import * as path from 'path';
 
 import * as crypto from 'crypto';
 import { createClipWithCoordinates, tripDurationSeconds } from "./trailcam";
-import { inboxTripGpxData, timedTripFields } from "./tripTimestamps";
+import { gpxDataTimes, inboxTripGpxData, timedTripFields } from "./tripTimestamps";
 import { listGpxData } from "./tripListGpx";
 import { generateApiToken } from "./apiTokens";
 import { registerMcpRoutes } from "./mcp";
@@ -463,6 +463,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const fieldNote = await storage.createFieldNote({
+        ...gpxDataTimes(result.data.gpxData),
         ...result.data,
         userId: req.dbUser.id,
       });
@@ -509,8 +510,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // A route with times brings its own start and end, so clips can be placed by time.
+      const times = result.data.gpxData !== undefined ? gpxDataTimes(result.data.gpxData) ?? {} : {};
+
       // Update the field note
-      const fieldNote = await storage.updateFieldNote(id, result.data);
+      const fieldNote = await storage.updateFieldNote(id, { ...result.data, ...times });
       if (!fieldNote) {
         return res.status(404).json({ message: "Field note not found" });
       }

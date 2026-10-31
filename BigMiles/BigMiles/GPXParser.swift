@@ -8,6 +8,9 @@ struct GPXStats {
     let date: Date?
     let coordinates: [[Double]] // [lon, lat]
     let elevationProfile: [[String: Any]]
+    /// The web's compact timed track ({startTime, durationSeconds, points: [[offset, lat, lon]]}),
+    /// or nil when the points have no times. It is what places video clips on the route.
+    var timedTrack: [String: Any]? = nil
 
     var asGpxData: [String: Any] {
         var data: [String: Any] = [
@@ -17,6 +20,7 @@ struct GPXStats {
             "elevationProfile": elevationProfile,
         ]
         data["date"] = date.map { ISO8601DateFormatter().string(from: $0) } ?? NSNull()
+        data["timedTrack"] = timedTrack ?? NSNull()
         return data
     }
 }
@@ -77,8 +81,22 @@ enum GPXParser {
             elevationGain: gain.rounded(),
             date: date,
             coordinates: coordinates,
-            elevationProfile: profile
+            elevationProfile: profile,
+            timedTrack: timedTrack(from: points)
         )
+    }
+
+    /// Swift port of `compactTimedTrack` in shared/gpx-utils.ts.
+    static func timedTrack(from points: [GPXPoint]) -> [String: Any]? {
+        let timed = points.compactMap { p in p.time.map { (time: $0, lat: p.lat, lon: p.lon) } }
+            .sorted { $0.time < $1.time }
+        guard let first = timed.first, let last = timed.last else { return nil }
+        let snap = { (value: Double, places: Double) in (value * places).rounded() / places }
+        return [
+            "startTime": ISO8601DateFormatter().string(from: first.time),
+            "durationSeconds": last.time.timeIntervalSince(first.time),
+            "points": timed.map { [snap($0.time.timeIntervalSince(first.time), 10), snap($0.lat, 1e6), snap($0.lon, 1e6)] },
+        ]
     }
 
     private static func haversineMiles(_ lat1: Double, _ lon1: Double, _ lat2: Double, _ lon2: Double) -> Double {
