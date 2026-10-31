@@ -8,6 +8,8 @@ import PhotosUI
 struct TripFormView: View {
     let existing: FieldNote?
     var onSaved: (FieldNote) -> Void
+    /// Set when editing: called after the trip was deleted on the server.
+    var onDeleted: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @State private var title = ""
@@ -24,6 +26,8 @@ struct TripFormView: View {
     @State private var pickerItems: [PhotosPickerItem] = []
     @State private var isLoadingPhotos = false
     @State private var uploadProgress: String?
+    @State private var confirmDelete = false
+    @State private var isDeleting = false
 
     private static let maxPhotos = 100  // MAX_TRIP_PHOTOS in shared/photo-limit.ts
 
@@ -32,9 +36,12 @@ struct TripFormView: View {
     private let muted  = Color(red: 138/255, green: 132/255, blue: 126/255)
     private let border = Color(red: 232/255, green: 226/255, blue: 214/255)
 
-    init(existing: FieldNote? = nil, onSaved: @escaping (FieldNote) -> Void) {
+    init(existing: FieldNote? = nil,
+         onSaved: @escaping (FieldNote) -> Void,
+         onDeleted: (() -> Void)? = nil) {
         self.existing = existing
         self.onSaved = onSaved
+        self.onDeleted = onDeleted
         if let note = existing {
             _title = State(initialValue: note.title)
             _date = State(initialValue: note.parsedDate ?? Date())
@@ -45,7 +52,7 @@ struct TripFormView: View {
     }
 
     private var canSave: Bool {
-        !title.trimmingCharacters(in: .whitespaces).isEmpty && !tripTypes.isEmpty && !isSaving
+        !title.trimmingCharacters(in: .whitespaces).isEmpty && !tripTypes.isEmpty && !isSaving && !isDeleting
     }
 
     var body: some View {
@@ -91,6 +98,28 @@ struct TripFormView: View {
                         Text(errorMessage).foregroundColor(.red).font(.system(size: 14))
                     }
                 }
+
+                if let existing, onDeleted != nil {
+                    Section {
+                        Button(role: .destructive) {
+                            confirmDelete = true
+                        } label: {
+                            HStack {
+                                Label("Delete trip", systemImage: "trash")
+                                if isDeleting { Spacer(); ProgressView() }
+                            }
+                        }
+                        .disabled(isSaving || isDeleting)
+                        .confirmationDialog("Delete “\(existing.title)”?",
+                                            isPresented: $confirmDelete,
+                                            titleVisibility: .visible) {
+                            Button("Delete trip", role: .destructive) { Task { await delete() } }
+                            Button("Cancel", role: .cancel) {}
+                        } message: {
+                            Text("The trip, its photos and its video clips are removed. This can't be undone.")
+                        }
+                    }
+                }
             }
             .scrollContentBackground(.hidden)
             .background(sand.ignoresSafeArea())
@@ -99,6 +128,7 @@ struct TripFormView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isDeleting)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if isSaving {
@@ -274,6 +304,22 @@ struct TripFormView: View {
         }
         uploadProgress = nil
         isSaving = false
+    }
+}
+
+extension TripFormView {
+    fileprivate func delete() async {
+        guard let existing else { return }
+        isDeleting = true
+        errorMessage = nil
+        do {
+            try await API.delete("/api/field-notes/\(existing.id)")
+            dismiss()
+            onDeleted?()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isDeleting = false
     }
 }
 
