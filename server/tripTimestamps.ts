@@ -95,3 +95,27 @@ export function gpxDataTimes(gpxData: unknown): { startTime: Date; endTime: Date
   const duration = typeof timedTrack.durationSeconds === "number" ? timedTrack.durationSeconds : 0;
   return { startTime, endTime: new Date(startTime.getTime() + duration * 1000) };
 }
+
+/**
+ * Trips whose route carries times but whose start_time was never set: the
+ * raw GPX text kept by the web editor, or a timedTrack saved without one.
+ * Without start_time, clip uploads can't turn a recording time into a start.
+ */
+export async function backfillStartTimesFromRoutes(client: PoolClient): Promise<number> {
+  const { rows } = await client.query<{ id: string; gpx_data: unknown }>(`
+    SELECT id, gpx_data FROM field_notes
+    WHERE start_time IS NULL
+      AND (jsonb_typeof(gpx_data) = 'string' OR gpx_data->'timedTrack' ? 'startTime')
+  `);
+  let restored = 0;
+  for (const row of rows) {
+    const times = gpxDataTimes(row.gpx_data);
+    if (!times) continue;
+    await client.query(
+      `UPDATE field_notes SET start_time = $2, end_time = $3 WHERE id = $1 AND start_time IS NULL`,
+      [row.id, times.startTime, times.endTime],
+    );
+    restored += 1;
+  }
+  return restored;
+}

@@ -13,7 +13,8 @@ import { pool } from "./db";
 import { registerDesignPreview } from "./designPreview";
 import { recoverInterruptedVideoProcessing } from "./videoProcessor";
 import { migrateStudioProjectsToTrips } from "./tripMigration";
-import { backfillTripTimestamps } from "./tripTimestamps";
+import { backfillStartTimesFromRoutes, backfillTripTimestamps } from "./tripTimestamps";
+import { restoreTripTimesFromStrava } from "./stravaTripTimes";
 
 const app = express();
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
@@ -201,6 +202,8 @@ async function runStartupMigrations() {
   try {
     const restored = await backfillTripTimestamps(tripClient);
     if (restored) log(`Restored route timestamps on ${restored} imported trips`);
+    const started = await backfillStartTimesFromRoutes(tripClient);
+    if (started) log(`Set start times on ${started} trips from their routes`);
   } catch (err) {
     log(`Trip timestamp backfill warning: ${(err as Error).message}`);
   } finally {
@@ -211,6 +214,12 @@ async function runStartupMigrations() {
 (async () => {
   await runStartupMigrations();
   await recoverInterruptedVideoProcessing();
+  // Waits on Strava's rate limit, so it runs alongside the server.
+  restoreTripTimesFromStrava(pool)
+    .then(({ restored, checked }) => {
+      if (checked) log(`Strava route times: restored ${restored} of ${checked} trips without times`);
+    })
+    .catch((err) => log(`Strava route times warning: ${(err as Error).message}`));
   app.use(
     clerkMiddleware((req) => ({
       publishableKey: publishableKeyFromHost(
