@@ -75,7 +75,6 @@ struct VideoFollow {
     var angle: FieldNote.CameraAngle?
     /// The selected clip's stretch of route, drawn over the trip line.
     var clipId: String?
-    var clipIndex: Int = 0
     var segment: [CLLocationCoordinate2D] = []
 }
 
@@ -682,11 +681,8 @@ private struct TrailMapView: UIViewRepresentable {
             DispatchQueue.main.async { report?(!value) }
         }
 
-        // The web clip palette, so a clip's stretch matches its color there.
-        private static let clipColors: [UIColor] = [
-            0x3b82f6, 0x8b5cf6, 0xf59e0b, 0x10b981, 0xef4444, 0xf97316, 0x6366f1, 0x84cc16,
-        ].map { UIColor(red: CGFloat($0 >> 16 & 0xff) / 255, green: CGFloat($0 >> 8 & 0xff) / 255,
-                        blue: CGFloat($0 & 0xff) / 255, alpha: 1) }
+        // The Big Miles logo yellow (#FAD82D), so video stretches match the brand.
+        private static let clipColor = UIColor(red: 250/255, green: 216/255, blue: 45/255, alpha: 1)
 
         private func installClipSegment() {
             guard let map, styleReady else { return }
@@ -702,15 +698,11 @@ private struct TrailMapView: UIViewRepresentable {
                 source.data = data
                 try? style.addSource(source)
             }
-            let color = Self.clipColors[(video?.clipIndex ?? 0) % Self.clipColors.count]
-            if style.layerExists(withId: clipLayerId) {
-                try? style.setLayerProperty(for: clipLayerId, property: "line-color",
-                                            value: StyleColor(color).rawValue)
-            } else {
+            if !style.layerExists(withId: clipLayerId) {
                 var line = LineLayer(id: clipLayerId, source: clipSourceId)
                 line.lineCap = .constant(.round)
                 line.lineJoin = .constant(.round)
-                line.lineColor = .constant(StyleColor(color))
+                line.lineColor = .constant(StyleColor(Self.clipColor))
                 line.lineWidth = .constant(6)
                 try? style.addLayer(line)
             }

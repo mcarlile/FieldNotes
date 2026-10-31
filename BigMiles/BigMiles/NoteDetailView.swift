@@ -73,7 +73,6 @@ struct NoteDetailView: View {
             focusRequest: playback.focusRequest,
             angle: display.playback?.cameraAngle,
             clipId: playback.clip?.id,
-            clipIndex: videoClips.firstIndex { $0.id == playback.clip?.id } ?? 0,
             segment: playback.clipSegment(on: track, syncOffset: syncOffset)
         )
     }
