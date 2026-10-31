@@ -1,8 +1,7 @@
 import { useState, useEffect, forwardRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useSearch } from "wouter";
-import { Loading } from "@carbon/react";
-import { ChevronDown, ChevronUp, CirclePlus, Upload } from "lucide-react";
+import { ChevronDown, ChevronUp, CirclePlus, Loader2, Upload } from "lucide-react";
 import FieldNoteCard from "@/components/field-note-card";
 import HeatMapView from "@/components/heat-map-view";
 import ViewModeSwitcher, { type ViewMode } from "@/components/view-mode-switcher";
@@ -396,7 +395,7 @@ export default function Dashboard() {
       <main className="px-5 sm:px-8 pb-12">
         {isLoading ? (
           <div className="flex justify-center py-20">
-            <Loading withOverlay={false} small />
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-label="Loading" />
           </div>
         ) : fieldNotes.length === 0 ? (
           <div className="text-center py-24">

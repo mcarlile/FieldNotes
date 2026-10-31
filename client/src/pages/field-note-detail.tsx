@@ -3,7 +3,17 @@ import { trackEvent } from "@/lib/analytics";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { Modal } from "@carbon/react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { buttonVariants } from "@/components/ui/button";
 import { Pencil, Trash2 } from "lucide-react";
 import ShareButton from "@/components/share-button";
 import PhotoLightbox from "@/components/photo-lightbox";
@@ -143,20 +153,25 @@ export default function FieldNoteDetail() {
         />
       </Suspense>
 
-      <Modal
-        open={showDeleteModal}
-        onRequestClose={() => setShowDeleteModal(false)}
-        modalHeading="Delete Field Note"
-        primaryButtonText="Delete"
-        danger
-        secondaryButtonText="Cancel"
-        onRequestSubmit={() => {
-          deleteFieldNoteMutation.mutate();
-          setShowDeleteModal(false);
-        }}
-      >
-        <p>Are you sure you want to delete "{fieldNote.title}"? This action cannot be undone.</p>
-      </Modal>
+      <AlertDialog open={showDeleteModal} onOpenChange={setShowDeleteModal}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete field note?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{fieldNote.title}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className={buttonVariants({ variant: "destructive" })}
+              onClick={() => deleteFieldNoteMutation.mutate()}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {selectedPhotoId && (
         <PhotoLightbox
