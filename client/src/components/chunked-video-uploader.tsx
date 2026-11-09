@@ -1,16 +1,19 @@
-import { createPortal } from "react-dom";
 import { useState, useRef, useEffect, useCallback } from "react";
+import { CircleAlert, RotateCw, X } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import {
-  Button as CarbonButton,
-  Modal,
-  FileUploaderDropContainer,
-  ProgressBar,
-  InlineNotification,
-  TextInput,
-  NumberInput,
-  FormGroup,
-} from "@carbon/react";
-import { Close, Renew } from "@carbon/icons-react";
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
+import { FileDropZone } from "@/components/file-drop-zone";
+import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/queryClient";
 import { clipOffsetSeconds, parseCameraFilenameTime, readMp4CreationTime } from "@shared/clip-timing";
 
@@ -359,110 +362,112 @@ export function ChunkedVideoUploader({
         {children}
       </button>
 
-      {/* On the body, so a card or panel the button sits in can't clip or trap it. */}
-      {createPortal(
-        <Modal
-          open={showModal}
-          onRequestClose={resetAndClose}
-          modalHeading="Upload video clips"
-          primaryButtonText={primaryText}
-          secondaryButtonText="Cancel"
-          onRequestSubmit={handleSubmit}
-          onSecondarySubmit={resetAndClose}
-          primaryButtonDisabled={!canAdd}
-          size="lg"
-          data-testid="modal-video-upload"
-        >
+      <Dialog open={showModal} onOpenChange={(open) => { if (!open) resetAndClose(); }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="modal-video-upload">
+          <DialogHeader>
+            <DialogTitle>Upload video clips</DialogTitle>
+          </DialogHeader>
+
           <div className="space-y-6">
-            <FormGroup legendText="Video files">
-              <FileUploaderDropContainer
-                accept={["video/*"]}
+            <fieldset className="space-y-2">
+              <legend className="mb-2 text-sm font-medium">Video files</legend>
+              <FileDropZone
+                accept="video/*"
                 multiple
-                labelText="Drag and drop video files here or click to browse"
-                onAddFiles={(_, { addedFiles }) => {
-                  if (addedFiles.length > 0) handleFilesAdded(Array.from(addedFiles as File[]));
-                }}
-                data-testid="drop-container-video"
+                label="Drag and drop video files here or click to browse"
+                onAddFiles={handleFilesAdded}
               />
-              <div className="text-sm text-muted-foreground mt-2">
+              <div className="text-sm text-muted-foreground">
                 <p>MP4, WebM, MOV or AVI, up to 4K, each up to {formatFileSize(MAX_FILE_SIZE)}.</p>
                 <p className="mt-1 text-xs">Pick several at once; they upload {PARALLEL_UPLOADS} at a time.</p>
               </div>
-            </FormGroup>
+            </fieldset>
 
             {items.length > 0 && (
               <div className="space-y-4">
-                {items.map((item) => (
-                  <div key={item.id} className="border border-border rounded p-3 space-y-2" data-testid={`upload-item-${item.file.name}`}>
+                {items.map((item) => {
+                  const titleInvalid = !item.title.trim();
+                  const endInvalid = item.endTime <= item.startTime;
+                  return (
+                  <div key={item.id} className="border border-border rounded-md p-3 space-y-2" data-testid={`upload-item-${item.file.name}`}>
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-sm font-medium truncate" title={item.file.name}>{item.file.name}</span>
                       <div className="flex items-center gap-1 shrink-0">
                         {item.status === "error" && item.duration !== null && (
-                          <CarbonButton kind="ghost" size="sm" renderIcon={Renew} onClick={() => retryItem(item)} data-testid="button-retry-upload">
+                          <Button variant="ghost" size="sm" onClick={() => retryItem(item)} data-testid="button-retry-upload">
                             Retry
-                          </CarbonButton>
+                            <RotateCw />
+                          </Button>
                         )}
-                        <CarbonButton
-                          kind="ghost"
-                          size="sm"
-                          hasIconOnly
-                          renderIcon={Close}
-                          iconDescription="Remove"
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          aria-label="Remove"
                           onClick={() => removeItem(item.id)}
                           data-testid="button-remove-upload"
-                        />
+                        >
+                          <X />
+                        </Button>
                       </div>
                     </div>
 
                     {item.status === "error" ? (
-                      <InlineNotification kind="error" title="Upload error" subtitle={statusText(item)} hideCloseButton lowContrast />
+                      <Alert variant="destructive">
+                        <CircleAlert className="h-4 w-4" />
+                        <AlertTitle>Upload error</AlertTitle>
+                        <AlertDescription>{statusText(item)}</AlertDescription>
+                      </Alert>
                     ) : (
-                      <ProgressBar
-                        value={item.status === "complete" ? 100 : item.progress}
-                        max={100}
-                        size="small"
-                        label={statusText(item)}
-                        hideLabel={false}
-                      />
+                      <div className="space-y-1">
+                        <div className="text-xs text-muted-foreground">{statusText(item)}</div>
+                        <Progress value={item.status === "complete" ? 100 : item.progress} className="h-1.5" />
+                      </div>
                     )}
 
                     {item.duration !== null && item.status !== "error" && (
                       <div className="grid grid-cols-1 sm:grid-cols-[2fr_1fr_1fr] gap-3">
-                        <TextInput
-                          id={`${item.id}-title`}
-                          labelText="Clip title"
-                          size="sm"
-                          value={item.title}
-                          invalid={!item.title.trim()}
-                          invalidText="Required"
-                          onChange={(e) => updateItem(item.id, { title: e.target.value })}
-                          data-testid="input-clip-title"
-                        />
-                        <NumberInput
-                          id={`${item.id}-start`}
-                          label="Start (s after route start)"
-                          size="sm"
-                          hideSteppers
-                          min={0}
-                          value={item.startTime}
-                          onChange={(e) => {
-                            const start = Number((e.target as HTMLInputElement).value);
-                            updateItem(item.id, { startTime: start, endTime: start + Math.round(item.duration ?? 0) });
-                          }}
-                          data-testid="input-start-time"
-                        />
-                        <NumberInput
-                          id={`${item.id}-end`}
-                          label="End (s after route start)"
-                          size="sm"
-                          hideSteppers
-                          min={0}
-                          value={item.endTime}
-                          invalid={item.endTime <= item.startTime}
-                          invalidText="Must be after start"
-                          onChange={(e) => updateItem(item.id, { endTime: Number((e.target as HTMLInputElement).value) })}
-                          data-testid="input-end-time"
-                        />
+                        <div className="space-y-1">
+                          <Label htmlFor={`${item.id}-title`} className="text-xs">Clip title</Label>
+                          <Input
+                            id={`${item.id}-title`}
+                            className={cn("h-9", titleInvalid && "border-destructive")}
+                            value={item.title}
+                            aria-invalid={titleInvalid}
+                            onChange={(e) => updateItem(item.id, { title: e.target.value })}
+                            data-testid="input-clip-title"
+                          />
+                          {titleInvalid && <p className="text-xs text-destructive">Required</p>}
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor={`${item.id}-start`} className="text-xs">Start (s after route start)</Label>
+                          <Input
+                            id={`${item.id}-start`}
+                            type="number"
+                            className="h-9"
+                            min={0}
+                            value={item.startTime}
+                            onChange={(e) => {
+                              const start = Number(e.target.value);
+                              updateItem(item.id, { startTime: start, endTime: start + Math.round(item.duration ?? 0) });
+                            }}
+                            data-testid="input-start-time"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor={`${item.id}-end`} className="text-xs">End (s after route start)</Label>
+                          <Input
+                            id={`${item.id}-end`}
+                            type="number"
+                            className={cn("h-9", endInvalid && "border-destructive")}
+                            min={0}
+                            value={item.endTime}
+                            aria-invalid={endInvalid}
+                            onChange={(e) => updateItem(item.id, { endTime: Number(e.target.value) })}
+                            data-testid="input-end-time"
+                          />
+                          {endInvalid && <p className="text-xs text-destructive">Must be after start</p>}
+                        </div>
                       </div>
                     )}
 
@@ -477,13 +482,18 @@ export function ChunkedVideoUploader({
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
-        </Modal>,
-        document.body,
-      )}
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={resetAndClose}>Cancel</Button>
+            <Button onClick={handleSubmit} disabled={!canAdd}>{primaryText}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

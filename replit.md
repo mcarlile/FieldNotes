@@ -139,8 +139,8 @@ Preferred communication style: Simple, everyday language.
 ### Frontend Architecture
 - **Framework**: React 18 with TypeScript and Vite for fast development and building
 - **Routing**: Wouter for lightweight client-side routing
-- **UI Framework**: Radix UI primitives with Tailwind CSS for styling
-- **Design System**: Custom design tokens following Carbon Design System principles
+- **UI Framework**: shadcn/ui components (Radix UI primitives) with Tailwind CSS for styling
+- **Design System**: Warm sand/ink design tokens as CSS variables in `client/src/index.css`; no Carbon
 - **State Management**: TanStack Query (React Query) for server state management
 - **Map Integration**: Mapbox GL JS for interactive map visualization
 

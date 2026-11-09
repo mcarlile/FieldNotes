@@ -526,8 +526,8 @@ export default function TripView({
     }`;
   const addButtonClass =
     "meta-mono text-foreground border border-border rounded-full px-2.5 py-1 hover:border-foreground/40 transition-colors bg-transparent cursor-pointer";
-  // The photo uploader's button is a Carbon button with an icon; flatten it to match.
-  const addPhotoButtonClass = `${addButtonClass} !min-h-0 !px-2.5 !py-1 !bg-transparent !text-foreground !border-border !shadow-none [&>svg]:!hidden`;
+  // The photo uploader's button carries an icon; hide it to match the video "+ Add".
+  const addPhotoButtonClass = `${addButtonClass} [&>svg]:hidden`;
 
   return (
     <div

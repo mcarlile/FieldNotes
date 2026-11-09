@@ -1,7 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { Modal } from "@carbon/react";
-import { ChevronLeft, ChevronRight, Close } from "@carbon/icons-react";
+import type React from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import type { Photo } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -14,8 +23,7 @@ interface PhotoLightboxProps {
 
 export default function PhotoLightbox({ photoId, photos, onClose, onPhotoChange }: PhotoLightboxProps) {
   const imageRef = useRef<HTMLImageElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const touchStartX = useRef<number>(0);
+    const touchStartX = useRef<number>(0);
   const touchEndX = useRef<number>(0);
   const [isAnimating, setIsAnimating] = useState(false);
 
@@ -59,9 +67,6 @@ export default function PhotoLightbox({ photoId, photos, onClose, onPhotoChange 
       } else if (event.key === 'ArrowRight') {
         event.preventDefault();
         goToNext();
-      } else if (event.key === 'Escape') {
-        event.preventDefault();
-        onClose();
       }
     };
 
@@ -70,43 +75,24 @@ export default function PhotoLightbox({ photoId, photos, onClose, onPhotoChange 
   }, [currentIndex, hasPrevious, hasNext, onClose]);
 
   // Touch/swipe navigation for mobile
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchEndX.current = e.touches[0].clientX;
+  };
 
-    const handleTouchStart = (e: TouchEvent) => {
-      touchStartX.current = e.touches[0].clientX;
-    };
+  const handleTouchMove = (e: React.TouchEvent) => {
+    touchEndX.current = e.touches[0].clientX;
+  };
 
-    const handleTouchMove = (e: TouchEvent) => {
-      touchEndX.current = e.touches[0].clientX;
-    };
-
-    const handleTouchEnd = () => {
-      const swipeThreshold = 50;
-      const diff = touchStartX.current - touchEndX.current;
-
-      if (Math.abs(diff) > swipeThreshold) {
-        if (diff > 0) {
-          // Swiped left - go to next photo
-          goToNext();
-        } else {
-          // Swiped right - go to previous photo
-          goToPrevious();
-        }
-      }
-    };
-
-    container.addEventListener('touchstart', handleTouchStart, { passive: true });
-    container.addEventListener('touchmove', handleTouchMove, { passive: true });
-    container.addEventListener('touchend', handleTouchEnd, { passive: true });
-
-    return () => {
-      container.removeEventListener('touchstart', handleTouchStart);
-      container.removeEventListener('touchmove', handleTouchMove);
-      container.removeEventListener('touchend', handleTouchEnd);
-    };
-  }, [currentIndex, hasPrevious, hasNext]);
+  const handleTouchEnd = () => {
+    const swipeThreshold = 50;
+    const diff = touchStartX.current - touchEndX.current;
+    if (Math.abs(diff) > swipeThreshold) {
+      // Swipe left goes to the next photo, swipe right to the previous one
+      if (diff > 0) goToNext();
+      else goToPrevious();
+    }
+  };
 
   const formatTimestamp = (timestamp: string | null) => {
     if (!timestamp) return "Unknown";
@@ -119,61 +105,61 @@ export default function PhotoLightbox({ photoId, photos, onClose, onPhotoChange 
   };
 
   const modalHeading = (
-    <div className="flex items-center justify-between w-full">
-      <div className="flex items-center gap-4">
-        <span className="text-lg font-medium">
+    <div className="flex items-center justify-between w-full pr-8">
+      <div className="flex items-baseline gap-4 min-w-0">
+        <DialogTitle className="text-lg font-medium truncate">
           {photo?.filename || "Loading..."}
-        </span>
-        <span className="text-sm text-gray-600">
+        </DialogTitle>
+        <DialogDescription className="shrink-0">
           Photo {photoNumber} of {photos.length}
-        </span>
+        </DialogDescription>
       </div>
       <div className="flex items-center gap-2">
         <button
           onClick={goToPrevious}
           disabled={!hasPrevious || isAnimating}
-          className="p-2 rounded-md hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="p-2 rounded-md hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           data-testid="photo-nav-previous"
           aria-label="Previous photo"
         >
-          <ChevronLeft size={20} />
+          <ChevronLeft className="h-5 w-5" />
         </button>
         <button
           onClick={goToNext}
           disabled={!hasNext || isAnimating}
-          className="p-2 rounded-md hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="p-2 rounded-md hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           data-testid="photo-nav-next"
           aria-label="Next photo"
         >
-          <ChevronRight size={20} />
+          <ChevronRight className="h-5 w-5" />
         </button>
       </div>
     </div>
   );
 
   return (
-    <Modal
-      open={true}
-      onRequestClose={onClose}
-      size="lg"
-      modalHeading={modalHeading}
-      primaryButtonText="Close"
-      onRequestSubmit={onClose}
-      hasScrollingContent
-      aria-label="Photo details and metadata"
-      className="photo-lightbox"
-    >
-      <div ref={containerRef} className="select-none">
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent
+        className="max-w-5xl w-[calc(100vw-2rem)] max-h-[90vh] overflow-y-auto"
+        aria-label="Photo details and metadata"
+      >
+      <DialogHeader>{modalHeading}</DialogHeader>
+      <div
+        className="select-none"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
         {isLoading ? (
           <div className="p-8 text-center">
             <div className="animate-pulse">
-              <div className="w-full h-96 bg-gray-200 mb-4 rounded"></div>
-              <div className="h-4 bg-gray-200 mb-2 rounded"></div>
-              <div className="h-4 bg-gray-200 w-2/3 mx-auto rounded"></div>
+              <div className="w-full h-96 bg-muted mb-4 rounded"></div>
+              <div className="h-4 bg-muted mb-2 rounded"></div>
+              <div className="h-4 bg-muted w-2/3 mx-auto rounded"></div>
             </div>
           </div>
         ) : !photo ? (
-          <div className="p-8 text-center text-gray-600">
+          <div className="p-8 text-center text-muted-foreground">
             Photo not found
           </div>
         ) : (
@@ -189,7 +175,7 @@ export default function PhotoLightbox({ photoId, photos, onClose, onPhotoChange 
                     data-testid="photo-overlay-previous"
                     aria-label="Previous photo"
                   >
-                    <ChevronLeft size={24} />
+                    <ChevronLeft className="h-6 w-6" />
                   </button>
                 )}
                 {hasNext && (
@@ -199,7 +185,7 @@ export default function PhotoLightbox({ photoId, photos, onClose, onPhotoChange 
                     data-testid="photo-overlay-next"
                     aria-label="Next photo"
                   >
-                    <ChevronRight size={24} />
+                    <ChevronRight className="h-6 w-6" />
                   </button>
                 )}
               </div>
@@ -219,7 +205,7 @@ export default function PhotoLightbox({ photoId, photos, onClose, onPhotoChange 
                     const parent = target.parentElement;
                     if (parent && !parent.querySelector('.error-message')) {
                       const errorDiv = document.createElement('div');
-                      errorDiv.className = 'error-message flex items-center justify-center w-full h-60 text-gray-500 bg-gray-100 rounded';
+                      errorDiv.className = 'error-message flex items-center justify-center w-full h-60 text-muted-foreground bg-muted rounded';
                       errorDiv.textContent = 'Photo file not found';
                       parent.appendChild(errorDiv);
                     }
@@ -237,28 +223,28 @@ export default function PhotoLightbox({ photoId, photos, onClose, onPhotoChange 
             <div className="space-y-6">
               {/* Basic Info */}
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">Photo Details</h3>
+                <h3 className="text-lg font-semibold text-foreground mb-3">Photo Details</h3>
                 <div className="space-y-2 text-sm">
                   <div>
-                    <span className="text-gray-600">Filename:</span>
+                    <span className="text-muted-foreground">Filename:</span>
                     <span className="ml-2 font-medium">{photo.filename}</span>
                   </div>
                   <div>
-                    <span className="text-gray-600">Taken:</span>
+                    <span className="text-muted-foreground">Taken:</span>
                     <span className="ml-2">{formatTimestamp(photo.timestamp?.toString() || null)}</span>
                   </div>
                   <div>
-                    <span className="text-gray-600">Location:</span>
+                    <span className="text-muted-foreground">Location:</span>
                     <span className="ml-2">{formatCoordinates(photo.latitude, photo.longitude)}</span>
                   </div>
                   {photo.elevation && (
                     <div>
-                      <span className="text-gray-600">Elevation:</span>
+                      <span className="text-muted-foreground">Elevation:</span>
                       <span className="ml-2">{Math.round((photo.elevation ?? 0) * 3.28084)} ft</span>
                     </div>
                   )}
                   <div>
-                    <span className="text-gray-600">File Size:</span>
+                    <span className="text-muted-foreground">File Size:</span>
                     <span className="ml-2">{photo.fileSize}</span>
                   </div>
                 </div>
@@ -267,39 +253,39 @@ export default function PhotoLightbox({ photoId, photos, onClose, onPhotoChange 
               {/* Camera Info */}
               {photo.camera && (
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-3">Camera Settings</h3>
+                  <h3 className="text-lg font-semibold text-foreground mb-3">Camera Settings</h3>
                   <div className="space-y-2 text-sm">
                     <div>
-                      <span className="text-gray-600">Camera:</span>
+                      <span className="text-muted-foreground">Camera:</span>
                       <span className="ml-2">{photo.camera}</span>
                     </div>
                     {photo.lens && (
                       <div>
-                        <span className="text-gray-600">Lens:</span>
+                        <span className="text-muted-foreground">Lens:</span>
                         <span className="ml-2">{photo.lens}</span>
                       </div>
                     )}
                     {photo.aperture && (
                       <div>
-                        <span className="text-gray-600">Aperture:</span>
+                        <span className="text-muted-foreground">Aperture:</span>
                         <span className="ml-2">{photo.aperture}</span>
                       </div>
                     )}
                     {photo.shutterSpeed && (
                       <div>
-                        <span className="text-gray-600">Shutter Speed:</span>
+                        <span className="text-muted-foreground">Shutter Speed:</span>
                         <span className="ml-2">{photo.shutterSpeed}</span>
                       </div>
                     )}
                     {photo.iso && (
                       <div>
-                        <span className="text-gray-600">ISO:</span>
+                        <span className="text-muted-foreground">ISO:</span>
                         <span className="ml-2">{photo.iso}</span>
                       </div>
                     )}
                     {photo.focalLength && (
                       <div>
-                        <span className="text-gray-600">Focal Length:</span>
+                        <span className="text-muted-foreground">Focal Length:</span>
                         <span className="ml-2">{photo.focalLength}</span>
                       </div>
                     )}
@@ -308,7 +294,7 @@ export default function PhotoLightbox({ photoId, photos, onClose, onPhotoChange 
               )}
 
               {/* Navigation Help Text */}
-              <div className="text-xs text-gray-500 space-y-1">
+              <div className="text-xs text-muted-foreground space-y-1">
                 <div className="font-medium">Navigation:</div>
                 <div>Desktop: Use ← → arrow keys or click arrows</div>
                 <div>Mobile: Swipe left/right to navigate</div>
@@ -318,6 +304,10 @@ export default function PhotoLightbox({ photoId, photos, onClose, onPhotoChange 
           </div>
         )}
       </div>
-    </Modal>
+      <DialogFooter>
+        <Button onClick={onClose}>Close</Button>
+      </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

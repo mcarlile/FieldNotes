@@ -6,7 +6,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useParams, useLocation, Link } from "wouter";
 import { ArrowLeft, FileUp, Loader2, Plus, Trash2, X } from "lucide-react";
-import { Button as CarbonButton } from "@carbon/react";
 import type { UploadResult } from "@uppy/core";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -30,7 +29,7 @@ const fieldNoteFormSchema = z.object({
   description: z.string().min(1, "Description is required"),
 });
 
-const uploadButtonClassName = "meta-mono !inline-flex !w-auto !max-w-none !flex-nowrap !items-center !justify-center !gap-2 whitespace-nowrap !px-3 !py-1.5 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors [&>svg]:!static [&>svg]:!m-0 [&>svg]:!fill-none [&>svg_*]:!fill-none [&>svg]:shrink-0 [&>svg]:[stroke-width:1.5]";
+const uploadButtonClassName = "meta-mono inline-flex items-center gap-2 whitespace-nowrap px-3 py-1.5 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors [&>svg]:h-4 [&>svg]:w-4 [&>svg]:shrink-0";
 
 type FieldNoteFormData = z.infer<typeof fieldNoteFormSchema>;
 
@@ -524,15 +523,14 @@ export default function AdminPage() {
               GPX track {!isEditing && <span className="text-destructive">*</span>}
             </label>
 
-            <CarbonButton
+            <button
               type="button"
-              kind="tertiary"
               className={uploadButtonClassName}
-              renderIcon={FileUp}
               onClick={() => gpxInputRef.current?.click()}
             >
               {hasGpx ? "Replace .gpx" : "Choose .gpx file"}
-            </CarbonButton>
+              <FileUp strokeWidth={1.5} />
+            </button>
             <input
               ref={gpxInputRef}
               id="gpx-file"

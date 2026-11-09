@@ -13,7 +13,7 @@ import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Switch, Route, Link, useLocation, Redirect, Router as WouterRouter } from "wouter";
 import { Loader2 } from "lucide-react";
 import { queryClient } from "./lib/queryClient";
-import { CarbonNotificationContainer } from "@/components/carbon-notification";
+import { Toaster } from "@/components/ui/toaster";
 import { ThemeProvider } from "@/contexts/theme-context";
 import GlobalHeader from "@/components/global-header";
 import { useDesignPreview } from "@/hooks/use-design-preview";
@@ -225,7 +225,7 @@ function AppContent() {
         <Route path="/notes/:slug" component={PublicFieldNotePage} />
         <Route component={NotFound} />
       </Switch>
-      <CarbonNotificationContainer />
+      <Toaster />
     </>
   );
 }
