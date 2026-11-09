@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
+import { createPhotoMarkerElement } from "@/lib/photo-marker";
 import { initMapbox } from "@/lib/mapbox";
 import { MapTerrainControls, TERRAIN_PITCH, applyTerrain } from "@/components/map-terrain-controls";
 import { parseGpxData } from "@shared/gpx-utils";
@@ -900,54 +901,7 @@ export default function MapboxMap({
           return;
         }
 
-        const el = document.createElement('button');
-        el.type = 'button';
-        el.setAttribute('aria-label', 'View photo');
-        el.dataset.testid = `map-photo-marker-${pm.id}`;
-        el.style.cssText = `
-          width: 36px;
-          height: 36px;
-          padding: 0;
-          background: #e8e4de;
-          border: 2px solid #fff;
-          border-radius: 50%;
-          box-shadow: 0 2px 6px rgba(0,0,0,0.35), 0 0 0 1px rgba(0,0,0,0.15);
-          cursor: pointer;
-          transition: transform 120ms ease;
-          touch-action: manipulation;
-          overflow: hidden;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        `;
-
-        const img = document.createElement('img');
-        // Ensure absolute URL — relative paths can misbehave in Mapbox marker DOM elements
-        img.src = pm.thumbnailUrl.startsWith('http') || pm.thumbnailUrl.startsWith('//')
-          ? pm.thumbnailUrl
-          : `${window.location.origin}${pm.thumbnailUrl.startsWith('/') ? '' : '/'}${pm.thumbnailUrl}`;
-        img.alt = '';
-        img.style.cssText = `
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          display: block;
-          border-radius: 50%;
-        `;
-        img.onerror = () => { img.style.display = 'none'; };
-        el.appendChild(img);
-
-        // Mapbox positions a marker by writing `transform` on its root element,
-        // so the hover scale lives on the inner button, not the marker root.
-        const markerRoot = document.createElement('div');
-        markerRoot.appendChild(el);
-
-        el.addEventListener('mouseenter', () => { el.style.transform = 'scale(1.12)'; });
-        el.addEventListener('mouseleave', () => { el.style.transform = 'scale(1)'; });
-        el.addEventListener('click', (e) => {
-          e.stopPropagation();
-          onPhotoMarkerClickRef.current?.(pm.id);
-        });
+        const markerRoot = createPhotoMarkerElement(pm, () => onPhotoMarkerClickRef.current?.(pm.id));
 
         const marker = new mapboxgl.Marker({ element: markerRoot, anchor: 'center' })
           .setLngLat([pm.longitude, pm.latitude])

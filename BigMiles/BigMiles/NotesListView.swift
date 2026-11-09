@@ -17,6 +17,11 @@ struct NotesListView: View {
     @State private var selectedRouteIds: [String] = []
     @State private var mapControls = MapControls()
     @AppStorage("mediaFilter") private var mediaFilter: MediaFilter = .all
+    /// The trip pages' photo pins, switched on from the map options menu.
+    @AppStorage("heatMapPhotoPins") private var showsPhotoPins = false
+    @State private var mapPhotos: [Photo] = []
+    @State private var mapPhotosLoaded = false
+    @State private var lightbox: Photo?
 
     private let sand   = Color(red: 245/255, green: 240/255, blue: 232/255)
     private let border = Color(red: 232/255, green: 226/255, blue: 214/255)
@@ -74,7 +79,11 @@ struct NotesListView: View {
             .toolbarTitleDisplayMode(showsMap ? .inline : .automatic)
             .toolbarBackground(showsMap ? .hidden : .automatic, for: .navigationBar)
             .navigationDestination(for: FieldNote.self) { note in
-                NoteDetailView(note: note)
+                NoteDetailView(note: note) {
+                    // Back to the list or map, without the deleted trip.
+                    notes.removeAll { $0.id == note.id }
+                    path.removeAll { $0.id == note.id }
+                }
             }
             .searchable(text: $searchText, prompt: "Search")
             .toolbar {
@@ -100,7 +109,7 @@ struct NotesListView: View {
                 if showsMap {
                     ToolbarItemGroup(placement: .bottomBar) {
                         createMenu { Image(systemName: "plus") }
-                        MapOptionsMenu(layer: $mapLayer, controls: $mapControls)
+                        MapOptionsMenu(layer: $mapLayer, controls: $mapControls, photoPins: $showsPhotoPins)
                         MapLocateToolbarButton(controls: $mapControls)
                     }
                     // With custom bottom-bar items, iOS only keeps search there
@@ -130,8 +139,20 @@ struct NotesListView: View {
                     path = [note]
                 }
             }
+            .lightboxCover(item: $lightbox) { photo in
+                LightboxView(
+                    initial: photo,
+                    photos: mapPhotos.filter { $0.fieldNoteId == photo.fieldNoteId },
+                    onOpenTrip: { photo in
+                        lightbox = nil
+                        if let note = notes.first(where: { $0.id == photo.fieldNoteId }) { path = [note] }
+                    },
+                    onDismiss: { lightbox = nil }
+                )
+            }
         }
         .task { await loadNotes() }
+        .task(id: showsPhotoPins) { if showsPhotoPins { await loadMapPhotos() } }
         .onChange(of: health.importedCount) { Task { await loadNotes() } }
     }
 
@@ -141,13 +162,32 @@ struct NotesListView: View {
     private var fullScreenMap: some View {
         TrailMap(
             routes: filtered.map { TrailRoute(id: $0.id, coordinates: $0.mapCoordinates) },
+            photos: visiblePhotos,
             heat: true,
             layer: mapLayer,
             controls: $mapControls,
             startAtUserLocation: true,
-            onSelectRoutes: { selectedRouteIds = $0 }
+            onSelectRoutes: { selectedRouteIds = $0 },
+            onSelectPhoto: { lightbox = $0 }
         )
         .ignoresSafeArea()
+    }
+
+    /// Photos from the trips the search and filter leave on the map.
+    private var visiblePhotos: [Photo] {
+        guard showsPhotoPins else { return [] }
+        let ids = Set(filtered.map(\.id))
+        return mapPhotos.filter { ids.contains($0.fieldNoteId) }
+    }
+
+    private func loadMapPhotos() async {
+        guard !mapPhotosLoaded else { return }
+        do {
+            mapPhotos = try await API.get("/api/photos/map")
+            mapPhotosLoaded = true
+        } catch {
+            // The routes still show; turning the switch off and on retries.
+        }
     }
 
     // The web dashboard's Create dropdown, plus Apple Health.
@@ -178,6 +218,11 @@ struct NotesListView: View {
     private func loadNotes() async {
         if notes.isEmpty { isLoading = true }
         errorMessage = nil
+        // Pull to refresh picks up newly added photos too.
+        if !notes.isEmpty, showsPhotoPins {
+            mapPhotosLoaded = false
+            Task { await loadMapPhotos() }
+        }
         do {
             notes = try await API.get("/api/field-notes?sortOrder=recent")
         } catch {

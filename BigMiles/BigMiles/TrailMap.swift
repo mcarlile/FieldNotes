@@ -161,6 +161,8 @@ struct TrailMap: View {
 struct MapOptionsMenu: View {
     @Binding var layer: MapLayer
     @Binding var controls: MapControls
+    /// The heat map's photo pins switch; trip pages always show their photos.
+    var photoPins: Binding<Bool>? = nil
 
     var body: some View {
         Menu {
@@ -168,6 +170,9 @@ struct MapOptionsMenu: View {
                 ForEach(MapLayer.allCases) { Text($0.name).tag($0) }
             }
             Toggle("3D terrain", systemImage: "mountain.2", isOn: $controls.is3D)
+            if let photoPins {
+                Toggle("Photo pins", systemImage: "photo", isOn: photoPins)
+            }
         } label: {
             Image(systemName: "square.3.layers.3d")
         }
@@ -276,6 +281,8 @@ private struct TrailMapView: UIViewRepresentable {
         private var heat = false
         private var photos: [Photo] = []
         private var pins: [ViewAnnotation] = []
+        private var pinViews: [(photo: Photo, view: PhotoPinView)] = []
+        private var loadingThumbnails: Set<String> = []
         private var playheadPin: ViewAnnotation?
         private var thumbnails: [String: UIImage] = [:]
 
@@ -318,6 +325,11 @@ private struct TrailMapView: UIViewRepresentable {
             }.store(in: &cancelables)
             map.mapboxMap.onMapLoaded.observeNext { [weak self] _ in
                 self?.fitIfNeeded()
+            }.store(in: &cancelables)
+            // Thumbnails load only for pins on screen, so the heat map with
+            // every photo doesn't download them all at once.
+            map.mapboxMap.onMapIdle.observe { [weak self] _ in
+                self?.loadVisibleThumbnails()
             }.store(in: &cancelables)
             map.gestures.onMapTap.observe { [weak self] context in
                 self?.tapped(at: context.point)
@@ -570,24 +582,43 @@ private struct TrailMapView: UIViewRepresentable {
         private func placePins() {
             guard let map else { return }
             pins.forEach { $0.remove() }
+            pinViews = []
             pins = photos.compactMap { photo in
                 guard let coordinate = photo.coordinate else { return nil }
                 let view = PhotoPinView(photo: photo) { [weak self] in self?.parent?.onSelectPhoto?(photo) }
-                if let cached = thumbnails[photo.id] {
-                    view.image = cached
-                } else if let url = photo.imageURL {
-                    Task { @MainActor [weak self, weak view] in
-                        guard let (data, _) = try? await URLSession.shared.data(from: url),
-                              let image = UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 96, height: 96))
-                        else { return }
-                        self?.thumbnails[photo.id] = image
-                        view?.image = image
-                    }
-                }
+                view.image = thumbnails[photo.id]
+                pinViews.append((photo, view))
                 let pin = ViewAnnotation(coordinate: coordinate, view: view)
                 pin.allowOverlap = true
                 map.viewAnnotations.add(pin)
                 return pin
+            }
+            loadVisibleThumbnails()
+        }
+
+        private func loadVisibleThumbnails() {
+            guard let map, map.bounds.width > 0 else { return }
+            let visible = map.bounds.insetBy(dx: -40, dy: -40)
+            for (photo, view) in pinViews where view.image == nil {
+                if let cached = thumbnails[photo.id] {
+                    view.image = cached
+                    continue
+                }
+                guard let coordinate = photo.coordinate, let url = photo.imageURL,
+                      !loadingThumbnails.contains(photo.id),
+                      visible.contains(map.mapboxMap.point(for: coordinate))
+                else { continue }
+                loadingThumbnails.insert(photo.id)
+                Task { @MainActor [weak self] in
+                    defer { self?.loadingThumbnails.remove(photo.id) }
+                    guard let (data, _) = try? await URLSession.shared.data(from: url),
+                          let image = UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 96, height: 96)),
+                          let self
+                    else { return }
+                    self.thumbnails[photo.id] = image
+                    // The pins may have been rebuilt while this loaded.
+                    for pin in self.pinViews where pin.photo.id == photo.id { pin.view.image = image }
+                }
             }
         }
 
