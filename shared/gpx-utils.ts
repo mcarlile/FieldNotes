@@ -482,6 +482,38 @@ export function trackPositionAt(track: CompactTimedTrack | null | undefined, off
   return [lng0 + f * (lng1 - lng0), lat0 + f * (lat1 - lat0)];
 }
 
+/**
+ * Like trackPositionAt, but with the route softened over about a second
+ * either side (a Gaussian blur of the path in time). GPS points come about
+ * once a second, so a straight line between them changes speed and direction
+ * on every point and carries the GPS wobble; this keeps a pin that follows
+ * video playback gliding instead of lurching. It cuts tight corners by only a
+ * metre or two.
+ */
+export function smoothTrackPositionAt(
+  track: CompactTimedTrack | null | undefined,
+  offsetSeconds: number,
+  sigmaSeconds = 1,
+): [number, number] | null {
+  if (!track?.points?.length) return null;
+  if (sigmaSeconds <= 0) return trackPositionAt(track, offsetSeconds);
+  const step = sigmaSeconds / 4;
+  const reach = 12; // samples each side: three sigmas
+  let lng = 0;
+  let lat = 0;
+  let total = 0;
+  for (let k = -reach; k <= reach; k++) {
+    const position = trackPositionAt(track, offsetSeconds + k * step);
+    if (!position) continue;
+    const x = (k * step) / sigmaSeconds;
+    const weight = Math.exp(-0.5 * x * x);
+    lng += position[0] * weight;
+    lat += position[1] * weight;
+    total += weight;
+  }
+  return total > 0 ? [lng / total, lat / total] : null;
+}
+
 /** The stretch of route ridden between two offsets, as [longitude, latitude] pairs. */
 export function trackSegmentBetween(
   track: CompactTimedTrack | null | undefined,

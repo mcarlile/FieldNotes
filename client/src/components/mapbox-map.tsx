@@ -53,8 +53,11 @@ interface MapboxMapProps {
   onClipSegmentClick?: (clipId: string) => void;
   /** Zooms in on the playhead and starts following it whenever `nonce` changes. */
   focusSegment?: { id: string; nonce: number } | null;
-  /** Where the video is on the route right now, as [longitude, latitude]. */
-  getPlayheadPosition?: () => [number, number] | null;
+  /**
+   * Where the video is on the route, as [longitude, latitude]: right now, or
+   * `aheadSeconds` from now if it keeps playing.
+   */
+  getPlayheadPosition?: (aheadSeconds?: number) => [number, number] | null;
   /** Direction of travel at the playhead, in degrees from north; the chase-cam faces it. */
   getPlayheadBearing?: () => number | null;
   /** While true, the playhead pin is updated every frame and the map follows it. */
@@ -74,7 +77,7 @@ interface MapboxMapProps {
   /** A note shown across the top of the map, e.g. calibrate mode's instructions. */
   banner?: string | null;
   /** Space covered by cards floating over the map; the camera centers in what's left. */
-  padding?: { top: number; right: number; bottom: number; left: number };
+  padding?: Padding;
   /** The zoom and compass buttons; off where floating cards would cover them. */
   showNavigationControl?: boolean;
   /** Where the 3D and map layer widgets sit; defaults to the top-left corner. */
@@ -89,6 +92,15 @@ const FOCUS_DURATION_MS = 1000;
 const CHASE_ZOOM = 16.5;
 const CHASE_PITCH = 65;
 const CHASE_DURATION_MS = 1400;
+// How quickly the follow-cam closes on the pin and turns to the direction of
+// travel, as time constants: about two-thirds of the gap closes in this long.
+// The lag soaks up what's left of the GPS wobble without losing the pin.
+const FOLLOW_CENTER_TAU_S = 0.35;
+const FOLLOW_BEARING_TAU_S = 0.6;
+// Padding added around a route or clip when the map fits it in view.
+const FIT_MARGIN = 50;
+const NO_PADDING = { top: 0, right: 0, bottom: 0, left: 0 };
+type Padding = typeof NO_PADDING;
 
 export default function MapboxMap({ 
   gpxData, 
@@ -144,6 +156,19 @@ export default function MapboxMap({
   const playheadDragRef = useRef({ start: onPlayheadDragStart, move: onPlayheadDrag, end: onPlayheadDragEnd });
   playheadDragRef.current = { start: onPlayheadDragStart, move: onPlayheadDrag, end: onPlayheadDragEnd };
   const draggingPlayhead = useRef(false);
+  // The space floating cards cover. Mapbox's fitBounds replaces the map's
+  // padding with its own, so every camera move passes this back explicitly;
+  // otherwise the pin ends up centred behind the cards after a fit.
+  const paddingRef = useRef<Padding>(padding ?? NO_PADDING);
+  paddingRef.current = padding ?? NO_PADDING;
+  const fitPadding = (margin: number): Padding => {
+    const base = paddingRef.current;
+    return { top: base.top + margin, right: base.right + margin, bottom: base.bottom + margin, left: base.left + margin };
+  };
+  // The follow-cam's own smoothed center and the time of its last step, so
+  // the camera glides after the pin instead of being bolted to it.
+  const followCenterRef = useRef<[number, number] | null>(null);
+  const lastFollowFrameRef = useRef(0);
   // Follow-cam: keep the map centered on the pin until the user pans away.
   // Zooming or tilting keeps it tracking; turning the map stops the camera
   // from swinging to face the direction of travel until the next play.
@@ -368,7 +393,7 @@ export default function MapboxMap({
         
         if (!bounds.isEmpty()) {
           map.current.fitBounds(bounds, { 
-            padding: 50,
+            padding: fitPadding(FIT_MARGIN),
             duration: 0, // No animation
             pitch: is3DRef.current ? TERRAIN_PITCH : 0,
           });
@@ -595,20 +620,20 @@ export default function MapboxMap({
       previewingRef.current = true;
       const bounds = new mapboxgl.LngLatBounds();
       segment.coordinates.forEach((coord) => bounds.extend(coord));
-      m.fitBounds(bounds, { padding: 60, maxZoom: 17, duration: 600, pitch: is3DRef.current ? TERRAIN_PITCH : 0 });
+      m.fitBounds(bounds, { padding: fitPadding(60), maxZoom: 17, duration: 600, pitch: is3DRef.current ? TERRAIN_PITCH : 0 });
       return;
     }
     if (!previewingRef.current) return;
     previewingRef.current = false;
-    const pin = getPlayheadPositionRef.current?.();
+    const pin = getPlayheadPositionRef.current?.(FOCUS_DURATION_MS / 1000);
     if (isPlaying && followingRef.current && pin) {
       focusAnimatingUntil.current = performance.now() + FOCUS_DURATION_MS;
-      m.easeTo({ center: pin, ...followCamera(), duration: FOCUS_DURATION_MS });
+      m.easeTo({ center: pin, ...followCamera(), padding: paddingRef.current, duration: FOCUS_DURATION_MS });
       return;
     }
     const route = new mapboxgl.LngLatBounds();
     coordinatesRef.current.forEach((coord) => route.extend(coord));
-    if (!route.isEmpty()) m.fitBounds(route, { padding: 50, duration: 600, pitch: is3DRef.current ? TERRAIN_PITCH : 0 });
+    if (!route.isEmpty()) m.fitBounds(route, { padding: fitPadding(FIT_MARGIN), duration: 600, pitch: is3DRef.current ? TERRAIN_PITCH : 0 });
     // Only a change of hovered clip should move the camera.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapReady, previewSegmentId]);
@@ -619,6 +644,8 @@ export default function MapboxMap({
     const m = loadedMap();
     if (!m || !padding) return;
     m.setPadding(padding);
+    // The follow-cam carries on from wherever the camera now is.
+    lastFollowFrameRef.current = 0;
     // Only a change in the covered space should move the camera.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapReady, paddingKey]);
@@ -631,7 +658,9 @@ export default function MapboxMap({
     if (handledFocusRef.current?.map === m && handledFocusRef.current.nonce === focusSegment.nonce) return;
     handledFocusRef.current = { map: m, nonce: focusSegment.nonce };
     const segment = clipSegments?.find((s) => s.id === focusSegment.id);
-    const center = getPlayheadPositionRef.current?.() ?? segment?.coordinates[0];
+    // Aim where the pin will be when the flight lands, so the follow-cam
+    // doesn't have to lurch forward to catch it.
+    const center = getPlayheadPositionRef.current?.(isPlaying ? CHASE_DURATION_MS / 1000 : 0) ?? segment?.coordinates[0];
     if (!center) return;
     setFollowing(true);
     autoBearingRef.current = true;
@@ -641,7 +670,7 @@ export default function MapboxMap({
       setIs3D(true);
     }
     focusAnimatingUntil.current = performance.now() + CHASE_DURATION_MS;
-    m.easeTo({ center, ...followCamera(), duration: CHASE_DURATION_MS });
+    m.easeTo({ center, ...followCamera(), padding: paddingRef.current, duration: CHASE_DURATION_MS });
     // Only a new request should move the map, not every segment refresh.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapReady, focusSegment?.nonce]);
@@ -649,12 +678,12 @@ export default function MapboxMap({
   // Snap back to the follow-cam's zoomed-in view of the pin.
   const resumeFollowing = () => {
     const m = map.current;
-    const center = getPlayheadPositionRef.current?.();
+    const center = getPlayheadPositionRef.current?.(isPlaying ? FOCUS_DURATION_MS / 1000 : 0);
     setFollowing(true);
     autoBearingRef.current = true;
     if (!m || !center) return;
     focusAnimatingUntil.current = performance.now() + FOCUS_DURATION_MS;
-    m.easeTo({ center, ...followCamera(), duration: FOCUS_DURATION_MS });
+    m.easeTo({ center, ...followCamera(), padding: paddingRef.current, duration: FOCUS_DURATION_MS });
   };
 
   // Swap the base layer. setStyle drops our own sources and layers, so the
@@ -697,7 +726,7 @@ export default function MapboxMap({
     autoBearingRef.current = true;
     const center = getPlayheadPositionRef.current?.();
     focusAnimatingUntil.current = performance.now() + FOCUS_DURATION_MS;
-    m.easeTo({ ...(center ? { center } : {}), ...followCamera(), duration: FOCUS_DURATION_MS });
+    m.easeTo({ ...(center ? { center } : {}), ...followCamera(), padding: paddingRef.current, duration: FOCUS_DURATION_MS });
     // Only entering calibrate mode should move the camera.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapReady, calibratingAngle]);
@@ -716,7 +745,11 @@ export default function MapboxMap({
     const m = loadedMap();
     if (!m) return;
     focusAnimatingUntil.current = performance.now() + FOCUS_DURATION_MS;
-    m.easeTo(next ? { pitch: TERRAIN_PITCH, duration: FOCUS_DURATION_MS } : { pitch: 0, bearing: 0, duration: FOCUS_DURATION_MS });
+    m.easeTo(
+      next
+        ? { pitch: TERRAIN_PITCH, padding: paddingRef.current, duration: FOCUS_DURATION_MS }
+        : { pitch: 0, bearing: 0, padding: paddingRef.current, duration: FOCUS_DURATION_MS },
+    );
   };
 
   // Playhead pin: where the video is on the route. Updated every frame while
@@ -774,15 +807,33 @@ export default function MapboxMap({
         !userGestureRef.current &&
         performance.now() > focusAnimatingUntil.current
       ) {
+        // The camera glides after the pin rather than being locked to it.
+        // Each step closes part of the gap, scaled by the time since the
+        // last frame so it behaves the same at any frame rate. After a pause
+        // (a gesture, a flight, a hover) it starts again from where the
+        // camera is, so it never jumps.
+        const now = performance.now();
+        const sinceLast = (now - lastFollowFrameRef.current) / 1000;
+        let center = followCenterRef.current;
+        if (!center || sinceLast > 0.2) {
+          const { lng, lat } = m.getCenter();
+          center = [lng, lat];
+        }
+        const dt = Math.min(Math.max(sinceLast, 0), 0.1);
+        const k = 1 - Math.exp(-dt / FOLLOW_CENTER_TAU_S);
+        center = [center[0] + (position[0] - center[0]) * k, center[1] + (position[1] - center[1]) * k];
+        followCenterRef.current = center;
+        lastFollowFrameRef.current = now;
         const target = is3DRef.current && autoBearingRef.current ? followBearing() : null;
         if (target == null) {
-          m.jumpTo({ center: position });
+          m.jumpTo({ center, padding: paddingRef.current });
         } else {
-          // Ease the heading round a little each frame, the short way, so
-          // switchbacks turn the camera smoothly instead of snapping it.
+          // Turn the heading the short way round, so switchbacks swing the
+          // camera smoothly instead of snapping it.
           const current = m.getBearing();
           const diff = ((target - current + 540) % 360) - 180;
-          m.jumpTo({ center: position, bearing: current + diff * 0.06 });
+          const turn = 1 - Math.exp(-dt / FOLLOW_BEARING_TAU_S);
+          m.jumpTo({ center, bearing: current + diff * turn, padding: paddingRef.current });
         }
       }
     };

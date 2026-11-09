@@ -18,7 +18,7 @@ import { ChunkedVideoUploader, type UploadedClip } from "@/components/chunked-vi
 import { AutoPhotoUploader } from "@/components/auto-photo-uploader";
 import { ClipEditPopover } from "@/components/clip-edit-popover";
 import MapboxMap, { CameraAngle, ClipMarker, ClipSegment } from "@/components/mapbox-map";
-import { compactTimedTrack, nearestTrackOffset, parseGpxData, trackBearingAt, trackPositionAt, trackSegmentBetween, type CompactTimedTrack, type ElevationPoint } from "@shared/gpx-utils";
+import { compactTimedTrack, nearestTrackOffset, parseGpxData, smoothTrackPositionAt, trackBearingAt, trackSegmentBetween, type CompactTimedTrack, type ElevationPoint } from "@shared/gpx-utils";
 import { MAX_TRIP_PHOTOS } from "@shared/photo-limit";
 import type { FieldNote, Photo, TripPlayback, VideoClip, InsertVideoClip } from "@shared/schema";
 import { type PhotoExifData } from "@/lib/exif-extractor";
@@ -389,17 +389,42 @@ export default function TripView({
     return markers;
   })();
 
+  // The video's time for this animation frame. Some browsers move
+  // currentTime only a few times a second, which makes the pin step; between
+  // those updates this clock runs on at the playback rate and eases back onto
+  // currentTime, so it never drifts. A seek or a stall snaps it straight back.
+  const playbackClock = useRef<{ video: HTMLVideoElement; time: number; at: number } | null>(null);
+  const playbackTime = (): number => {
+    const video = videoRef.current;
+    if (!video) return currentTime;
+    const raw = video.currentTime;
+    const now = performance.now();
+    const clock = playbackClock.current;
+    // HAVE_FUTURE_DATA: below it the video is buffering, so it isn't moving.
+    if (video.paused || video.seeking || video.ended || video.readyState < 3 || !clock || clock.video !== video) {
+      playbackClock.current = { video, time: raw, at: now };
+      return raw;
+    }
+    const dt = Math.max(0, (now - clock.at) / 1000);
+    let time = clock.time + dt * video.playbackRate;
+    const error = raw - time;
+    if (Math.abs(error) > 0.3) time = raw;
+    else time += error * (1 - Math.exp(-dt / 0.5));
+    playbackClock.current = { video, time, at: now };
+    return time;
+  };
+
   // Route position of the video's current frame: the clip's start on the
   // route, plus the sync offset, plus how far into the clip the player is.
-  const getPlayheadPosition = (): [number, number] | null => {
+  // aheadSeconds looks further along, for the camera to aim where the pin is going.
+  const getPlayheadPosition = (aheadSeconds = 0): [number, number] | null => {
     if (!selectedClip || selectedClip.processingStatus !== "ready") return null;
-    const videoTime = videoRef.current?.currentTime ?? currentTime;
-    return trackPositionAt(timedTrack, selectedClip.startTime + syncOffset + videoTime);
+    return smoothTrackPositionAt(timedTrack, selectedClip.startTime + syncOffset + playbackTime() + aheadSeconds);
   };
 
   const getPlayheadBearing = (): number | null => {
     if (!selectedClip || selectedClip.processingStatus !== "ready") return null;
-    const videoTime = videoRef.current?.currentTime ?? currentTime;
+    const videoTime = playbackTime();
     return trackBearingAt(timedTrack, selectedClip.startTime + syncOffset + videoTime);
   };
 
@@ -670,7 +695,11 @@ export default function TripView({
                           autoplayClipId.current = null;
                           void e.currentTarget.play().catch(() => {});
                         }}
-                        onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+                        // While it plays the map reads the video every frame by itself; redrawing the
+                        // page on each timeupdate only cost frames. Paused, a seek still moves the pin.
+                        onTimeUpdate={(e) => {
+                          if (e.currentTarget.paused) setCurrentTime(e.currentTarget.currentTime);
+                        }}
                         onPlay={() => {
                           setIsPlaying(true);
                           // The trip card folds so the video gets the column; its header reopens it.
