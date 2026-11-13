@@ -837,6 +837,15 @@ private final class PhotoPinView: UIImageView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
+    // Mapbox sizes a view annotation by measuring its view. An image view
+    // measures as its image: nothing before the thumbnail loads (so Mapbox
+    // can't place the pin and logs a warning every frame), then the 96 px
+    // thumbnail. A pin is always 36 pt, whatever it shows.
+    private static let size = CGSize(width: 36, height: 36)
+    override var intrinsicContentSize: CGSize { Self.size }
+    override func sizeThatFits(_ size: CGSize) -> CGSize { Self.size }
+    override func systemLayoutSizeFitting(_ targetSize: CGSize) -> CGSize { Self.size }
+
     @objc private func tapped() { onTap() }
 }
 
