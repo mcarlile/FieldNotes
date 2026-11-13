@@ -148,6 +148,13 @@ struct NoteDetailView: View {
                     layer: mapLayer,
                     controls: $mapControls,
                     bottomInset: collapsed,
+                    // The map runs under the navigation bar and the panel, so
+                    // the playing pin centres in the strip left between them,
+                    // at the panel's current height.
+                    followInsets: EdgeInsets(
+                        top: geo.safeAreaInsets.top, leading: 0,
+                        bottom: panelHeight + geo.safeAreaInsets.bottom, trailing: 0
+                    ),
                     playhead: playhead,
                     video: videoFollow,
                     onSelectPhoto: { lightbox = $0 }
@@ -211,7 +218,9 @@ struct NoteDetailView: View {
                     photos: photos,
                     layer: mapLayer,
                     controls: $mapControls,
-                    leadingInset: detailsCardOpen || showMedia ? width + 16 : 0,
+                    // The cards sit 16 pt in from the edge; keep the same gap
+                    // on their right so the pin centres in the open map.
+                    leadingInset: detailsCardOpen || showMedia ? width + 32 : 0,
                     playhead: playhead,
                     video: videoFollow,
                     onSelectPhoto: { lightbox = $0 }

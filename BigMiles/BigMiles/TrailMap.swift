@@ -100,6 +100,11 @@ struct TrailMap: View {
     /// Width covered by something floating over the right of the map (a
     /// media card), likewise kept clear.
     var trailingInset: CGFloat = 0
+    /// What covers the map while the follow-cam centres the playing pin, when
+    /// that differs from the insets above: on a phone, the navigation bar and
+    /// the details panel at whatever height it's dragged to. Unset uses the
+    /// insets above.
+    var followInsets: EdgeInsets? = nil
     /// Where the playing video was filmed; drawn as a pin that moves with it.
     var playhead: CLLocationCoordinate2D? = nil
     var video: VideoFollow? = nil
@@ -116,7 +121,8 @@ struct TrailMap: View {
         let state = controls?.wrappedValue ?? ownControls
         TrailMapView(routes: routes, photos: photos, heat: heat, layer: layer, is3D: state.is3D,
                      locateRequest: state.locateRequest, startAtUserLocation: startAtUserLocation,
-                     bottomInset: bottomInset, leadingInset: leadingInset, trailingInset: trailingInset, playhead: playhead,
+                     bottomInset: bottomInset, leadingInset: leadingInset, trailingInset: trailingInset,
+                     followInsets: followInsets, playhead: playhead,
                      video: video, resumeRequest: resumeRequest,
                      onFollowPausedChange: { followPaused = $0 },
                      onSelectRoutes: onSelectRoutes, onSelectPhoto: onSelectPhoto)
@@ -222,6 +228,7 @@ private struct TrailMapView: UIViewRepresentable {
     var bottomInset: CGFloat
     var leadingInset: CGFloat
     var trailingInset: CGFloat
+    var followInsets: EdgeInsets?
     var playhead: CLLocationCoordinate2D?
     var video: VideoFollow?
     var resumeRequest: Int
@@ -247,6 +254,7 @@ private struct TrailMapView: UIViewRepresentable {
         c.bottomInset = bottomInset
         c.leadingInset = leadingInset
         c.trailingInset = trailingInset
+        c.followInsets = followInsets
         c.playhead = playhead
         c.video = video
         c.update(layer: layer, is3D: is3D, routes: routes, heat: heat, photos: photos)
@@ -266,6 +274,7 @@ private struct TrailMapView: UIViewRepresentable {
         var bottomInset: CGFloat = 0
         var leadingInset: CGFloat = 0
         var trailingInset: CGFloat = 0
+        var followInsets: EdgeInsets?
         var playhead: CLLocationCoordinate2D?
         var video: VideoFollow?
 
@@ -703,7 +712,10 @@ private struct TrailMapView: UIViewRepresentable {
         }
 
         private var followPadding: UIEdgeInsets {
-            UIEdgeInsets(top: 0, left: leadingInset, bottom: bottomInset, right: trailingInset)
+            if let insets = followInsets {
+                return UIEdgeInsets(top: insets.top, left: insets.leading, bottom: insets.bottom, right: insets.trailing)
+            }
+            return UIEdgeInsets(top: 0, left: leadingInset, bottom: bottomInset, right: trailingInset)
         }
 
         private func setFollowing(_ value: Bool) {

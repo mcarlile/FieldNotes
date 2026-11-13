@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { nearestTrackOffset, trackBearingAt, trackPositionAt, trackSegmentBetween, type CompactTimedTrack } from "./gpx-utils";
+import { nearestTrackOffset, smoothTrackPositionAt, trackBearingAt, trackPositionAt, trackSegmentBetween, type CompactTimedTrack } from "./gpx-utils";
 
 const track: CompactTimedTrack = {
   startTime: "2026-10-17T18:58:27.067Z",
@@ -19,6 +19,27 @@ test("trackPositionAt interpolates between points and clamps to the ends", () =>
   assert.deepEqual(trackPositionAt(track, -5), [-120.0, 39.0]);
   assert.deepEqual(trackPositionAt(track, 99), [-120.3, 39.3]);
   assert.equal(trackPositionAt(null, 5), null);
+});
+
+test("smoothTrackPositionAt stays on a straight route and moves smoothly over a wobble", () => {
+  // On a straight, steady stretch the blur changes nothing.
+  const straight = smoothTrackPositionAt(track, 15)!;
+  assert.ok(Math.abs(straight[0] - -120.15) < 1e-9 && Math.abs(straight[1] - 39.15) < 1e-9);
+  assert.equal(smoothTrackPositionAt(null, 5), null);
+
+  // A 1 Hz track with a GPS jog sideways at 5 s.
+  const wobbly: CompactTimedTrack = {
+    startTime: track.startTime,
+    durationSeconds: 10,
+    points: Array.from({ length: 11 }, (_, i) => [i, 39 + (i === 5 ? 0.00005 : 0), -120 + i * 0.0001] as [number, number, number]),
+  };
+  const peak = smoothTrackPositionAt(wobbly, 5)!;
+  // The jog is softened to well under half its size...
+  assert.ok(peak[1] - 39 < 0.00002, `got ${peak[1] - 39}`);
+  // ...and the pin's speed barely changes as it passes a GPS point, where the
+  // straight-line version kinks.
+  const speed = (t: number) => smoothTrackPositionAt(wobbly, t + 0.05)![0] - smoothTrackPositionAt(wobbly, t - 0.05)![0];
+  assert.ok(Math.abs(speed(3.0) - speed(3.5)) < 1e-7);
 });
 
 test("trackSegmentBetween keeps the points inside the range plus interpolated ends", () => {
