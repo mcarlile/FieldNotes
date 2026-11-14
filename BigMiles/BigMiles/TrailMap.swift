@@ -104,7 +104,7 @@ struct TrailMap: View {
     /// that differs from the insets above: on a phone, the navigation bar and
     /// the details panel at whatever height it's dragged to. Unset uses the
     /// insets above.
-    var followInsets: EdgeInsets? = nil
+    var followInsets: SwiftUI.EdgeInsets? = nil
     /// Where the playing video was filmed; drawn as a pin that moves with it.
     var playhead: CLLocationCoordinate2D? = nil
     var video: VideoFollow? = nil
@@ -228,7 +228,7 @@ private struct TrailMapView: UIViewRepresentable {
     var bottomInset: CGFloat
     var leadingInset: CGFloat
     var trailingInset: CGFloat
-    var followInsets: EdgeInsets?
+    var followInsets: SwiftUI.EdgeInsets?
     var playhead: CLLocationCoordinate2D?
     var video: VideoFollow?
     var resumeRequest: Int
@@ -274,7 +274,7 @@ private struct TrailMapView: UIViewRepresentable {
         var bottomInset: CGFloat = 0
         var leadingInset: CGFloat = 0
         var trailingInset: CGFloat = 0
-        var followInsets: EdgeInsets?
+        var followInsets: SwiftUI.EdgeInsets?
         var playhead: CLLocationCoordinate2D?
         var video: VideoFollow?
 
