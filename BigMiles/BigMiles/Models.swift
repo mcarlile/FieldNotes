@@ -200,6 +200,8 @@ struct VideoClip: Codable, Identifiable, Hashable {
     let duration: Double
     let processingStatus: String?
     let thumbnailUrl: String?
+    /// The colour the web draws this clip's stretch in, as "#rrggbb".
+    let color: String?
 
     var isReady: Bool { processingStatus == "ready" }
 
