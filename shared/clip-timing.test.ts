@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { clipOffsetSeconds, parseCameraFilenameTime, readMp4CreationTime } from "./clip-timing";
+import { clipOffsetSeconds, clipStartFromRecording, parseCameraFilenameTime, readMp4CreationTime, routeStartOf } from "./clip-timing";
 import { compactTimedTrack, parseGpxData, resolveClipCoordinates } from "./gpx-utils";
 
 test("camera filenames give the local recording start", () => {
@@ -56,4 +56,15 @@ test("clips are placed on the route by time", () => {
   const coords = resolveClipCoordinates({ coordinates: [], timedTrack }, 1800, 5400);
   assert.ok(Math.abs(coords.startLatitude! - 39.05) < 1e-9);
   assert.ok(Math.abs(coords.endLatitude! - 39.15) < 1e-9);
+});
+
+test("new clips start at their recording time on the route, or at 0", () => {
+  const trip = { gpxData: { timedTrack: { startTime: "2026-10-17T18:00:00.000Z" } }, startTime: null };
+  const start = routeStartOf(trip);
+  assert.equal(clipStartFromRecording("2026-10-17T18:30:00Z", start), 1800);
+  assert.equal(clipStartFromRecording("2026-10-17T17:00:00Z", start), 0);
+  assert.equal(clipStartFromRecording("not a date", start), 0);
+  assert.equal(clipStartFromRecording(undefined, start), 0);
+  assert.equal(clipStartFromRecording("2026-10-17T18:30:00Z", routeStartOf({ gpxData: null, startTime: null })), 0);
+  assert.deepEqual(routeStartOf({ gpxData: null, startTime: "2026-10-17T18:00:00Z" }), new Date("2026-10-17T18:00:00Z"));
 });

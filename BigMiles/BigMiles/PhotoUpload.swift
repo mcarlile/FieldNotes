@@ -90,6 +90,34 @@ enum PhotoUploader {
         return entry
     }
 
+    /// Uploads photos a few at a time and returns their entries, in order.
+    /// One by one, each photo waited on its own signed-URL round trip before
+    /// its upload could start.
+    static func uploadAll(_ photos: [PendingPhoto],
+                          progress: (String?) -> Void) async throws -> [[String: Any]] {
+        guard !photos.isEmpty else { return [] }
+        var results = [[String: Any]?](repeating: nil, count: photos.count)
+        var done = 0
+        progress("Uploading 0 of \(photos.count)")
+        try await withThrowingTaskGroup(of: (Int, [String: Any]).self) { group in
+            for (i, photo) in photos.enumerated() {
+                if i >= 4, let (j, entry) = try await group.next() {
+                    results[j] = entry
+                    done += 1
+                    progress("Uploading \(done) of \(photos.count)")
+                }
+                group.addTask { (i, try await PhotoUploader.upload(photo)) }
+            }
+            while let (j, entry) = try await group.next() {
+                results[j] = entry
+                done += 1
+                progress("Uploading \(done) of \(photos.count)")
+            }
+        }
+        progress(nil)
+        return results.compactMap { $0 }
+    }
+
     /// Mirrors `normalize` in client/src/pages/admin.tsx: a signed storage URL
     /// becomes the site path the server serves it from.
     private static func storedPath(for url: URL) -> String {
