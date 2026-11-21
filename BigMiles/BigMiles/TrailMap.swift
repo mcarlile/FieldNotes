@@ -77,6 +77,17 @@ struct VideoFollow {
     var clipId: String?
     var clipIndex: Int = 0
     var segment: [CLLocationCoordinate2D] = []
+    /// Every clip's stretch of route, drawn in its colour as on the web;
+    /// tapping one plays that clip.
+    var stretches: [ClipStretch] = []
+}
+
+/// One clip's stretch of route and the colour the web draws it in.
+struct ClipStretch {
+    var id: String
+    /// "#rrggbb", as the web stores it.
+    var color: String
+    var coordinates: [CLLocationCoordinate2D]
 }
 
 /// A Mapbox map with routes and photo pins, plus location and 3D terrain
@@ -104,12 +115,14 @@ struct TrailMap: View {
     /// that differs from the insets above: on a phone, the navigation bar and
     /// the details panel at whatever height it's dragged to. Unset uses the
     /// insets above.
-    var followInsets: EdgeInsets? = nil
+    var followInsets: SwiftUI.EdgeInsets? = nil
     /// Where the playing video was filmed; drawn as a pin that moves with it.
     var playhead: CLLocationCoordinate2D? = nil
     var video: VideoFollow? = nil
     var onSelectRoutes: (([String]) -> Void)? = nil
     var onSelectPhoto: ((Photo) -> Void)? = nil
+    /// A clip's stretch was tapped; plays that clip.
+    var onSelectClip: ((String) -> Void)? = nil
 
     @State private var ownControls = MapControls()
     /// True once the user pans away from the pin while a clip plays.
@@ -125,7 +138,8 @@ struct TrailMap: View {
                      followInsets: followInsets, playhead: playhead,
                      video: video, resumeRequest: resumeRequest,
                      onFollowPausedChange: { followPaused = $0 },
-                     onSelectRoutes: onSelectRoutes, onSelectPhoto: onSelectPhoto)
+                     onSelectRoutes: onSelectRoutes, onSelectPhoto: onSelectPhoto,
+                     onSelectClip: onSelectClip)
             .overlay(alignment: .bottom) {
                 // Like the web's "Follow" button: back to the pin after panning away.
                 if followPaused, video?.isPlaying == true {
@@ -228,13 +242,14 @@ private struct TrailMapView: UIViewRepresentable {
     var bottomInset: CGFloat
     var leadingInset: CGFloat
     var trailingInset: CGFloat
-    var followInsets: EdgeInsets?
+    var followInsets: SwiftUI.EdgeInsets?
     var playhead: CLLocationCoordinate2D?
     var video: VideoFollow?
     var resumeRequest: Int
     var onFollowPausedChange: (Bool) -> Void
     var onSelectRoutes: (([String]) -> Void)?
     var onSelectPhoto: ((Photo) -> Void)?
+    var onSelectClip: ((String) -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -274,7 +289,7 @@ private struct TrailMapView: UIViewRepresentable {
         var bottomInset: CGFloat = 0
         var leadingInset: CGFloat = 0
         var trailingInset: CGFloat = 0
-        var followInsets: EdgeInsets?
+        var followInsets: SwiftUI.EdgeInsets?
         var playhead: CLLocationCoordinate2D?
         var video: VideoFollow?
 
@@ -300,6 +315,8 @@ private struct TrailMapView: UIViewRepresentable {
         private let demId = "mapbox-dem"
         private let clipSourceId = "clip-segment"
         private let clipLayerId = "clip-segment-line"
+        private let stretchesSourceId = "clip-stretches"
+        private let stretchesLayerId = "clip-stretches-line"
 
         // Follow-cam, as on the web: keep the pin in view until the user pans
         // away. Zooming or tilting keeps tracking; turning the map stops the
@@ -655,7 +672,8 @@ private struct TrailMapView: UIViewRepresentable {
         /// The selected clip's stretch, zoom-in on play, and following the pin.
         func followVideo(resumeRequest: Int) {
             guard let map, let video else { return }
-            let key = "\(video.clipId ?? ""):\(video.segment.count)"
+            let key = "\(video.clipId ?? ""):\(video.segment.count)|"
+                + video.stretches.map { "\($0.id):\($0.color):\($0.coordinates.count)" }.joined(separator: ",")
             if key != clipKey {
                 clipKey = key
                 installClipSegment()
@@ -725,6 +743,14 @@ private struct TrailMapView: UIViewRepresentable {
             DispatchQueue.main.async { report?(!value) }
         }
 
+        /// "#rrggbb" to a colour; nil for anything else.
+        private static func color(hex: String) -> UIColor? {
+            let digits = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
+            guard digits.count == 6, let value = UInt32(digits, radix: 16) else { return nil }
+            return UIColor(red: CGFloat(value >> 16 & 0xff) / 255, green: CGFloat(value >> 8 & 0xff) / 255,
+                           blue: CGFloat(value & 0xff) / 255, alpha: 1)
+        }
+
         // The web clip palette, so a clip's stretch matches its color there.
         private static let clipColors: [UIColor] = [
             0x3b82f6, 0x8b5cf6, 0xf59e0b, 0x10b981, 0xef4444, 0xf97316, 0x6366f1, 0x84cc16,
@@ -734,9 +760,43 @@ private struct TrailMapView: UIViewRepresentable {
         private func installClipSegment() {
             guard let map, styleReady else { return }
             let style: MapboxMap = map.mapboxMap
+
+            // Every clip's stretch in its own colour, under the playing one.
+            let stretchFeatures: [Feature] = (video?.stretches ?? []).compactMap { stretch in
+                guard stretch.coordinates.count >= 2 else { return nil }
+                var feature = Feature(geometry: .lineString(LineString(stretch.coordinates)))
+                feature.properties = ["id": JSONValue.string(stretch.id), "color": JSONValue.string(stretch.color)]
+                return feature
+            }
+            let stretchData = GeoJSONSourceData.featureCollection(FeatureCollection(features: stretchFeatures))
+            if style.sourceExists(withId: stretchesSourceId) {
+                style.updateGeoJSONSource(withId: stretchesSourceId, data: stretchData)
+            } else {
+                var source = GeoJSONSource(id: stretchesSourceId)
+                source.data = stretchData
+                try? style.addSource(source)
+            }
+            if !style.layerExists(withId: stretchesLayerId) {
+                var line = LineLayer(id: stretchesLayerId, source: stretchesSourceId)
+                line.lineCap = .constant(.round)
+                line.lineJoin = .constant(.round)
+                line.lineColor = .expression(Exp(.toColor) { Exp(.get) { "color" } })
+                line.lineWidth = .constant(4)
+                line.lineOpacity = .constant(0.85)
+                // Under the playing clip's line, which is added after it.
+                if style.layerExists(withId: clipLayerId) {
+                    try? style.addLayer(line, layerPosition: .below(clipLayerId))
+                } else {
+                    try? style.addLayer(line)
+                }
+            }
+
+            // The playing clip's stretch, wider and on top.
             let coords = video?.segment ?? []
+            var selected = Feature(geometry: .lineString(LineString(coords)))
+            if let id = video?.clipId { selected.properties = ["id": JSONValue.string(id)] }
             let data: GeoJSONSourceData = coords.count >= 2
-                ? .feature(Feature(geometry: .lineString(LineString(coords))))
+                ? .feature(selected)
                 : .featureCollection(FeatureCollection(features: []))
             if style.sourceExists(withId: clipSourceId) {
                 style.updateGeoJSONSource(withId: clipSourceId, data: data)
@@ -745,7 +805,10 @@ private struct TrailMapView: UIViewRepresentable {
                 source.data = data
                 try? style.addSource(source)
             }
-            let color = Self.clipColors[(video?.clipIndex ?? 0) % Self.clipColors.count]
+            // The same colour as its stretch underneath, as on the web.
+            let stretchColor = video?.stretches.first { $0.id == video?.clipId }?.color
+            let color = stretchColor.flatMap(Self.color(hex:))
+                ?? Self.clipColors[(video?.clipIndex ?? 0) % Self.clipColors.count]
             if style.layerExists(withId: clipLayerId) {
                 try? style.setLayerProperty(for: clipLayerId, property: "line-color",
                                             value: StyleColor(color).rawValue)
@@ -782,8 +845,27 @@ private struct TrailMapView: UIViewRepresentable {
         // MARK: Route taps
 
         private func tapped(at point: CGPoint) {
-            guard let map, let onSelect = parent?.onSelectRoutes else { return }
+            guard let map else { return }
             let box = CGRect(x: point.x - 22, y: point.y - 22, width: 44, height: 44)
+            // A clip's stretch plays that clip; otherwise the tap goes to the routes.
+            guard let onClip = parent?.onSelectClip else { return tappedRoutes(in: box) }
+            _ = map.mapboxMap.queryRenderedFeatures(
+                with: box, options: RenderedQueryOptions(layerIds: [clipLayerId, stretchesLayerId], filter: nil)
+            ) { [weak self] result in
+                if case .success(let hits) = result {
+                    for hit in hits {
+                        if case .string(let id)? = hit.queriedFeature.feature.properties?["id"] {
+                            onClip(id)
+                            return
+                        }
+                    }
+                }
+                self?.tappedRoutes(in: box)
+            }
+        }
+
+        private func tappedRoutes(in box: CGRect) {
+            guard let map, let onSelect = parent?.onSelectRoutes else { return }
             _ = map.mapboxMap.queryRenderedFeatures(
                 with: box, options: RenderedQueryOptions(layerIds: [layerId], filter: nil)
             ) { result in
@@ -836,6 +918,15 @@ private final class PhotoPinView: UIImageView {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    // Mapbox sizes a view annotation by measuring its view. An image view
+    // measures as its image: nothing before the thumbnail loads (so Mapbox
+    // can't place the pin and logs a warning every frame), then the 96 px
+    // thumbnail. A pin is always 36 pt, whatever it shows.
+    private static let size = CGSize(width: 36, height: 36)
+    override var intrinsicContentSize: CGSize { Self.size }
+    override func sizeThatFits(_ size: CGSize) -> CGSize { Self.size }
+    override func systemLayoutSizeFitting(_ targetSize: CGSize) -> CGSize { Self.size }
 
     @objc private func tapped() { onTap() }
 }

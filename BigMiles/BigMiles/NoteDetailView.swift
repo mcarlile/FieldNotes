@@ -76,8 +76,35 @@ struct NoteDetailView: View {
             angle: display.playback?.cameraAngle,
             clipId: playback.clip?.id,
             clipIndex: videoClips.firstIndex { $0.id == playback.clip?.id } ?? 0,
-            segment: playback.clipSegment(on: track, syncOffset: syncOffset)
+            segment: playback.clipSegment(on: track, syncOffset: syncOffset),
+            stretches: clipStretches
         )
+    }
+
+    // The web's clip palette, and its default blue that means "no colour chosen".
+    private static let clipPalette = [
+        "#3b82f6", "#8b5cf6", "#f59e0b", "#10b981", "#ef4444", "#f97316", "#6366f1", "#84cc16",
+    ]
+    private static let legacyDefaultClipColor = "#3b82f6"
+
+    /// Every clip's stretch of route, coloured as on the web.
+    private var clipStretches: [ClipStretch] {
+        guard let track else { return [] }
+        return videoClips.enumerated().compactMap { index, clip in
+            let coordinates = track.segment(from: clip.startTime + syncOffset, to: clip.endTime + syncOffset)
+            guard coordinates.count >= 2 else { return nil }
+            let chosen = clip.color.flatMap { $0.lowercased() == Self.legacyDefaultClipColor ? nil : $0 }
+            return ClipStretch(id: clip.id, color: chosen ?? Self.clipPalette[index % Self.clipPalette.count],
+                               coordinates: coordinates)
+        }
+    }
+
+    /// Tapping a clip's stretch on the map plays it, as on the web.
+    private func playClip(id: String) {
+        guard let clip = videoClips.first(where: { $0.id == id }) else { return }
+        mediaTab = .videos
+        withAnimation(.snappy) { mediaCardOpen = true }
+        playback.play(clip)
     }
 
     var body: some View {
@@ -157,7 +184,8 @@ struct NoteDetailView: View {
                     ),
                     playhead: playhead,
                     video: videoFollow,
-                    onSelectPhoto: { lightbox = $0 }
+                    onSelectPhoto: { lightbox = $0 },
+                    onSelectClip: { playClip(id: $0) }
                 )
                 .ignoresSafeArea()
 
@@ -223,7 +251,8 @@ struct NoteDetailView: View {
                     leadingInset: detailsCardOpen || showMedia ? width + 32 : 0,
                     playhead: playhead,
                     video: videoFollow,
-                    onSelectPhoto: { lightbox = $0 }
+                    onSelectPhoto: { lightbox = $0 },
+                    onSelectClip: { playClip(id: $0) }
                 )
                 .ignoresSafeArea()
 
