@@ -8,6 +8,7 @@ import { clipOffsetSeconds } from "@shared/clip-timing";
 import { resolveClipCoordinates } from "@shared/gpx-utils";
 import { isVideoProcessingActive, reprocessVideoClip } from "./videoProcessor";
 import type { FieldNote } from "@shared/schema";
+import { StravaImportError, addPhotoToTrip, importStravaActivity, importStravaPhotos, listStravaActivities } from "./stravaImport";
 
 /**
  * A small Model Context Protocol server (Streamable HTTP, stateless, JSON
@@ -153,8 +154,94 @@ const tools = [
       required: ["clip_id"],
     },
   },
+  {
+    name: "list_strava_activities",
+    description:
+      "List your Strava activities, newest first, each with the trip that already holds it (linked by Strava id, " +
+      "or the same outing by date and distance) or trip_id null when it isn't in Big Miles yet. Uses one Strava " +
+      "request per 200 activities.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        after: { type: "string", description: "Only activities that start after this ISO 8601 time." },
+        before: { type: "string", description: "Only activities that start before this ISO 8601 time." },
+        only_missing: { type: "boolean", description: "Only activities that aren't trips yet." },
+        max_pages: { type: "number", description: "Pages of 200 to read, default 10." },
+      },
+    },
+  },
+  {
+    name: "import_strava_activity",
+    description:
+      "Make a trip from one Strava activity, with its timed GPS track (so clips can be placed) and a copy of the " +
+      "photos attached to the activity on Strava. Refuses an activity that is already linked to a trip.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        strava_id: { type: "string" },
+        title: { type: "string", description: "Defaults to the Strava name." },
+        trip_type: { type: "array", items: { type: "string" }, description: "Defaults from the Strava sport." },
+        include_photos: { type: "boolean", description: "Copy the Strava photos, default true." },
+      },
+      required: ["strava_id"],
+    },
+  },
+  {
+    name: "import_strava_photos",
+    description: "Copy the photos attached to a Strava activity into an existing trip. Photos already copied are skipped.",
+    inputSchema: {
+      type: "object",
+      properties: { strava_id: { type: "string" }, project_id: { type: "string" } },
+      required: ["strava_id", "project_id"],
+    },
+  },
+  {
+    name: "add_photo",
+    description:
+      "Add one photo to a trip, sent inline as base64 (JPEG or PNG, up to 30 MB; convert HEIC to JPEG first so browsers can show it). Location and time are read " +
+      "from EXIF; latitude, longitude and taken_at fill in when EXIF has none. A filename already on the trip is " +
+      "skipped, so retries are safe.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project_id: { type: "string" },
+        filename: { type: "string" },
+        image_base64: { type: "string" },
+        content_type: { type: "string", description: "Default image/jpeg." },
+        caption: { type: "string" },
+        latitude: { type: "number" },
+        longitude: { type: "number" },
+        taken_at: { type: "string", description: "ISO 8601 time the photo was taken." },
+      },
+      required: ["project_id", "filename", "image_base64"],
+    },
+  },
 ];
 
+const addPhotoArgs = z.object({
+  project_id: z.string(),
+  filename: z.string().min(1),
+  image_base64: z.string().min(1),
+  content_type: z.string().regex(/^image\//).optional(),
+  caption: z.string().optional(),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
+  taken_at: z.string().datetime({ offset: true }).optional(),
+});
+const stravaIdArg = z.union([z.string().regex(/^\d+$/), z.number().int().positive()]).transform(String);
+const listStravaArgs = z.object({
+  after: z.string().datetime({ offset: true }).optional(),
+  before: z.string().datetime({ offset: true }).optional(),
+  only_missing: z.boolean().optional(),
+  max_pages: z.number().int().min(1).max(50).optional(),
+});
+const importStravaArgs = z.object({
+  strava_id: stravaIdArg,
+  title: z.string().min(1).optional(),
+  trip_type: z.array(z.string()).optional(),
+  include_photos: z.boolean().optional(),
+});
+const importStravaPhotosArgs = z.object({ strava_id: stravaIdArg, project_id: z.string() });
 const getProjectArgs = z.object({ project_id: z.string() });
 const reprocessClipArgs = z.object({ clip_id: z.string() });
 const moveClipArgs = z.object({
@@ -236,6 +323,15 @@ async function ownedTrip(id: string, userId: string | undefined): Promise<FieldN
 function requireUser(userId: string | undefined): string {
   if (!userId) throw new ToolError("Sign in to use this tool.");
   return userId;
+}
+
+async function strava<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof StravaImportError) throw new ToolError(error.message);
+    throw error;
+  }
 }
 
 async function callTool(name: string, args: unknown, userId?: string): Promise<unknown> {
@@ -409,6 +505,45 @@ async function callTool(name: string, args: unknown, userId?: string): Promise<u
         processing_status: clip.processingStatus,
       };
     }
+    case "list_strava_activities": {
+      const input = listStravaArgs.parse(args ?? {});
+      return strava(() => listStravaActivities(requireUser(userId), {
+        after: input.after ? new Date(input.after) : undefined,
+        before: input.before ? new Date(input.before) : undefined,
+        onlyMissing: input.only_missing,
+        maxPages: input.max_pages,
+      }));
+    }
+    case "import_strava_activity": {
+      const input = importStravaArgs.parse(args);
+      const { trip, photos } = await strava(() => importStravaActivity(requireUser(userId), input.strava_id, {
+        title: input.title,
+        tripType: input.trip_type,
+        includePhotos: input.include_photos,
+      }));
+      return { ...summarizeTrip(trip), photos };
+    }
+    case "import_strava_photos": {
+      const input = importStravaPhotosArgs.parse(args);
+      const trip = await ownedTrip(input.project_id, userId);
+      return strava(() => importStravaPhotos(requireUser(userId), input.strava_id, trip.id));
+    }
+    case "add_photo": {
+      const input = addPhotoArgs.parse(args);
+      const trip = await ownedTrip(input.project_id, userId);
+      const bytes = Buffer.from(input.image_base64, "base64");
+      if (!bytes.length) throw new ToolError("image_base64 is empty.");
+      return strava(() => addPhotoToTrip({
+        tripId: trip.id,
+        filename: input.filename,
+        bytes,
+        contentType: input.content_type,
+        caption: input.caption,
+        latitude: input.latitude,
+        longitude: input.longitude,
+        takenAt: input.taken_at ? new Date(input.taken_at) : undefined,
+      }));
+    }
     default:
       throw new ToolError(`Unknown tool: ${name}`);
   }
@@ -431,7 +566,8 @@ export async function handleRpc(message: JsonRpcRequest, userId?: string): Promi
         instructions:
           "Big Miles trips with video. To build one: create_project with the GPX (it makes a trip), then for each " +
           "video call request_upload, PUT the file to upload_url, and call add_clip with its object_path. " +
-          "Clips process one at a time; if one fails or is stuck, call reprocess_clip.",
+          "Clips process one at a time; if one fails or is stuck, call reprocess_clip. To bring in Strava rides, " +
+          "list_strava_activities with only_missing, then import_strava_activity for each one the user approves.",
       });
     }
     case "ping":
