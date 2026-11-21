@@ -43,7 +43,8 @@ final class TripVideoPlayback: ObservableObject {
         if let timeObserver { player.removeTimeObserver(timeObserver) }
     }
 
-    func play(_ clip: VideoClip) {
+    /// `refocus` zooms the map back in even if this clip is already playing.
+    func play(_ clip: VideoClip, refocus: Bool = false) {
         guard clip.isReady, let url = clip.streamURL else { return }
         #if os(iOS)
         // The default audio session is silenced by the ring/silent switch;
@@ -56,6 +57,8 @@ final class TripVideoPlayback: ObservableObject {
             self.clip = clip
             seconds = 0
             player.replaceCurrentItem(with: AVPlayerItem(url: url))
+        } else if refocus && isPlaying {
+            focusRequest += 1
         }
         player.play()
     }
