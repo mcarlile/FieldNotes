@@ -164,6 +164,42 @@ async function storeImage(bytes: Buffer, contentType: string): Promise<string> {
   return objectStorageService.normalizeObjectEntityPath(uploadUrl);
 }
 
+const MAX_PHOTO_BYTES = 30 * 1024 * 1024;
+
+/**
+ * Adds one photo to a trip from its bytes, for photos that come from outside
+ * Strava such as the Mac's Photos library. EXIF wins over the given location
+ * and time. A filename already on the trip is skipped, so a retry is safe.
+ */
+export async function addPhotoToTrip(params: {
+  tripId: string;
+  filename: string;
+  bytes: Buffer;
+  contentType?: string;
+  caption?: string;
+  latitude?: number;
+  longitude?: number;
+  takenAt?: Date;
+}): Promise<{ status: "added" | "already_on_trip" | "trip_full"; photo_id?: string }> {
+  if (params.bytes.length > MAX_PHOTO_BYTES) throw new StravaImportError("Photo is larger than 30 MB.");
+  const existing = (await storage.getPhotosByFieldNoteId(params.tripId)).find((p) => p.filename === params.filename);
+  if (existing) return { status: "already_on_trip", photo_id: existing.id };
+  const objectPath = await storeImage(params.bytes, params.contentType ?? "image/jpeg");
+  const exif = await extractExifFromBuffer(params.bytes, params.filename).catch(() => ({}) as Awaited<ReturnType<typeof extractExifFromBuffer>>);
+  const created = await storage.createPhotoWithinLimit({
+    fieldNoteId: params.tripId,
+    filename: params.filename,
+    url: objectPath,
+    altText: params.caption || null,
+    ...exif,
+    latitude: exif.latitude ?? params.latitude ?? null,
+    longitude: exif.longitude ?? params.longitude ?? null,
+    timestamp: exif.timestamp ?? params.takenAt ?? null,
+    fileSize: exif.fileSize ?? `${(params.bytes.length / 1024 ** 2).toFixed(1)} MB`,
+  });
+  return created ? { status: "added", photo_id: created.id } : { status: "trip_full" };
+}
+
 /** Copies an activity's Strava photos into a trip. Returns how many were added and why any were skipped. */
 export async function importStravaPhotos(userId: string, stravaId: string, tripId: string) {
   return wrapNotConnected((async () => {

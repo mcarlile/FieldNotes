@@ -8,7 +8,7 @@ import { clipOffsetSeconds } from "@shared/clip-timing";
 import { resolveClipCoordinates } from "@shared/gpx-utils";
 import { isVideoProcessingActive, reprocessVideoClip } from "./videoProcessor";
 import type { FieldNote } from "@shared/schema";
-import { StravaImportError, importStravaActivity, importStravaPhotos, listStravaActivities } from "./stravaImport";
+import { StravaImportError, addPhotoToTrip, importStravaActivity, importStravaPhotos, listStravaActivities } from "./stravaImport";
 
 /**
  * A small Model Context Protocol server (Streamable HTTP, stateless, JSON
@@ -195,8 +195,39 @@ const tools = [
       required: ["strava_id", "project_id"],
     },
   },
+  {
+    name: "add_photo",
+    description:
+      "Add one photo to a trip, sent inline as base64 (JPEG or PNG, up to 30 MB; convert HEIC to JPEG first so browsers can show it). Location and time are read " +
+      "from EXIF; latitude, longitude and taken_at fill in when EXIF has none. A filename already on the trip is " +
+      "skipped, so retries are safe.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project_id: { type: "string" },
+        filename: { type: "string" },
+        image_base64: { type: "string" },
+        content_type: { type: "string", description: "Default image/jpeg." },
+        caption: { type: "string" },
+        latitude: { type: "number" },
+        longitude: { type: "number" },
+        taken_at: { type: "string", description: "ISO 8601 time the photo was taken." },
+      },
+      required: ["project_id", "filename", "image_base64"],
+    },
+  },
 ];
 
+const addPhotoArgs = z.object({
+  project_id: z.string(),
+  filename: z.string().min(1),
+  image_base64: z.string().min(1),
+  content_type: z.string().regex(/^image\//).optional(),
+  caption: z.string().optional(),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
+  taken_at: z.string().datetime({ offset: true }).optional(),
+});
 const stravaIdArg = z.union([z.string().regex(/^\d+$/), z.number().int().positive()]).transform(String);
 const listStravaArgs = z.object({
   after: z.string().datetime({ offset: true }).optional(),
@@ -496,6 +527,22 @@ async function callTool(name: string, args: unknown, userId?: string): Promise<u
       const input = importStravaPhotosArgs.parse(args);
       const trip = await ownedTrip(input.project_id, userId);
       return strava(() => importStravaPhotos(requireUser(userId), input.strava_id, trip.id));
+    }
+    case "add_photo": {
+      const input = addPhotoArgs.parse(args);
+      const trip = await ownedTrip(input.project_id, userId);
+      const bytes = Buffer.from(input.image_base64, "base64");
+      if (!bytes.length) throw new ToolError("image_base64 is empty.");
+      return strava(() => addPhotoToTrip({
+        tripId: trip.id,
+        filename: input.filename,
+        bytes,
+        contentType: input.content_type,
+        caption: input.caption,
+        latitude: input.latitude,
+        longitude: input.longitude,
+        takenAt: input.taken_at ? new Date(input.taken_at) : undefined,
+      }));
     }
     default:
       throw new ToolError(`Unknown tool: ${name}`);
