@@ -1,3 +1,4 @@
+import type { Pool } from "pg";
 import { parseGpxData } from "@shared/gpx-utils";
 
 /** The most route points a trip carries in the trips list. */
@@ -32,4 +33,24 @@ export function listGpxData(gpxData: unknown): { coordinates: [number, number][]
   return {
     coordinates: Array.from({ length: LIST_ROUTE_POINTS }, (_, i) => points[Math.round(i * step)]),
   };
+}
+
+/**
+ * Fills field_notes.list_route for trips saved before it existed, a few at a
+ * time so the server stays responsive. Trips without a route get [].
+ */
+export async function backfillListRoutes(pool: Pool, batchSize = 20): Promise<number> {
+  let filled = 0;
+  for (;;) {
+    const { rows } = await pool.query<{ id: string; gpx_data: unknown }>(
+      `SELECT id, gpx_data FROM field_notes WHERE list_route IS NULL LIMIT $1`,
+      [batchSize],
+    );
+    if (rows.length === 0) return filled;
+    for (const row of rows) {
+      const route = listGpxData(row.gpx_data)?.coordinates ?? [];
+      await pool.query(`UPDATE field_notes SET list_route = $2::jsonb WHERE id = $1`, [row.id, JSON.stringify(route)]);
+      filled += 1;
+    }
+  }
 }

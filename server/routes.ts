@@ -232,7 +232,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         search: search as string,
         tripType: tripType as string,
         sortOrder: sortOrder as 'recent' | 'oldest' | 'name',
-      })).filter((note) => note.userId === req.dbUser.id);
+        userId: req.dbUser.id,
+        slimGpx: true,
+      }));
 
       // Every trip carries its photo and video counts; ?media=photos or
       // ?media=videos keeps only the trips that have some.

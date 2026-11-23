@@ -62,6 +62,9 @@ export const fieldNotes = pgTable("field_notes", {
   distance: real("distance"), // in miles
   elevationGain: real("elevation_gain"), // in meters
   gpxData: jsonb("gpx_data"), // stored GPX track data
+  // The route thinned to a few hundred points, kept beside gpxData so the trips
+  // list never has to load every full track. Set from gpxData by storage.
+  listRoute: jsonb("list_route"),
   stravaId: text("strava_id"), // Strava activity/route ID
   stravaSource: text("strava_source"), // 'strava-activity' | 'strava-route'
   isPublished: boolean("is_published").notNull().default(false),
@@ -199,6 +202,7 @@ export const videoClips = pgTable("video_clips", {
 export const insertFieldNoteSchema = createInsertSchema(fieldNotes).omit({
   id: true,
   createdAt: true,
+  listRoute: true,
 }).extend({
   date: z.coerce.date(),
   // Trips moved over from TrailCam Studio have no activity type yet.
