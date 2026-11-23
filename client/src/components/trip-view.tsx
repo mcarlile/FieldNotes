@@ -656,7 +656,7 @@ export default function TripView({
           </button>
           <div className="ml-auto">
             {tab === "videos" && canEdit && (
-              <ChunkedVideoUploader onComplete={handleClipsUpload} routeStartTime={routeStartTime} buttonClassName={addButtonClass}>
+              <ChunkedVideoUploader onComplete={handleClipsUpload} routeStartTime={routeStartTime} routeTrack={timedTrack} buttonClassName={addButtonClass}>
                 + Add
               </ChunkedVideoUploader>
             )}

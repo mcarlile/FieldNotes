@@ -12,7 +12,9 @@ import {
 } from "@carbon/react";
 import { Close, Renew } from "@carbon/icons-react";
 import { apiRequest } from "@/lib/queryClient";
-import { clipOffsetSeconds, parseCameraFilenameTime, readMp4CreationTime } from "@shared/clip-timing";
+import { parseCameraFilenameTime, readMp4CreationTime } from "@shared/clip-timing";
+import { detectClipStart, findPairedGpx, parseClipGpx, type ClipGpsTrack } from "@shared/clip-gps";
+import type { CompactTimedTrack } from "@shared/gpx-utils";
 
 const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB chunks
 // The server takes at most 200 chunks (MAX_CHUNKS in server/routes.ts).
@@ -44,6 +46,11 @@ interface UploadItem {
   startTime: number;
   endTime: number;
   startTimeSource: string | null;
+  // Recording times read from the file, kept so the start can be worked out
+  // again when a paired GPX arrives after the video.
+  filenameTime: Date | null;
+  metadataTime: Date | null;
+  gpxName: string | null;
 }
 
 export interface UploadedClip {
@@ -65,6 +72,13 @@ interface ChunkedVideoUploaderProps {
   // When the project's route started; used to place the clip on the timeline
   // from the video's recording time.
   routeStartTime?: Date | string | null;
+  // The trip's timed route, so a clip's own GPS (from a paired GPX) can be
+  // matched against it.
+  routeTrack?: CompactTimedTrack | null;
+}
+
+function isGpxFile(file: File) {
+  return /\.gpx$/i.test(file.name);
 }
 
 function getVideoDuration(videoFile: File): Promise<number> {
@@ -106,9 +120,14 @@ export function ChunkedVideoUploader({
   buttonClassName,
   children,
   routeStartTime,
+  routeTrack,
 }: ChunkedVideoUploaderProps) {
   const [showModal, setShowModal] = useState(false);
   const [items, setItems] = useState<UploadItem[]>([]);
+  // GPX files dropped with the videos (e.g. from the Insta360 GPS remote),
+  // by file name. Null marks a GPX that couldn't be read.
+  const [gpxFiles, setGpxFiles] = useState<Map<string, ClipGpsTrack | null>>(new Map());
+  const gpxRef = useRef(gpxFiles);
   const abortControllers = useRef(new Map<string, AbortController>());
   const nextId = useRef(0);
 
@@ -116,43 +135,71 @@ export function ChunkedVideoUploader({
     setItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...updates } : item)));
   }, []);
 
-  // Recording start from the camera filename, falling back to the MP4's own
-  // creation time. Filenames win because exporters such as Insta360 Studio
-  // stamp the MP4 with the export time instead of the recording time.
-  const detectStartOffset = async (videoFile: File): Promise<{ offset: number; source: string } | null> => {
-    const fromName = clipOffsetSeconds(parseCameraFilenameTime(videoFile.name), routeStartTime);
-    if (fromName !== null) return { offset: fromName, source: "the filename" };
-    try {
-      const recordedAt = await readMp4CreationTime(
-        async (start, end) => new Uint8Array(await videoFile.slice(start, end).arrayBuffer()),
-        videoFile.size,
-      );
-      const fromMetadata = clipOffsetSeconds(recordedAt, routeStartTime);
-      if (fromMetadata !== null) return { offset: fromMetadata, source: "the video's metadata" };
-    } catch {
-      // Unreadable metadata just means the start time is entered by hand.
-    }
-    return null;
+  // Where a clip starts on the route. A paired GPX comes first; otherwise the
+  // camera filename and the MP4's creation time (see detectClipStart).
+  const timingFor = (
+    item: Pick<UploadItem, "file" | "duration" | "filenameTime" | "metadataTime">,
+    gpxByName: Map<string, ClipGpsTrack | null>,
+  ) => {
+    const pairedName = findPairedGpx(item.file.name, new Map([...gpxByName.keys()].map((name) => [name, name])));
+    const gpx = pairedName ? gpxByName.get(pairedName) ?? null : null;
+    const detected = detectClipStart({
+      durationSeconds: item.duration ?? 0,
+      routeStart: routeStartTime,
+      route: routeTrack,
+      gpx,
+      filenameTime: item.filenameTime,
+      metadataTime: item.metadataTime,
+    });
+    const start = detected?.offsetSeconds ?? 0;
+    return {
+      startTime: start,
+      endTime: Math.round((start + (item.duration ?? 0)) * 10) / 10,
+      startTimeSource: detected?.source ?? null,
+      gpxName: pairedName ?? null,
+    };
   };
 
   const readDetails = async (item: UploadItem) => {
     try {
       const duration = await getVideoDuration(item.file);
-      const detected = await detectStartOffset(item.file);
-      const start = detected?.offset ?? 0;
-      updateItem(item.id, {
-        status: "queued",
-        duration,
-        startTime: start,
-        endTime: start + Math.round(duration),
-        startTimeSource: detected?.source ?? null,
-      });
+      let metadataTime: Date | null = null;
+      try {
+        metadataTime = await readMp4CreationTime(
+          async (start, end) => new Uint8Array(await item.file.slice(start, end).arrayBuffer()),
+          item.file.size,
+        );
+      } catch {
+        // Unreadable metadata just means the start comes from elsewhere.
+      }
+      const details = { file: item.file, duration, filenameTime: parseCameraFilenameTime(item.file.name), metadataTime };
+      updateItem(item.id, { status: "queued", ...details, ...timingFor(details, gpxRef.current) });
     } catch (error) {
       updateItem(item.id, {
         status: "error",
         errorMessage: error instanceof Error ? error.message : "Failed to read video",
       });
     }
+  };
+
+  const addGpxFiles = async (files: File[]) => {
+    const parsed = await Promise.all(
+      files.map(async (file) => {
+        try {
+          return [file.name, parseClipGpx(await file.text())] as const;
+        } catch {
+          return [file.name, null] as const;
+        }
+      }),
+    );
+    const next = new Map(gpxRef.current);
+    parsed.forEach(([name, track]) => next.set(name, track));
+    gpxRef.current = next;
+    setGpxFiles(next);
+    // Videos already read pick up their GPX now.
+    setItems((prev) =>
+      prev.map((item) => (item.duration !== null ? { ...item, ...timingFor(item, next) } : item)),
+    );
   };
 
   const uploadChunk = async (
@@ -259,7 +306,10 @@ export function ChunkedVideoUploader({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items]);
 
-  const handleFilesAdded = (files: File[]) => {
+  const handleFilesAdded = async (allFiles: File[]) => {
+    const gpx = allFiles.filter(isGpxFile);
+    const files = allFiles.filter((file) => !isGpxFile(file));
+    if (gpx.length > 0) await addGpxFiles(gpx);
     const added: UploadItem[] = files.map((file) => {
       const base: UploadItem = {
         id: `upload-${nextId.current++}`,
@@ -272,6 +322,9 @@ export function ChunkedVideoUploader({
         startTime: 0,
         endTime: 0,
         startTimeSource: null,
+        filenameTime: null,
+        metadataTime: null,
+        gpxName: null,
       };
       if (!file.type.startsWith("video/")) {
         return { ...base, status: "error", errorMessage: "Not a video file" };
@@ -300,6 +353,8 @@ export function ChunkedVideoUploader({
     abortControllers.current.forEach((controller) => controller.abort());
     abortControllers.current.clear();
     setItems([]);
+    gpxRef.current = new Map();
+    setGpxFiles(new Map());
     setShowModal(false);
   };
 
@@ -376,7 +431,7 @@ export function ChunkedVideoUploader({
           <div className="space-y-6">
             <FormGroup legendText="Video files">
               <FileUploaderDropContainer
-                accept={["video/*"]}
+                accept={["video/*", ".gpx"]}
                 multiple
                 labelText="Drag and drop video files here or click to browse"
                 onAddFiles={(_, { addedFiles }) => {
@@ -387,6 +442,14 @@ export function ChunkedVideoUploader({
               <div className="text-sm text-muted-foreground mt-2">
                 <p>MP4, WebM, MOV or AVI, up to 4K, each up to {formatFileSize(MAX_FILE_SIZE)}.</p>
                 <p className="mt-1 text-xs">Pick several at once; they upload {PARALLEL_UPLOADS} at a time.</p>
+                <p className="mt-1 text-xs">
+                  Add the .gpx exported with each video (Insta360 GPS remote) and it's used to place the clip.
+                </p>
+                {gpxFiles.size > 0 && (
+                  <p className="mt-1 text-xs" data-testid="text-gpx-files">
+                    GPX: {[...gpxFiles.entries()].map(([name, track]) => (track ? name : `${name} (unreadable)`)).join(", ")}
+                  </p>
+                )}
               </div>
             </FormGroup>
 
@@ -447,7 +510,7 @@ export function ChunkedVideoUploader({
                           value={item.startTime}
                           onChange={(e) => {
                             const start = Number((e.target as HTMLInputElement).value);
-                            updateItem(item.id, { startTime: start, endTime: start + Math.round(item.duration ?? 0) });
+                            updateItem(item.id, { startTime: start, endTime: Math.round((start + (item.duration ?? 0)) * 10) / 10 });
                           }}
                           data-testid="input-start-time"
                         />
@@ -469,6 +532,7 @@ export function ChunkedVideoUploader({
                     {item.duration !== null && item.status !== "error" && (
                       <div className="text-xs text-muted-foreground">
                         Length {formatTime(item.duration)}
+                        {item.gpxName && ` · paired with ${item.gpxName}`}
                         {item.startTimeSource
                           ? ` · start from ${item.startTimeSource}`
                           : routeStartTime
