@@ -5,6 +5,8 @@ import { objectStorageService } from "./objectStorage";
 import { requireAuth } from "./middlewares/clerkAuth";
 import { createClipWithCoordinates, createTripFromGpx, replaceTripRoute, tripDurationSeconds } from "./trailcam";
 import { clipOffsetSeconds } from "@shared/clip-timing";
+import { detectClipStart, parseClipGpx } from "@shared/clip-gps";
+import type { CompactTimedTrack } from "@shared/gpx-utils";
 import { resolveClipCoordinates } from "@shared/gpx-utils";
 import { isVideoProcessingActive, reprocessVideoClip } from "./videoProcessor";
 import type { FieldNote } from "@shared/schema";
@@ -111,7 +113,9 @@ const tools = [
     description:
       "Add an uploaded video to a trip. Place it with `recorded_at` (the UTC time the video " +
       "starts, e.g. from the original camera file's creation_time) or `start_seconds` (seconds " +
-      "after the route start). The clip is transcoded in the background.",
+      "after the route start). If the video came with its own GPX (Insta360 Studio exports one " +
+      "next to each clip when the GPS remote is used), pass it as `gpx`: it is used first, and its " +
+      "GPS path is matched against the route. The clip is transcoded in the background.",
     inputSchema: {
       type: "object",
       properties: {
@@ -122,6 +126,12 @@ const tools = [
         title: { type: "string", description: "Defaults to the filename without its extension." },
         recorded_at: { type: "string", description: "ISO 8601 UTC time the video starts." },
         start_seconds: { type: "number", description: "Seconds after the route start." },
+        gpx: {
+          type: "string",
+          description:
+            "Contents of the GPX exported with this video. Takes priority over recorded_at; " +
+            "recorded_at (the MP4's creation_time) still helps when the GPX covers the whole recording.",
+        },
         color: { type: "string", description: "Timeline color as #rrggbb." },
         file_size_bytes: { type: "number" },
       },
@@ -273,6 +283,7 @@ const addClipArgs = z.object({
   title: z.string().optional(),
   recorded_at: z.string().datetime({ offset: true }).optional(),
   start_seconds: z.number().min(0).optional(),
+  gpx: z.string().optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   file_size_bytes: z.number().optional(),
 });
@@ -467,7 +478,25 @@ async function callTool(name: string, args: unknown, userId?: string): Promise<u
       const trip = await ownedTrip(input.project_id, userId);
 
       let startSeconds = input.start_seconds;
+      let startSource: string | null = startSeconds !== undefined ? "start_seconds" : null;
+      if (startSeconds === undefined && input.gpx) {
+        if (Buffer.byteLength(input.gpx) > MAX_GPX_BYTES) throw new ToolError("GPX file is larger than 25 MB.");
+        const gpx = parseClipGpx(input.gpx);
+        if (!gpx) throw new ToolError("The clip GPX has no timestamped track points.");
+        const detected = detectClipStart({
+          durationSeconds: input.duration_seconds,
+          routeStart: routeStartOf(trip),
+          route: (trip.gpxData as { timedTrack?: CompactTimedTrack | null } | null)?.timedTrack,
+          gpx,
+          metadataTime: input.recorded_at ? new Date(input.recorded_at) : null,
+        });
+        if (detected) {
+          startSeconds = detected.offsetSeconds;
+          startSource = detected.source;
+        }
+      }
       if (startSeconds === undefined && input.recorded_at) {
+        startSource = "recorded_at";
         const offset = clipOffsetSeconds(new Date(input.recorded_at), routeStartOf(trip));
         if (offset === null) {
           throw new ToolError("recorded_at is before the route starts or more than two days after it.");
@@ -475,7 +504,11 @@ async function callTool(name: string, args: unknown, userId?: string): Promise<u
         startSeconds = offset;
       }
       if (startSeconds === undefined) {
-        throw new ToolError("Pass recorded_at or start_seconds to place the clip.");
+        throw new ToolError(
+          input.gpx
+            ? "The GPX couldn't place the clip on this trip's route. Pass recorded_at or start_seconds."
+            : "Pass recorded_at or start_seconds to place the clip.",
+        );
       }
 
       if (!(await objectStorageService.verifyObjectExists(input.object_path))) {
@@ -500,6 +533,7 @@ async function callTool(name: string, args: unknown, userId?: string): Promise<u
         title: clip.title,
         start_seconds: clip.startTime,
         end_seconds: clip.endTime,
+        start_source: startSource,
         start_latitude: clip.startLatitude,
         start_longitude: clip.startLongitude,
         processing_status: clip.processingStatus,
