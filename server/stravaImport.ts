@@ -118,7 +118,7 @@ export async function listStravaActivities(
       if (batch.length < ACTIVITIES_PER_PAGE) break;
     }
     activities.sort((a, b) => b.start_date.localeCompare(a.start_date));
-    const trips = (await storage.getFieldNotes({ sortOrder: "recent" })).filter((t) => t.userId === userId);
+    const trips = await storage.getFieldNotes({ sortOrder: "recent", userId, slimGpx: true });
     const existing = findExistingTrips(activities, trips);
     const rows = activities.map((a) => {
       const trip = existing.get(a.id);
@@ -254,7 +254,7 @@ export async function importStravaActivity(
   options: { title?: string; tripType?: string[]; includePhotos?: boolean },
 ) {
   return wrapNotConnected((async () => {
-    const trips = (await storage.getFieldNotes({ sortOrder: "recent" })).filter((t) => t.userId === userId);
+    const trips = await storage.getFieldNotes({ sortOrder: "recent", userId, slimGpx: true });
     const linked = trips.find((t) => t.stravaId === stravaId && t.stravaSource !== "strava-route");
     if (linked) throw new StravaImportError(`Already a trip: "${linked.title}" (${linked.id}).`);
 

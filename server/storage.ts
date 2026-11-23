@@ -1,6 +1,7 @@
 import { fieldNotes, photos, trailcamProjects, videoClips, webhookTokens, gpxInbox, stravaConnections, expeditions, expeditionFieldNotes, type TripPlayback, type FieldNote, type Photo, type InsertFieldNote, type InsertPhoto, type TrailcamProject, type VideoClip, type InsertTrailcamProject, type InsertVideoClip, type WebhookToken, type GpxInboxItem, type StravaConnection, type InsertStravaConnection, type Expedition, type InsertExpedition, type ExpeditionFieldNote } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, asc, like, ilike, and, or, sql, inArray, isNotNull } from "drizzle-orm";
+import { listGpxData } from "./tripListGpx";
+import { eq, desc, asc, like, ilike, and, or, sql, inArray, isNotNull, getTableColumns } from "drizzle-orm";
 import { MAX_TRIP_PHOTOS } from "@shared/photo-limit";
 import { existingPhotoCaptionPatch } from "./photo-caption";
 
@@ -27,12 +28,34 @@ export interface TripMediaCounts {
   videoCount: number;
 }
 
+/** listRoute for a trip's gpxData: the thinned route, or [] when it has none. */
+export function listRouteFor(gpxData: unknown): [number, number][] {
+  return listGpxData(gpxData)?.coordinates ?? [];
+}
+
+/**
+ * Columns for trip lists: everything but the full gpxData, which is replaced
+ * by the thinned listRoute. A trip whose listRoute isn't filled yet falls back
+ * to its full gpxData.
+ */
+const { listRoute: _listRoute, gpxData: _gpxData, ...listColumns } = getTableColumns(fieldNotes);
+const listGpxDataSql = sql<unknown>`CASE WHEN ${fieldNotes.listRoute} IS NOT NULL
+  THEN jsonb_build_object('coordinates', ${fieldNotes.listRoute}) ELSE ${fieldNotes.gpxData} END`;
+
 export interface IStorage {
   // Field Notes
   getFieldNotes(options?: {
     search?: string;
     tripType?: string;
     sortOrder?: 'recent' | 'oldest' | 'name';
+    /** Only this user's trips, filtered in SQL. */
+    userId?: string;
+    /**
+     * gpxData holds only { coordinates } thinned to a few hundred points, for
+     * lists. Loading every full track for well over a thousand trips takes
+     * minutes. Use startTime/endTime for a trip's times.
+     */
+    slimGpx?: boolean;
   }): Promise<FieldNote[]>;
   getFieldNoteById(id: string): Promise<FieldNote | undefined>;
   createFieldNote(fieldNote: InsertFieldNote): Promise<FieldNote>;
@@ -122,10 +145,22 @@ export class DatabaseStorage implements IStorage {
     search?: string;
     tripType?: string;
     sortOrder?: 'recent' | 'oldest' | 'name';
+    /** Only this user's trips, filtered in SQL. */
+    userId?: string;
+    /**
+     * gpxData holds only { coordinates } thinned to a few hundred points, for
+     * lists. Loading every full track for well over a thousand trips takes
+     * minutes. Use startTime/endTime for a trip's times.
+     */
+    slimGpx?: boolean;
   } = {}): Promise<FieldNote[]> {
-    let query = db.select().from(fieldNotes);
+    let query = (options.slimGpx
+      ? db.select({ ...listColumns, listRoute: sql<unknown>`NULL`, gpxData: listGpxDataSql })
+      : db.select()
+    ).from(fieldNotes);
 
     const conditions = [];
+    if (options.userId) conditions.push(eq(fieldNotes.userId, options.userId));
 
     if (options.search) {
       const searchTerm = options.search.trim();
@@ -173,7 +208,7 @@ export class DatabaseStorage implements IStorage {
   async createFieldNote(insertFieldNote: InsertFieldNote): Promise<FieldNote> {
     const [fieldNote] = await db
       .insert(fieldNotes)
-      .values(insertFieldNote)
+      .values({ ...insertFieldNote, listRoute: listRouteFor(insertFieldNote.gpxData) })
       .returning();
     return fieldNote;
   }
@@ -181,7 +216,9 @@ export class DatabaseStorage implements IStorage {
   async updateFieldNote(id: string, updateFieldNote: Partial<InsertFieldNote>): Promise<FieldNote | undefined> {
     const [fieldNote] = await db
       .update(fieldNotes)
-      .set(updateFieldNote)
+      .set("gpxData" in updateFieldNote
+        ? { ...updateFieldNote, listRoute: listRouteFor(updateFieldNote.gpxData) }
+        : updateFieldNote)
       .where(eq(fieldNotes.id, id))
       .returning();
     return fieldNote || undefined;
@@ -757,6 +794,7 @@ export class MemStorage implements IStorage {
       },
       stravaId: null,
       stravaSource: null,
+      listRoute: null,
       isPublished: false,
       publishedAt: null,
       slug: null,
@@ -784,6 +822,7 @@ export class MemStorage implements IStorage {
       },
       stravaId: null,
       stravaSource: null,
+      listRoute: null,
       isPublished: false,
       publishedAt: null,
       slug: null,
@@ -858,8 +897,16 @@ export class MemStorage implements IStorage {
     search?: string;
     tripType?: string;
     sortOrder?: 'recent' | 'oldest' | 'name';
+    /** Only this user's trips, filtered in SQL. */
+    userId?: string;
+    /**
+     * gpxData holds only { coordinates } thinned to a few hundred points, for
+     * lists. Loading every full track for well over a thousand trips takes
+     * minutes. Use startTime/endTime for a trip's times.
+     */
+    slimGpx?: boolean;
   } = {}): Promise<FieldNote[]> {
-    let filtered = [...this.fieldNotesData];
+    let filtered = this.fieldNotesData.filter(note => !options.userId || note.userId === options.userId);
 
     if (options.search) {
       const searchLower = options.search.toLowerCase().trim();
@@ -905,6 +952,7 @@ export class MemStorage implements IStorage {
       distance: insertFieldNote.distance ?? null,
       elevationGain: insertFieldNote.elevationGain ?? null,
       gpxData: insertFieldNote.gpxData ?? null,
+      listRoute: null,
       stravaId: insertFieldNote.stravaId ?? null,
       stravaSource: insertFieldNote.stravaSource ?? null,
       isPublished: false,

@@ -15,6 +15,7 @@ import { recoverInterruptedVideoProcessing } from "./videoProcessor";
 import { migrateStudioProjectsToTrips } from "./tripMigration";
 import { backfillStartTimesFromRoutes, backfillTripTimestamps } from "./tripTimestamps";
 import { restoreTripTimesFromStrava } from "./stravaTripTimes";
+import { backfillListRoutes } from "./tripListGpx";
 
 const app = express();
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
@@ -82,6 +83,7 @@ async function runStartupMigrations() {
     await client.query(`
       ALTER TABLE field_notes ADD COLUMN IF NOT EXISTS strava_id text;
       ALTER TABLE field_notes ADD COLUMN IF NOT EXISTS strava_source text;
+      ALTER TABLE field_notes ADD COLUMN IF NOT EXISTS list_route jsonb;
     `);
     // Strava OAuth connections table
     await client.query(`
@@ -214,6 +216,9 @@ async function runStartupMigrations() {
 (async () => {
   await runStartupMigrations();
   await recoverInterruptedVideoProcessing();
+  backfillListRoutes(pool)
+    .then((filled) => { if (filled) log(`Trip list routes: filled ${filled} trips`); })
+    .catch((err) => log(`Trip list routes warning: ${(err as Error).message}`));
   // Waits on Strava's rate limit, so it runs alongside the server.
   restoreTripTimesFromStrava(pool)
     .then(({ restored, checked }) => {
